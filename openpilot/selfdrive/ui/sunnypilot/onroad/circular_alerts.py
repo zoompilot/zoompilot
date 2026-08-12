@@ -43,10 +43,11 @@ class CircularAlertsRenderer:
     self._allow_e2e_alerts = sm['selfdriveState'].alertSize == log.SelfdriveState.AlertSize.none and \
                              sm.recv_frame['driverStateV2'] > ui_state.started_frame
 
-    if self._green_light_alert or self._lead_depart_alert:
+    if (self._green_light_alert or self._lead_depart_alert) and self._allow_e2e_alerts:
       self._e2e_alert_display_timer = 3 * gui_app.target_fps
-      # reset onroad sleep timer for e2e alerts
+      # Wake the screen only when the circular alert will actually be displayed.
       ui_state.reset_onroad_sleep_timer()
+      ui_state.reset_disengaged_screen_off_timer()
 
     if self._e2e_alert_display_timer > 0:
       self._e2e_alert_frame += 1

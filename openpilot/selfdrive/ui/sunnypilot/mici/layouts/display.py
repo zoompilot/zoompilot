@@ -20,6 +20,11 @@ def _timer_picker_unit():
   return tr("seconds") if mapped < 60 else tr("minutes")
 
 
+def _disengaged_timer_picker_unit():
+  raw = ui_state.params.get("DisengagedScreenOffTimer", return_default=True) or 0
+  return tr("seconds") if raw < 60 else tr("minutes")
+
+
 def _brightness_label(val):
   if val == OnroadBrightness.AUTO:
     return tr("auto")
@@ -71,6 +76,16 @@ class DisplayLayoutMici(NavScroller):
       picker_unit="%",
       picker_item_width=140,
     )
+    self._disengaged_screen_off = BigParamControl(
+      tr("screen off when disengaged"), "DisengagedScreenOff",
+    )
+    self._disengaged_screen_off_timer = BigParamOption(
+      tr("disengaged screen off delay"), "DisengagedScreenOffTimer",
+      min_value=3, max_value=60, value_change_step=1,
+      label_callback=_timer_label,
+      picker_label_callback=_timer_picker_label,
+      picker_unit=_disengaged_timer_picker_unit,
+    )
     self._brightness_timer = BigParamOption(
       tr("brightness delay"), "OnroadScreenOffTimer",
       min_value=0, max_value=15,
@@ -97,8 +112,11 @@ class DisplayLayoutMici(NavScroller):
       picker_unit=tr("minutes"),
     )
 
-    self._scroller.add_widgets([self._brightness, self._brightness_timer, self._ui_timeout,
-                                self._screensaver, self._screensaver_timeout])
+    self._scroller.add_widgets([
+      self._disengaged_screen_off, self._disengaged_screen_off_timer,
+      self._brightness, self._brightness_timer, self._ui_timeout,
+      self._screensaver, self._screensaver_timeout,
+    ])
 
   def _update_state(self):
     super()._update_state()
@@ -109,8 +127,11 @@ class DisplayLayoutMici(NavScroller):
     self._screensaver_timeout.refresh()
 
     brightness_val = ui_state.params.get("OnroadScreenOffBrightness", return_default=True)
+    self._disengaged_screen_off_timer.set_enabled(ui_state.params.get_bool("DisengagedScreenOff"))
     self._brightness_timer.set_enabled(
       brightness_val not in (OnroadBrightness.AUTO, OnroadBrightness.AUTO_DARK)
     )
     # gated like the brightness timer above; the param keeps its value while the toggle is off
     self._screensaver_timeout.set_enabled(self._screensaver._checked)
+    self._disengaged_screen_off.refresh()
+    self._disengaged_screen_off_timer.refresh()

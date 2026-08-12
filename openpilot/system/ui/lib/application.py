@@ -238,6 +238,7 @@ class GuiApplication(GuiApplicationExt):
     self._nav_stack: list[object] = []
     self._nav_stack_ticks: list[Callable[[], None]] = []
     self._nav_stack_widgets_to_render = 1 if self.big_ui() else 2
+    self._menu_active = False
 
     self._mouse = MouseState(self._scale)
     self._mouse_events: list[MouseEvent] = []
@@ -450,6 +451,15 @@ class GuiApplication(GuiApplicationExt):
     if len(self._nav_stack) > 0:
       return self._nav_stack[-1]
     return None
+
+  @property
+  def menu_active(self) -> bool:
+    # MICI opens settings and subpanels above the main onroad widget. TICI keeps settings
+    # in its main layout and updates _menu_active explicitly instead.
+    return self._menu_active or len(self._nav_stack) > 1
+
+  def set_menu_active(self, active: bool) -> None:
+    self._menu_active = active
 
   def widget_in_stack(self, widget: object) -> bool:
     return widget in self._nav_stack

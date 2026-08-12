@@ -47,6 +47,9 @@ class UIStateSP:
     self.blindspot: bool = False
     self.chevron_metrics = None
     self.custom_interactive_timeout: int = 0
+    self.disengaged_screen_off: bool = False
+    self.disengaged_screen_off_timer: int = -1
+    self.disengaged_screen_off_timer_param: int = 10
     self.developer_ui = None
     self.hide_v_ego_ui: bool = False
     self.onroad_brightness: int = 0
@@ -65,6 +68,7 @@ class UIStateSP:
     self._sp_initialized: bool = False
 
   def update(self) -> None:
+    self.update_disengaged_screen_off_timer()
     if self.sunnylink_enabled:
       self.sunnylink_state.start()
     else:
@@ -74,11 +78,31 @@ class UIStateSP:
     if _ui_state.sm.recv_frame["carState"] < _ui_state.started_frame:
       return
 
-    has_alert = _ui_state.started and self.onroad_brightness != OnroadBrightness.AUTO and alert is not None
+    has_visual_alert = _ui_state.started and alert is not None
+    has_alert = has_visual_alert and self.onroad_brightness != OnroadBrightness.AUTO
 
     self.update_onroad_brightness(has_alert)
     if has_alert:
       self.reset_onroad_sleep_timer()
+    if has_visual_alert:
+      self.reset_disengaged_screen_off_timer()
+
+  def update_disengaged_screen_off_timer(self) -> None:
+    is_engaged = getattr(self, "engaged", False)
+    # Menus have their own interactive timeout. Do not blank the display while the driver
+    # is changing a setting; begin a fresh onroad timeout after navigation returns to camera.
+    if not self.started or not self.disengaged_screen_off or is_engaged or gui_app.menu_active:
+      self.disengaged_screen_off_timer = -1
+      return
+
+    if self.disengaged_screen_off_timer < 0:
+      self.reset_disengaged_screen_off_timer()
+    elif self.disengaged_screen_off_timer > 0:
+      self.disengaged_screen_off_timer -= 1
+
+  def reset_disengaged_screen_off_timer(self) -> None:
+    if self.disengaged_screen_off and self.started:
+      self.disengaged_screen_off_timer = self.disengaged_screen_off_timer_param * gui_app.target_fps
 
   def update_onroad_brightness(self, has_alert: bool) -> None:
     if has_alert:
@@ -155,6 +179,8 @@ class UIStateSP:
     self.blindspot = self.params.get_bool("BlindSpot")
     self.chevron_metrics = self.params.get("ChevronInfo")
     self.custom_interactive_timeout = self.params.get("InteractivityTimeout", return_default=True)
+    self.disengaged_screen_off = self.params.get_bool("DisengagedScreenOff")
+    self.disengaged_screen_off_timer_param = self.params.get("DisengagedScreenOffTimer", return_default=True)
     self.developer_ui = self.params.get("DevUIInfo")
     self.hide_v_ego_ui = self.params.get_bool("HideVEgoUI")
     self.onroad_brightness = int(float(self.params.get("OnroadScreenOffBrightness", return_default=True)))
@@ -180,6 +206,7 @@ class UIStateSP:
     if not self._sp_initialized:
       self._sp_initialized = True
       self.reset_onroad_sleep_timer()
+      self.reset_disengaged_screen_off_timer()
 
   def _enforce_constraints(self) -> None:
     has_long = self.has_longitudinal_control
@@ -273,6 +300,9 @@ class DeviceSP:
     if not awake or not _ui_state.started:
       return cur_brightness
 
+    if _ui_state.disengaged_screen_off and _ui_state.disengaged_screen_off_timer == 0:
+      return 0.0
+
     if _ui_state.onroad_brightness_timer != 0:
       if _ui_state.onroad_brightness == OnroadBrightness.AUTO_DARK:
         return max(30.0, cur_brightness)
@@ -298,8 +328,10 @@ class DeviceSP:
 
   @staticmethod
   def wake_from_dimmed_onroad_brightness(_ui_state, evs) -> None:
-    if _ui_state.started and (_ui_state.onroad_brightness_timer_expired or _ui_state.onroad_brightness == OnroadBrightness.AUTO_DARK):
+    screen_off = _ui_state.disengaged_screen_off and _ui_state.disengaged_screen_off_timer == 0
+    if _ui_state.started and (_ui_state.onroad_brightness_timer_expired or _ui_state.onroad_brightness == OnroadBrightness.AUTO_DARK or screen_off):
       if any(ev.left_down for ev in evs):
         if _ui_state.onroad_brightness_timer_expired:
           gui_app.mouse_events.clear()
         _ui_state.reset_onroad_sleep_timer()
+        _ui_state.reset_disengaged_screen_off_timer()

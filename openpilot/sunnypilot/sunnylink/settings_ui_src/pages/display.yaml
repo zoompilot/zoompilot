@@ -11,6 +11,31 @@ sections:
   title: Brightness & Timeout
   description: Screen dimming and sleep behavior while driving
   items:
+  - key: DisengagedScreenOff
+    widget: toggle
+    title: Screen Off When Disengaged
+    description: Turn off the screen after the selected delay while driving disengaged. The screen wakes when you engage,
+      touch it, or a visual alert is shown.
+  - key: DisengagedScreenOffTimer
+    widget: multiple_button
+    title: Disengaged Screen Off Delay
+    options:
+    - value: 3
+      label: 3s
+    - value: 5
+      label: 5s
+    - value: 10
+      label: 10s
+    - value: 15
+      label: 15s
+    - value: 30
+      label: 30s
+    - value: 60
+      label: 1m
+    enablement:
+    - type: param
+      key: DisengagedScreenOff
+      equals: true
   - key: OnroadScreenOffBrightness
     widget: multiple_button
     title: Onroad Brightness

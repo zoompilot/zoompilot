@@ -101,6 +101,7 @@ class MainLayout(Widget):
       self._sidebar.set_visible(True)
 
   def _set_current_layout(self, layout: MainState):
+    gui_app.set_menu_active(layout == MainState.SETTINGS)
     if layout != self._current_mode:
       self._layouts[self._current_mode].hide_event()
       self._current_mode = layout
