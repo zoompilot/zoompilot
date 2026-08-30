@@ -18,6 +18,7 @@ struct ParamsHandle {
 
   Params params;
   const std::vector<std::string> keys;
+  std::vector<std::string> filtered_keys;  // backing store for params_keys_by_flag; ParamsBuffer borrows these strings (not re-entrant across threads on one handle)
 };
 
 namespace {
@@ -162,12 +163,14 @@ ParamsBuffer params_key_at(ParamsHandle *handle, size_t index) noexcept {
 
 size_t params_keys_by_flag(ParamsHandle *handle, uint32_t flag, ParamsBuffer *out, size_t out_size) noexcept {
   return translate_exceptions(size_t{0}, [&]() {
-    auto filtered = handle->params.allKeys(static_cast<ParamKeyFlag>(flag));
-    size_t count = std::min(filtered.size(), out_size);
+    // store on the handle and borrow directly: return_string's thread_local buffer
+    // can only hold one string, so it must not be used for multi-string results
+    handle->filtered_keys = handle->params.allKeys(static_cast<ParamKeyFlag>(flag));
+    size_t count = std::min(handle->filtered_keys.size(), out_size);
     for (size_t i = 0; i < count; i++) {
-      out[i] = return_string(filtered[i]);
+      out[i] = ParamsBuffer{handle->filtered_keys[i].data(), handle->filtered_keys[i].size()};
     }
-    return filtered.size();
+    return handle->filtered_keys.size();
   });
 }
 
