@@ -13,13 +13,14 @@ modeld's 60 s big-model timeout. By the time the car goes onroad the engine is
 built and cached, and modeld only has to load it (~1 s).
 
 It also means only one process touches the link at a time: jetlinkd offroad,
-modeld onroad.
+modeld onroad. That is enforced by the `only_offroad` gate in process_config,
+which manager applies - there is no onroad param to consult, and checking one
+here would only duplicate it.
 """
 from __future__ import annotations
 
 import time
 
-from openpilot.common.params import Params
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
 
@@ -29,7 +30,7 @@ POLL_HZ = 0.5
 RETRY_BACKOFF = 30.0
 
 
-def provision_once(params: Params) -> bool:
+def provision_once() -> bool:
   """Returns True when the Jetson is ready for the selected model."""
   model_path = helpers.active_model_path()
   if model_path is None:
@@ -78,7 +79,6 @@ def provision_once(params: Params) -> bool:
 
 
 def main() -> None:
-  params = Params()
   rk = Ratekeeper(POLL_HZ)
   next_attempt = 0.0
   ready = False
@@ -87,9 +87,6 @@ def main() -> None:
     rk.keep_time()
 
     try:
-      if params.get_bool("IsOnroad"):
-        continue        # modeld owns the link onroad
-
       if not helpers.enabled():
         if ready:
           cloudlog.warning("jetlink: link gone, clearing readiness")
@@ -99,7 +96,7 @@ def main() -> None:
       if time.monotonic() < next_attempt:
         continue
 
-      ready = provision_once(params)
+      ready = provision_once()
       next_attempt = 0.0
     except Exception:
       # Nothing here may escape: this daemon restarting in a loop would be
