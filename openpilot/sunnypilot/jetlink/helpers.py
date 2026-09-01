@@ -226,13 +226,58 @@ def active_model_path() -> Path | None:
     manifest = root / f'{name}.chunkmanifest'
     if manifest.is_file():
       return _materialise(root / name)
-  # Fall back to the model openpilot ships, if it was actually fetched. On this
-  # fork it is an LFS pointer (see .lfsconfig fetchexclude), so usually is not.
+  # Nothing in the bundle. Fall back to the model openpilot itself pins, which
+  # every chestnut-class device already agrees on.
+  return shipped_model_path()
+
+
+BIG_MODEL_NAME = 'big_driving_supercombo.onnx'
+
+
+def repo_root() -> Path:
+  return Path(__file__).resolve().parents[3]
+
+
+def big_model_pointer() -> Path:
   from openpilot.selfdrive.modeld.helpers import MODELS_DIR
-  shipped = MODELS_DIR / 'big_driving_supercombo.onnx'
-  if shipped.is_file() and shipped.stat().st_size > 1_000_000:
-    return shipped
+  return MODELS_DIR / BIG_MODEL_NAME
+
+
+def shipped_model_path() -> Path | None:
+  """The large model openpilot pins, wherever it actually lives.
+
+  The pointer file is the single source of truth for which model this branch
+  means, so a file sitting in the model root only counts when it is the object
+  that pointer names. Accepting any big file under that name would let a model
+  fetched for one branch answer for another, and the two are not the same
+  network: sunnypilot substitutes its own big model for comma's.
+
+  When .lfsconfig has not excluded the object, the worktree holds the real
+  thing and there is nothing to fetch.
+  """
+  from openpilot.sunnypilot.jetlink import lfs
+  pointer = big_model_pointer()
+  parsed = lfs.parse_pointer(pointer)
+  if parsed is None:
+    if pointer.is_file() and pointer.stat().st_size > 1_000_000:
+      return pointer
+    return None
+  _, size = parsed
+  fetched = Path(Paths.model_root()) / BIG_MODEL_NAME
+  if fetched.is_file() and fetched.stat().st_size == size:
+    return fetched
   return None
+
+
+def fetch_shipped_model(progress=None, should_stop=None) -> Path | None:
+  """Download the pinned large model if it is only a pointer here.
+
+  Costs ~0.8-1.8 GB once, on a device that has an accelerator attached, rather
+  than on every install. Returns None when there is nothing to fetch.
+  """
+  from openpilot.sunnypilot.jetlink import lfs
+  return lfs.fetch(big_model_pointer(), Path(Paths.model_root()) / BIG_MODEL_NAME,
+                   repo_root(), progress=progress, should_stop=should_stop)
 
 
 def _materialise(path: Path) -> Path | None:

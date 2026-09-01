@@ -127,3 +127,48 @@ class TestActiveModelPath(unittest.TestCase):
 
 if __name__ == '__main__':
   unittest.main()
+
+
+class TestShippedModelPath(unittest.TestCase):
+  """The pointer decides which model this branch means. sunnypilot substitutes
+  its own big model for comma's, so a file of the wrong size under that name is
+  a model fetched for a different branch, not this one."""
+
+  def setUp(self):
+    self.root = tempfile.mkdtemp()
+    self.tree = Path(tempfile.mkdtemp())
+    paths = mock.patch('openpilot.sunnypilot.jetlink.helpers.Paths')
+    self.addCleanup(paths.stop)
+    paths.start().model_root.return_value = self.root
+    pointer = mock.patch.object(helpers, 'big_model_pointer', return_value=self.tree / 'big.onnx')
+    self.addCleanup(pointer.stop)
+    pointer.start()
+
+  def write_pointer(self, size: int) -> None:
+    (self.tree / 'big.onnx').write_text(
+      f"version https://git-lfs.github.com/spec/v1\noid sha256:{'a' * 64}\nsize {size}\n")
+
+  def fetched(self, size: int) -> Path:
+    path = Path(self.root) / helpers.BIG_MODEL_NAME
+    path.write_bytes(b'\0' * size)
+    return path
+
+  def test_nothing_fetched_yet(self):
+    self.write_pointer(4096)
+    assert helpers.shipped_model_path() is None
+
+  def test_the_pinned_object_is_accepted(self):
+    self.write_pointer(4096)
+    fetched = self.fetched(4096)
+    assert helpers.shipped_model_path() == fetched
+
+  def test_a_different_branch_model_is_rejected(self):
+    self.write_pointer(4096)
+    self.fetched(2048)
+    assert helpers.shipped_model_path() is None
+
+  def test_an_unexcluded_object_is_used_in_place(self):
+    # A checkout that did fetch the object has the real thing in the worktree.
+    real = self.tree / 'big.onnx'
+    real.write_bytes(b'\0' * 2_000_000)
+    assert helpers.shipped_model_path() == real

@@ -45,6 +45,7 @@ class Jetlinkd:
     self.ready = False
     self.next_attempt = 0.0
     self.was_attached = False
+    self.fetch_failed = False
 
   # -- lifecycle ------------------------------------------------------------
 
@@ -77,9 +78,35 @@ class Jetlinkd:
 
   # -- provisioning ---------------------------------------------------------
 
+  def fetch_model(self):
+    """Download the pinned large model, once, on a device that has a Jetson.
+
+    The install carries a pointer rather than the object, so the first time a
+    Jetson is attached we have to go and get it. Minutes on a slow link, so it
+    reports progress and gives up the moment manager wants us gone - the loop
+    is single threaded and this is the one call in it that blocks for long.
+    """
+    if self.fetch_failed:
+      return None
+    try:
+      path = helpers.fetch_shipped_model(
+        progress=lambda frac: helpers.report_progress('download', frac, 'downloading the large model'),
+        should_stop=lambda: self.stop,
+      )
+    except Exception:
+      cloudlog.exception("jetlink: could not fetch the large model")
+      helpers.report_progress('failed', 1.0, 'could not download the large model')
+      # One attempt per run. Retrying a gigabyte on a loop would be worse than
+      # staying on the small model until the next boot.
+      self.fetch_failed = True
+      return None
+    return path
+
   def provision(self) -> bool:
     """Make the Jetson ready for the selected model. Host must be attached."""
     model_path = helpers.active_model_path()
+    if model_path is None:
+      model_path = self.fetch_model()
     if model_path is None:
       # Nothing selected, or still downloading. Not an error.
       helpers.set_engine_ready(None)
