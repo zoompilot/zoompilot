@@ -86,8 +86,31 @@ def host_attached() -> bool:
     return False
 
 
+def link_configured() -> bool:
+  """Can we even attempt a link? The gadget exists, or TCP is configured.
+
+  Deliberately NOT host_attached(): the comma's UDC only binds when something
+  opens ep0, and nothing opens ep0 unless the link looks usable. Gating the
+  attempt on a host already being there deadlocks - the Jetson can never
+  enumerate because nobody ever presented the gadget to it.
+  """
+  if link_endpoint() is not None:
+    return True
+  try:
+    return (FFS_MOUNT / "ep0").exists()
+  except OSError:
+    # A root-only mount raises PermissionError from stat rather than returning
+    # False. We could not open it either way, so treat it as unusable.
+    return False
+
+
 def gadget_present() -> bool:
-  """Is the link usable - a host attached over USB, or a TCP endpoint set?"""
+  """Is a Jetson actually on the other end right now?
+
+  This is the one that answers "is an accelerator attached", so it is what
+  deviceState.chestnutPresent uses. It only becomes true once something is
+  holding the gadget open and a host has configured us.
+  """
   if link_endpoint() is not None:
     return True
   return host_attached()
@@ -125,8 +148,9 @@ def accelerator_present() -> bool:
 
 
 def enabled() -> bool:
+  """Should we run the link at all? Absent param means "auto"."""
   v = _get(P_ENABLED)
-  return gadget_present() if v is None else bool(v)
+  return link_configured() if v is None else bool(v)
 
 
 # -- the model ------------------------------------------------------------

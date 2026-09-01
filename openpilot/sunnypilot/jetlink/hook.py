@@ -19,7 +19,12 @@ from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.jetlink import helpers, spec_cache
 
-CONNECT_ATTEMPTS = 10
+# modeld loads the big model in a thread with BIG_MODEL_TIMEOUT = 60 s, so we
+# have most of a minute to play with. Use it: the comma and the Jetson power up
+# on different rails, usually the comma first, and a Jetson still booting when
+# the car goes onroad would otherwise cost the big model for the whole drive -
+# openpilot's fallback to the small model is one-way.
+CONNECT_TIMEOUT = 45.0
 CONNECT_DELAY = 0.5
 
 
@@ -43,6 +48,42 @@ def available() -> bool:
     return False
 
 
+def _connect_patiently():
+  """Open the link, tolerating a busy gadget or a Jetson that is still booting."""
+  deadline = time.monotonic() + CONNECT_TIMEOUT
+  last = None
+  while True:
+    try:
+      client = helpers.connect()
+    except Exception as e:
+      client, last = None, e
+    if client is not None:
+      if helpers.host_attached():
+        return client
+      # We hold the gadget now, so the Jetson can see us the moment it is up.
+      # Keep it open and wait rather than churning the endpoints.
+      if _wait_for_host(deadline):
+        return client
+      client.close()
+      raise TimeoutError(f"no jetson attached within {CONNECT_TIMEOUT:.0f}s")
+    if time.monotonic() > deadline:
+      raise last if last is not None else TimeoutError("could not open the link")
+    cloudlog.warning("jetlink: link not ready (%s), retrying", last)
+    time.sleep(CONNECT_DELAY)
+
+
+def _wait_for_host(deadline: float) -> bool:
+  reported = False
+  while time.monotonic() < deadline:
+    if helpers.host_attached():
+      return True
+    if not reported:
+      cloudlog.warning("jetlink: gadget up, waiting for the jetson to enumerate")
+      reported = True
+    time.sleep(CONNECT_DELAY)
+  return False
+
+
 def make_model_state(cam_w: int, cam_h: int):
   """Build a ModelState backed by the Jetson, or raise so modeld falls back."""
   from openpilot.sunnypilot.jetlink.model_state import JetlinkModelState
@@ -51,20 +92,12 @@ def make_model_state(cam_w: int, cam_h: int):
   if spec is None:
     raise RuntimeError("no cached jetlink model spec; jetlinkd has not provisioned")
 
+  # Two things can keep us waiting here, and both resolve on their own:
   # manager stops jetlinkd and starts modeld in the same pass without waiting,
-  # so the FunctionFS endpoints can still be held for a moment. Retry rather
-  # than spend the whole drive on the small model over a race.
-  for attempt in range(CONNECT_ATTEMPTS):
-    try:
-      client = helpers.connect()
-      break
-    except Exception as e:
-      if attempt == CONNECT_ATTEMPTS - 1:
-        raise
-      cloudlog.warning("jetlink: link busy (%s), retrying", e)
-      time.sleep(CONNECT_DELAY)
+  # so the endpoints may still be held; and the Jetson may still be booting.
+  client = _connect_patiently()
 
-  hello = client.hello()
+  hello = client.hello(timeout=10.0)
   cloudlog.warning("jetlink: %s trt %s, engine %s",
                    hello.get('device'), hello.get('trt_version'), hello.get('engine_state'))
   # The engine is already built and cached; this only loads it, ~1 s.
