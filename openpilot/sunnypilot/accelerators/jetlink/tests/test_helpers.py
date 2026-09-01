@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from openpilot.sunnypilot.jetlink import helpers
+from openpilot.sunnypilot.accelerators.jetlink import helpers
 
 
 class TestGadgetStatus(unittest.TestCase):
@@ -81,7 +81,7 @@ class TestUnchunkedSuffix(unittest.TestCase):
 class TestActiveModelPath(unittest.TestCase):
   def setUp(self):
     self.root = tempfile.mkdtemp()
-    patcher = mock.patch('openpilot.sunnypilot.jetlink.helpers.Paths')
+    patcher = mock.patch('openpilot.sunnypilot.accelerators.jetlink.helpers.Paths')
     self.addCleanup(patcher.stop)
     patcher.start().model_root.return_value = self.root
 
@@ -203,7 +203,7 @@ class TestShippedModelPath(unittest.TestCase):
 
   def setUp(self):
     self.root = tempfile.mkdtemp()
-    paths = mock.patch('openpilot.sunnypilot.jetlink.helpers.Paths')
+    paths = mock.patch('openpilot.sunnypilot.accelerators.jetlink.helpers.Paths')
     self.addCleanup(paths.stop)
     paths.start().model_root.return_value = self.root
     chosen = mock.patch.object(helpers, 'selected_model', return_value=self.MODEL)

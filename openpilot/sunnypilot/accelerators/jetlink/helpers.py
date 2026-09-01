@@ -25,7 +25,6 @@ from openpilot.common.swaglog import cloudlog
 # otherwise every ignition cycle would rebuild a 160 s engine.
 P_ENABLED = "JetlinkEnabled"        # user toggle; absent means "auto"
 P_READY = "JetlinkEngineReady"      # sha256 of the model the Jetson has built
-P_PROGRESS = "JetlinkProgress"      # json {stage, frac, msg} while provisioning
 P_ENDPOINT = "JetlinkEndpoint"      # optional "host:port" to use TCP instead of USB
 
 UNCHUNKED_SUFFIX = ".jetlink-unchunked"
@@ -154,23 +153,6 @@ def connect(deadline: float | None = None):
   return JetlinkClient.open_ffs(str(FFS_MOUNT), gadget=str(GADGET_PATH), deadline=deadline)
 
 
-def accelerator_present() -> bool:
-  """Can this device run the large models at all?
-
-  True for chestnut hardware or an attached Jetson. This is the predicate for
-  model *availability*: which bundles to offer, which slot the model manager
-  writes, whether the UI shows big models. Deliberately distinct from
-  modeld.helpers.chestnut_present(), which answers a hardware question and
-  gates building a tinygrad pkl against an AMD GPU.
-  """
-  from openpilot.selfdrive.modeld.helpers import chestnut_present
-  try:
-    return chestnut_present() or gadget_present()
-  except Exception:
-    cloudlog.exception("jetlink: accelerator check failed")
-    return False
-
-
 def enabled() -> bool:
   """Should we run the link at all? Absent param means "auto"."""
   v = _get(P_ENABLED)
@@ -239,7 +221,7 @@ P_MODEL = "JetlinkModel"          # name of the chosen entry in models.json
 
 
 def repo_root() -> Path:
-  return Path(__file__).resolve().parents[3]
+  return Path(__file__).resolve().parents[4]
 
 
 def big_model_pointer() -> Path:
@@ -331,7 +313,7 @@ def fetch_shipped_model(progress=None, should_stop=None) -> Path | None:
   Costs 0.2-1.8 GB once per model, on a device that has an accelerator
   attached, rather than on every install. Returns None when nothing is chosen.
   """
-  from openpilot.sunnypilot.jetlink import lfs
+  from openpilot.sunnypilot.accelerators.jetlink import lfs
   model = selected_model()
   if model is None:
     return None
@@ -354,29 +336,3 @@ def set_engine_ready(sha256: str | None) -> None:
     params.put(P_READY, sha256)
   else:
     params.remove(P_READY)
-
-
-def report_progress(stage: str, frac: float, msg: str = '') -> None:
-  """Surface provisioning progress the same way a download is surfaced.
-
-  A JSON-typed param takes a dict, not a string: Params.put has no
-  (str, JSON) conversion and raises TypeError on one. Never let this throw
-  either way - it is called from an except handler in jetlinkd.
-  """
-  try:
-    Params().put(P_PROGRESS, {'stage': stage, 'frac': round(frac, 4), 'msg': msg})
-  except Exception:
-    cloudlog.exception("jetlink: could not report progress")
-
-
-def clear_progress() -> None:
-  Params().remove(P_PROGRESS)
-
-
-def read_progress() -> dict | None:
-  # A JSON-typed param comes back already decoded as a dict.
-  # Called from the UI's param refresh thread, so nothing may escape here -
-  # including UnknownKeyName on a build whose params_keys.h predates these keys.
-  value = _get(P_PROGRESS)
-  return value if isinstance(value, dict) else None
-

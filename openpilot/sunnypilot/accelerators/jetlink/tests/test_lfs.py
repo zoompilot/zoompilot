@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from openpilot.sunnypilot.jetlink import lfs
+from openpilot.sunnypilot.accelerators.jetlink import lfs
 
 BODY = b'onnx' * 4096
 OID = hashlib.sha256(BODY).hexdigest()

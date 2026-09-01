@@ -49,8 +49,8 @@ class JetlinkModelState(ModelStateBase):
     ModelStateBase.__init__(self)
     self.client = client
     self.spec = spec
-    # Not "chestnut" hardware, but chestnut semantics: this is the big model,
-    # and modelV2.big / the UI / the model manager all key off this flag.
+    # Not chestnut hardware, but the same role: modelV2.big, the UI and the
+    # model manager all key off this flag.
     self.chestnut = True
 
     devices = get_tg_input_devices(PROCESS_NAME, chestnut=False)
@@ -92,10 +92,6 @@ class JetlinkModelState(ModelStateBase):
     self._blob_cache: dict[tuple[str, int], Tensor] = {}
     self._need_reset = True
     self._frame_id = 0
-
-  def make_chestnut_state(self, pm):
-    from openpilot.sunnypilot.jetlink.state import JetlinkChestnutState
-    return JetlinkChestnutState(pm, self.client)
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
     return {k: model_outputs[np.newaxis, v] for k, v in output_slices.items()}

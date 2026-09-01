@@ -31,7 +31,8 @@ import time
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
 
-from openpilot.sunnypilot.jetlink import helpers, spec_cache
+from openpilot.sunnypilot import accelerators
+from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache
 
 POLL_HZ = 2.0
 RETRY_BACKOFF = 30.0      # after a failed provision
@@ -90,12 +91,12 @@ class Jetlinkd:
       return None
     try:
       path = helpers.fetch_shipped_model(
-        progress=lambda frac: helpers.report_progress('download', frac, 'downloading the large model'),
+        progress=lambda frac: accelerators.report_progress('download', frac, 'downloading the large model'),
         should_stop=lambda: self.stop,
       )
     except Exception:
       cloudlog.exception("jetlink: could not fetch the large model")
-      helpers.report_progress('failed', 1.0, 'could not download the large model')
+      accelerators.report_progress('failed', 1.0, 'could not download the large model')
       # One attempt per run. Retrying a gigabyte on a loop would be worse than
       # staying on the small model until the next boot.
       self.fetch_failed = True
@@ -110,7 +111,7 @@ class Jetlinkd:
     if model_path is None:
       # Nothing selected, or still downloading. Not an error.
       helpers.set_engine_ready(None)
-      helpers.clear_progress()
+      accelerators.clear_progress()
       return False
 
     # Steady state must not touch the model file: hashing 766 MB takes longer
@@ -132,16 +133,16 @@ class Jetlinkd:
 
     cloudlog.warning("jetlink: provisioning %s (%d MB, sha %s)",
                      model_path.name, spec.nbytes >> 20, spec.sha256[:16])
-    helpers.report_progress('connect', 0.0, 'talking to the jetson')
+    accelerators.report_progress('connect', 0.0, 'talking to the jetson')
 
     hello = self.client.hello(timeout=10.0)
     cloudlog.warning("jetlink: server %s trt %s", hello.get('device'), hello.get('trt_version'))
-    self.client.ensure_engine(model_path, spec=spec, progress=helpers.report_progress,
+    self.client.ensure_engine(model_path, spec=spec, progress=accelerators.report_progress,
                               build_timeout=1800.0)
 
     spec_cache.store(spec, model_path)
     helpers.set_engine_ready(spec.sha256)
-    helpers.report_progress('ready', 1.0, 'engine ready')
+    accelerators.report_progress('ready', 1.0, 'engine ready')
     helpers.cleanup_unchunked(keep=model_path)
     cloudlog.warning("jetlink: engine ready for %s", spec.sha256[:16])
     return True
@@ -178,7 +179,7 @@ class Jetlinkd:
       self.next_attempt = 0.0
     except Exception:
       cloudlog.exception("jetlink: provisioning failed")
-      helpers.report_progress('failed', 1.0, 'see the log')
+      accelerators.report_progress('failed', 1.0, 'see the log')
       self.ready = False
       # Drop the link too: a half-open session is worse than a fresh one.
       self.close_link()

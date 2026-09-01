@@ -22,7 +22,7 @@ from pathlib import Path
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 
-from openpilot.sunnypilot.jetlink import helpers
+from openpilot.sunnypilot.accelerators.jetlink import helpers
 
 PARAM = "JetlinkSpec"
 

@@ -22,6 +22,7 @@ from openpilot.sunnypilot.accelerators.base import Accelerator, Daemon
 # hardware first, so a chestnut with a Jetson also attached still uses the board.
 _BACKENDS = (
   "openpilot.sunnypilot.accelerators.chestnut:ChestnutAccelerator",
+  "openpilot.sunnypilot.accelerators.jetlink.backend:JetlinkAccelerator",
 )
 
 # Written by whichever backend is provisioning, read by the UI. A param rather

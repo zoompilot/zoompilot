@@ -6,10 +6,10 @@ See the LICENSE.md file in the root directory for more details.
 
 Publishes the Jetson's health as `chestnutState`.
 
-Reusing chestnut's message rather than adding one keeps the cereal schema, the
-sidebar, the offroad alerts and the logging untouched, and makes the Jetson
-read to the rest of openpilot as an attached accelerator - which is the point.
-The field mapping is documented in jetlink/server/telemetry.py.
+Reusing the message rather than adding one keeps the cereal schema, the
+sidebar, the offroad alerts and the logging untouched: on the wire "chestnut"
+means the active accelerator. The field mapping is documented in
+jetlink/server/telemetry.py.
 
 The values arrive piggybacked on the previous inference response, so publishing
 costs no extra round trip and cannot delay a frame.
@@ -42,11 +42,14 @@ INT_FIELDS = {
 }
 
 
-class JetlinkChestnutState:
+class JetlinkHealth:
   def __init__(self, pm: messaging.PubMaster, client):
     self.pm = pm
     self.client = client
-    self.big = True   # modeld clears this when it falls back to the small model
+    # False also when there is no client at all: the large model failed to load
+    # and modeld is on the small one, so there is no link to report on. modeld
+    # clears this too if the large model dies mid-drive.
+    self.big = client is not None
 
   def send(self) -> None:
     msg = messaging.new_message('chestnutState')
