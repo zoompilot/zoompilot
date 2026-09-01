@@ -9,6 +9,7 @@ from openpilot.common.hardware import PC, COMMA_HARDWARE
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
 from openpilot.common.hardware.hw import Paths
 
+from openpilot.sunnypilot import accelerators
 from openpilot.sunnypilot.mapd.mapd_manager import MAPD_PATH
 
 from openpilot.sunnypilot.models.helpers import get_active_model_runner
@@ -90,11 +91,6 @@ def use_sunnylink_uploader_shim(started, params, CP: car.CarParams) -> bool:
 def is_tinygrad_model(started, params, CP: car.CarParams) -> bool:
   """Check if the active model runner is tinygrad."""
   return bool(get_active_model_runner(params, not started) == custom.ModelManagerSP.Runner.tinygrad)
-
-def jetlink_enabled(started, params, CP: car.CarParams) -> bool:
-  from openpilot.sunnypilot.jetlink.helpers import enabled
-  return enabled()
-
 
 def is_stock_model(started, params, CP: car.CarParams) -> bool:
   """Check if the active model runner is stock."""
@@ -178,7 +174,9 @@ procs = [
 procs += [
   # Models
   PythonProcess("models_manager", "openpilot.sunnypilot.models.manager", only_offroad),
-  PythonProcess("jetlinkd", "openpilot.sunnypilot.jetlink.jetlinkd", and_(only_offroad, jetlink_enabled)),
+  # Accelerator backends declare the offroad daemons they need; manager owns
+  # the onroad gating, so a backend never imports this module back.
+  *[PythonProcess(d.name, d.module, and_(only_offroad, d.should_run)) for d in accelerators.daemons()],
   NativeProcess("modeld_tinygrad", "openpilot/sunnypilot/modeld_v2", ["./modeld"], and_(only_onroad, is_tinygrad_model)),
 
   # Backup

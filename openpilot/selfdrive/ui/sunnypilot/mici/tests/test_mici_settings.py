@@ -503,25 +503,24 @@ class TestLayoutsSurviveRender:
     render(MiciHomeLayoutSP())
 
 
-class TestJetlinkProgressRenders:
-  """The models panel grew a jetlink line that no test had ever drawn.
+class TestAcceleratorProgressRenders:
+  """The models panel's provisioning line.
 
-  Provisioning an attached Jetson is an upload plus a TensorRT build, minutes
-  long, and this is the only place a user sees it happening. The layout sweep
-  above runs with no progress set, so every one of these branches was dead code
-  as far as the suite was concerned.
+  Provisioning an accelerator is an upload plus a build, minutes long, and this
+  is the only place a user sees it happening. The layout sweep above runs with
+  no progress set, so none of these branches is covered by it.
   """
 
   STAGES = ['download', 'connect', 'upload', 'build', 'failed']
 
   def _info(self, stage, frac):
     from openpilot.selfdrive.ui.ui_state import ui_state
-    ui_state.jetlink_progress = {'stage': stage, 'frac': frac, 'msg': ''}
+    ui_state.accelerator_progress = {'stage': stage, 'frac': frac, 'msg': ''}
     try:
       from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
       return _model_info()
     finally:
-      ui_state.jetlink_progress = None
+      ui_state.accelerator_progress = None
 
   @pytest.mark.parametrize("stage", STAGES)
   def test_every_stage_gives_a_line(self, params, stage):
@@ -542,7 +541,7 @@ class TestJetlinkProgressRenders:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts import models as models_layout
     ready = self._info('ready', 1.0)
     from openpilot.selfdrive.ui.ui_state import ui_state
-    ui_state.jetlink_progress = None
+    ui_state.accelerator_progress = None
     assert ready == models_layout._model_info()
 
   @pytest.mark.parametrize("stage", STAGES)
@@ -550,7 +549,7 @@ class TestJetlinkProgressRenders:
     from openpilot.selfdrive.ui.ui_state import ui_state
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
 
-    ui_state.jetlink_progress = {'stage': stage, 'frac': 0.5, 'msg': ''}
+    ui_state.accelerator_progress = {'stage': stage, 'frac': 0.5, 'msg': ''}
     try:
       layout = ModelsLayoutMici()
       render(layout)
@@ -559,4 +558,4 @@ class TestJetlinkProgressRenders:
         render(item)
       render(layout.current_model_info)
     finally:
-      ui_state.jetlink_progress = None
+      ui_state.accelerator_progress = None

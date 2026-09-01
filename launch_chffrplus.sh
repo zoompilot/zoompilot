@@ -79,37 +79,8 @@ function launch {
   ln -sfn rednose_repo/rednose rednose
   ln -sfn teleoprtc_repo/teleoprtc teleoprtc
   ln -sfn tinygrad_repo/tinygrad tinygrad
-  # jetlink: a submodule checkout if there is one, otherwise the out-of-tree
-  # copy. It has to be able to live outside the repo until it is a real
-  # submodule, because the updater's reset --hard + clean deletes untracked
-  # files inside the repo, which would take the package with it.
-  JETLINK_REPO=""
-  if [ -d jetlink_repo ]; then
-    JETLINK_REPO=jetlink_repo
-  elif [ -d /data/jetlink_repo ]; then
-    JETLINK_REPO=/data/jetlink_repo
-  fi
-  if [ -n "$JETLINK_REPO" ]; then
-    ln -sfn "$JETLINK_REPO/jetlink" jetlink
-    # The comma is the USB gadget, so its endpoints have to exist before
-    # jetlinkd or modeld can open them. Boot-time hardware init, like the rest
-    # of this block, not something a daemon should shell out to do.
-    if [ -f /AGNOS ]; then
-      # This script runs as `comma`, and configuring a USB gadget needs root.
-      # Do not silence the failure: a swallowed error here looks exactly like a
-      # working gadget until modeld cannot open an endpoint. setup_gadget.sh
-      # also leaves the reason in /dev/shm/jetlink-gadget, which is what the UI
-      # reads to tell the user why the Jetson is unavailable.
-      sudo -n bash "$JETLINK_REPO/scripts/setup_gadget.sh" >/dev/null ||
-        echo "jetlink: USB gadget setup failed" >&2
-    fi
-  elif [ -f /AGNOS ]; then
-    # No package at all - most likely a fresh switch to this branch where the
-    # submodule was never fetched. Say so where the UI can find it rather than
-    # leaving the link mysteriously absent.
-    echo "error: the jetlink package is not installed; expected jetlink_repo/ or /data/jetlink_repo" \
-      > /dev/shm/jetlink-gadget 2>/dev/null || true
-  fi
+  # accelerator backends: USB gadgets, symlinks, anything needing root at boot
+  ./openpilot/sunnypilot/accelerators/setup.sh
 
   # hardware specific init
   if [ -f /AGNOS ]; then

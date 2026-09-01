@@ -25,6 +25,7 @@ from openpilot.common.hardware.usb import CHESTNUT_FW_VERSION, CHESTNUT_ROM_USB_
 from openpilot.common.linux import LinuxSystemStats
 from openpilot.system.loggerd.config import get_available_percent
 from openpilot.common.swaglog import cloudlog
+from openpilot.sunnypilot import accelerators
 from openpilot.sunnypilot.system.statsd import statlog
 from openpilot.system.hardware.power_monitoring import PowerMonitoring
 from openpilot.sunnypilot.system.hardware.hardwared_ext import HardwaredExt
@@ -313,13 +314,11 @@ def hardware_thread(end_event, hw_queue) -> None:
     set_offroad_alert_if_changed("Offroad_ChestnutBranch", chestnut_needs_switch,
                                  extra_text=chestnut_target if chestnut_needs_switch else None)
 
-    # jetlink sets up its USB gadget at boot, as root, from launch_chffrplus.sh.
-    # A kernel without the gadget drivers, or a missing package, would otherwise
-    # leave the feature silently absent for a user who has switched it on.
-    from openpilot.sunnypilot.jetlink.helpers import gadget_alert
-    jetlink_error = gadget_alert()
-    set_offroad_alert_if_changed("Offroad_JetlinkGadget", jetlink_error is not None,
-                                 extra_text=jetlink_error)
+    # An accelerator the user asked for that cannot come up - a missing package,
+    # a kernel without the USB gadget drivers - is otherwise silently absent.
+    accelerator_error = accelerators.unavailable_reason()
+    set_offroad_alert_if_changed("Offroad_AcceleratorUnavailable", accelerator_error is not None,
+                                 extra_text=accelerator_error)
 
     # this subset is only used for offroad
     temp_sources = [

@@ -38,13 +38,12 @@ def big_model_state() -> str | None:
 
 
 def big_model_progress() -> tuple[str, float] | None:
-  """(stage, 0..1) while an attached Jetson is being provisioned, else None.
+  """(stage, 0..1) while an accelerator is being provisioned, else None.
 
-  Provisioning is upload + a TensorRT build, so it reads to the user exactly
-  like the on-device compilation big_model_state() reports. Lives here, next
-  to that, so every layout gets it rather than only the one that asked.
+  Reads to the user exactly like the on-device compilation big_model_state()
+  reports. Lives next to it so every layout gets it, not only the one that asked.
   """
-  progress = getattr(ui_state, 'jetlink_progress', None)
+  progress = getattr(ui_state, 'accelerator_progress', None)
   if not progress:
     return None
   stage = str(progress.get('stage', ''))

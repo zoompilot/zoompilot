@@ -31,11 +31,11 @@ def _model_info() -> tuple[str, str, str]:
     big = get_selected_bundle(ui_state.params, "chestnut")
     carry_display = big.displayName if big else default_model_name("chestnut")
   active_text = (carry_display or active_name).lower()
-  jetlink = big_model_progress()
-  if jetlink is not None:
-    stage, frac = jetlink
+  provisioning = big_model_progress()
+  if provisioning is not None:
+    stage, frac = provisioning
     if stage == 'failed':
-      return active_text, tr("big model"), tr("jetson failed")
+      return active_text, tr("big model"), tr("unavailable")
     return active_text, tr("big model"), f"{tr(stage)} {frac * 100:.0f}%"
   if state == 'failed':
     return active_text, tr("big model"), tr("unavailable")

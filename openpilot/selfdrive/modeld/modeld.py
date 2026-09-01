@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 from collections.abc import Callable
-import ctypes
-from functools import cached_property
 import os
 os.environ['GMMU'] = '0' # for chestnut fast loading, noop for qcom
 from tinygrad.tensor import Tensor
-from tinygrad.device import Device
-import struct
 import threading
 import time
 import numpy as np
@@ -32,9 +28,9 @@ from openpilot.selfdrive.modeld.compile_modeld import make_input_queues, WARP_IN
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_driving_model_data, fill_pose_msg, PublishState
 from openpilot.common.file_chunker import open_file_chunked
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
-from openpilot.selfdrive.modeld.helpers import chestnut_present, chestnut_compiled, modeld_pkl_path, get_tg_input_devices, load_oob
+from openpilot.selfdrive.modeld.helpers import modeld_pkl_path, get_tg_input_devices, load_oob
 
-from openpilot.sunnypilot.jetlink import hook as jetlink
+from openpilot.sunnypilot import accelerators
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeController
@@ -74,63 +70,6 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
   return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
                                 desiredAcceleration=float(desired_accel),
                                 shouldStop=bool(stop))
-
-
-class ChestnutState:
-  # only modeld can access chestnut
-  def __init__(self, pm: PubMaster, big: bool):
-    self.pm = pm
-    self.big = big
-    self.valid = True
-    self.sends = 0
-    self.metrics = {}
-
-  @cached_property
-  def power_limit(self) -> int:
-    smu = Device["AMD"].iface.dev_impl.smu
-    return smu._send_msg(smu.smu_mod.PPSMC_MSG_GetPptLimit, 0, read_back_arg=True, timeout=100)
-
-  def send(self) -> None:
-    msg = messaging.new_message('chestnutState')
-    state = msg.chestnutState
-    self.sends += 1
-    if self.big and "AMD" in Device._opened_devices and self.sends % 100 == 1:
-      try:
-        smu = Device["AMD"].iface.dev_impl.smu
-        metrics_t = smu.smu_mod.SmuMetricsExternal_t
-        smu._send_msg(smu.smu_mod.PPSMC_MSG_TransferTableSmu2Dram, smu.smu_mod.TABLE_SMU_METRICS, timeout=100)
-        metrics_buf = bytearray(smu.adev.vram.view(smu.driver_table_paddr, ctypes.sizeof(metrics_t))[:])
-        metrics = metrics_t.from_buffer(metrics_buf).SmuMetrics
-        self.metrics = {'tempC': metrics.AvgTemperature[smu.smu_mod.TEMP_HOTSPOT],
-                        'memoryTempC': metrics.AvgTemperature[smu.smu_mod.TEMP_MEM],
-                        'powerDrawW': metrics.AverageSocketPower,
-                        'powerLimitW': self.power_limit,
-                        'gpuUsagePercent': metrics.AverageGfxActivity,
-                        'gpuClockMhz': metrics.AverageGfxclkFrequencyPostDs,
-                        'fanSpeedRpm': metrics.AvgFanRpm}
-        self.valid = True
-      except Exception:
-        if self.valid:
-          cloudlog.exception("chestnut state read failed")
-        self.valid = False
-        self.metrics.clear()
-    if self.big:
-      for k, v in self.metrics.items():
-        setattr(state, k, v)
-
-    asm_valid = False
-    if "AMD" in Device._opened_devices:
-      try:
-        # ASM runs on USB-C power, these still read without a gpu
-        asm = Device["AMD"].iface.pci_dev.usb
-        state.pcieLtssm = asm.read(0xB450, 1)[0]
-        state.supplyVoltage, state.supplyCurrent = struct.unpack('<Hh', bytes(asm.usb.control_read(0xC0, 5))[:4])
-        asm_valid = True
-      except Exception:
-        pass
-
-    msg.valid = asm_valid and (not self.big or self.valid)
-    self.pm.send('chestnutState', msg)
 
 
 class FrameMeta:
@@ -223,12 +162,12 @@ class ModelState(ModelStateBase):
 def main(demo=False):
   cloudlog.warning("modeld init")
 
-  # A provisioned jetlink Jetson stands in for chestnut: same big model, same
-  # params, same chestnutState. See sunnypilot/jetlink/.
-  JETLINK = jetlink.available()
-  CHESTNUT = JETLINK or (chestnut_present() and chestnut_compiled())
-  if CHESTNUT and not JETLINK:
-    os.environ['HCQDEV_WAIT_TIMEOUT_MS'] = '3000'
+  # Whatever runs the large model here: comma's chestnut board, an attached
+  # Jetson, nothing. See sunnypilot/accelerators/.
+  accel = accelerators.active()
+  CHESTNUT = accel is not None
+  if CHESTNUT:
+    accel.prepare()
   params = Params()
   params.put_bool("ChestnutLoading", CHESTNUT)
   params.remove("ChestnutActive")
@@ -266,8 +205,7 @@ def main(demo=False):
     def load_big():
       nonlocal big_model
       try:
-        m = (jetlink.make_model_state(vipc_client_main.width, vipc_client_main.height) if JETLINK
-             else ModelState(vipc_client_main.width, vipc_client_main.height, True))
+        m = accel.make_model_state(vipc_client_main.width, vipc_client_main.height)
         m.warmup()
         big_model = m
       except Exception:
@@ -292,7 +230,7 @@ def main(demo=False):
 
   publish_state = PublishState()
   params = Params()
-  chestnut_state = model.make_chestnut_state(pm) if CHESTNUT else None
+  chestnut_state = accel.make_health_publisher(pm, model) if CHESTNUT else None
 
   # setup filter to track dropped frames
   frame_dropped_filter = FirstOrderFilter(0., 10., 1. / ModelConstants.MODEL_RUN_FREQ)

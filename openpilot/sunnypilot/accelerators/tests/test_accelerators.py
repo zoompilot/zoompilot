@@ -1,0 +1,206 @@
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+The guarantee core openpilot relies on: no backend can take down its caller.
+
+modeld, manager, hardwared and the UI all reach hardware through this module,
+so a backend that is absent, half-installed or simply broken must cost the
+large model and nothing else. Fakes rather than hardware, so this runs anywhere.
+"""
+import sys
+import types
+import unittest
+from unittest import mock
+
+from openpilot.sunnypilot import accelerators
+from openpilot.sunnypilot.accelerators.base import Daemon
+
+
+class FakeAccelerator:
+  def __init__(self, name, present=False, ready=False, reason=None, daemon=None, raises=()):
+    self.name = name
+    self._present, self._ready, self._reason, self._daemon = present, ready, reason, daemon
+    self._raises = raises
+
+  def _check(self, question):
+    if question in self._raises:
+      raise RuntimeError(f"{self.name}.{question} exploded")
+
+  def present(self):
+    self._check('present')
+    return self._present
+
+  def ready(self):
+    self._check('ready')
+    return self._ready
+
+  def unavailable_reason(self):
+    self._check('unavailable_reason')
+    return self._reason
+
+  def daemon(self):
+    self._check('daemon')
+    return self._daemon
+
+
+class AcceleratorTest(unittest.TestCase):
+  def install(self, *backends):
+    patcher = mock.patch.object(accelerators, '_cache', list(backends))
+    patcher.start()
+    self.addCleanup(patcher.stop)
+
+
+class TestDiscovery(AcceleratorTest):
+  def setUp(self):
+    patcher = mock.patch.object(accelerators, '_cache', None)
+    patcher.start()
+    self.addCleanup(patcher.stop)
+
+  def _module(self, name, attr, value):
+    mod = types.ModuleType(name)
+    setattr(mod, attr, value)
+    sys.modules[name] = mod
+    self.addCleanup(sys.modules.pop, name, None)
+
+  def test_a_backend_this_fork_does_not_ship_is_skipped(self):
+    with mock.patch.object(accelerators, '_BACKENDS', ("nonexistent.module:Thing",)):
+      self.assertEqual(accelerators.backends(), [])
+
+  def test_a_backend_that_fails_to_construct_does_not_propagate(self):
+    def boom():
+      raise RuntimeError("no driver")
+    self._module('fake_broken_accel', 'Boom', boom)
+    with mock.patch.object(accelerators, '_BACKENDS', ("fake_broken_accel:Boom",)):
+      self.assertEqual(accelerators.backends(), [])
+
+  def test_a_working_backend_is_constructed(self):
+    self._module('fake_good_accel', 'Good', lambda: FakeAccelerator('good'))
+    with mock.patch.object(accelerators, '_BACKENDS', ("fake_good_accel:Good",)):
+      self.assertEqual([b.name for b in accelerators.backends()], ['good'])
+
+  def test_one_broken_backend_does_not_hide_the_others(self):
+    self._module('fake_good_accel', 'Good', lambda: FakeAccelerator('good'))
+    with mock.patch.object(accelerators, '_BACKENDS',
+                           ("nonexistent.module:Thing", "fake_good_accel:Good")):
+      self.assertEqual([b.name for b in accelerators.backends()], ['good'])
+
+  def test_the_shipped_backends_all_load(self):
+    # Catches a typo in _BACKENDS, which discovery would otherwise swallow.
+    for spec in accelerators._BACKENDS:
+      module, _, cls = spec.partition(':')
+      self.assertTrue(hasattr(__import__(module, fromlist=[cls]), cls), spec)
+
+
+class TestPresent(AcceleratorTest):
+  def test_nothing_attached(self):
+    self.install(FakeAccelerator('a'), FakeAccelerator('b'))
+    self.assertFalse(accelerators.present())
+
+  def test_any_backend_counts(self):
+    self.install(FakeAccelerator('a'), FakeAccelerator('b', present=True))
+    self.assertTrue(accelerators.present())
+
+  def test_a_raising_backend_does_not_hide_an_attached_one(self):
+    self.install(FakeAccelerator('a', raises=('present',)),
+                 FakeAccelerator('b', present=True))
+    self.assertTrue(accelerators.present())
+
+  def test_a_raising_backend_answers_no_rather_than_raising(self):
+    self.install(FakeAccelerator('a', raises=('present',)))
+    self.assertFalse(accelerators.present())
+
+
+class TestActive(AcceleratorTest):
+  def test_none_ready_is_the_small_model(self):
+    self.install(FakeAccelerator('a', present=True), FakeAccelerator('b'))
+    self.assertIsNone(accelerators.active())
+
+  def test_first_ready_wins(self):
+    self.install(FakeAccelerator('a', ready=True), FakeAccelerator('b', ready=True))
+    self.assertEqual(accelerators.active().name, 'a')
+
+  def test_order_is_priority_not_readiness_order(self):
+    # Local hardware is listed first so a board beats a link when both are up.
+    self.install(FakeAccelerator('a'), FakeAccelerator('b', ready=True))
+    self.assertEqual(accelerators.active().name, 'b')
+
+  def test_a_raising_backend_is_skipped_not_selected(self):
+    self.install(FakeAccelerator('a', raises=('ready',)), FakeAccelerator('b', ready=True))
+    self.assertEqual(accelerators.active().name, 'b')
+
+
+class TestUnavailableReason(AcceleratorTest):
+  def test_silence_when_there_is_nothing_to_say(self):
+    self.install(FakeAccelerator('a'), FakeAccelerator('b'))
+    self.assertIsNone(accelerators.unavailable_reason())
+
+  def test_the_first_complaint_is_reported(self):
+    self.install(FakeAccelerator('a'), FakeAccelerator('b', reason='no gadget'),
+                 FakeAccelerator('c', reason='also broken'))
+    self.assertEqual(accelerators.unavailable_reason(), 'no gadget')
+
+  def test_a_raising_backend_does_not_break_the_alert_pass(self):
+    self.install(FakeAccelerator('a', raises=('unavailable_reason',)),
+                 FakeAccelerator('b', reason='no gadget'))
+    self.assertEqual(accelerators.unavailable_reason(), 'no gadget')
+
+
+class TestDaemons(AcceleratorTest):
+  def test_backends_without_a_daemon_contribute_nothing(self):
+    self.install(FakeAccelerator('a'), FakeAccelerator('b'))
+    self.assertEqual(accelerators.daemons(), [])
+
+  def test_a_declared_daemon_is_collected(self):
+    d = Daemon('somed', 'some.module', lambda *a: True)
+    self.install(FakeAccelerator('a'), FakeAccelerator('b', daemon=d))
+    self.assertEqual(accelerators.daemons(), [d])
+
+  def test_a_raising_backend_does_not_stop_manager_starting(self):
+    d = Daemon('somed', 'some.module', lambda *a: True)
+    self.install(FakeAccelerator('a', raises=('daemon',)), FakeAccelerator('b', daemon=d))
+    self.assertEqual(accelerators.daemons(), [d])
+
+  def test_declared_daemons_are_importable(self):
+    # A daemon manager cannot import would fail at the onroad transition, long
+    # after anything would notice here.
+    for d in accelerators.daemons():
+      __import__(d.module)
+
+
+class TestProgress(unittest.TestCase):
+  def test_a_missing_param_is_no_progress(self):
+    with mock.patch.object(accelerators, 'Params') as params:
+      params.return_value.get.return_value = None
+      self.assertIsNone(accelerators.progress())
+
+  def test_a_dict_comes_through(self):
+    payload = {'stage': 'build', 'frac': 0.5, 'msg': ''}
+    with mock.patch.object(accelerators, 'Params') as params:
+      params.return_value.get.return_value = payload
+      self.assertEqual(accelerators.progress(), payload)
+
+  def test_a_non_dict_is_ignored(self):
+    with mock.patch.object(accelerators, 'Params') as params:
+      params.return_value.get.return_value = "build 50%"
+      self.assertIsNone(accelerators.progress())
+
+  def test_an_unknown_key_does_not_take_down_the_ui(self):
+    # A params library older than this key raises rather than returning None.
+    with mock.patch.object(accelerators, 'Params') as params:
+      params.return_value.get.side_effect = RuntimeError("UnknownKeyName")
+      self.assertIsNone(accelerators.progress())
+
+  def test_reporting_never_raises(self):
+    # Called from except handlers in the daemons.
+    with mock.patch.object(accelerators, 'Params') as params:
+      params.return_value.put.side_effect = RuntimeError("params gone")
+      accelerators.report_progress('build', 0.5)
+      params.return_value.remove.side_effect = RuntimeError("params gone")
+      accelerators.clear_progress()
+
+
+if __name__ == "__main__":
+  unittest.main()
