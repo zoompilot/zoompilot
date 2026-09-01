@@ -13,6 +13,7 @@ watching it download works exactly as it does with a real chestnut.
 """
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -233,6 +234,8 @@ def active_model_path() -> Path | None:
 
 
 BIG_MODEL_NAME = 'big_driving_supercombo.onnx'
+MODEL_INDEX = Path(__file__).with_name('models.json')
+P_MODEL = "JetlinkModel"          # name of the chosen entry in models.json
 
 
 def repo_root() -> Path:
@@ -244,41 +247,54 @@ def big_model_pointer() -> Path:
   return MODELS_DIR / BIG_MODEL_NAME
 
 
-def shipped_model_path() -> Path | None:
-  """The large model openpilot pins, wherever it actually lives.
+def model_index() -> list[dict]:
+  """The large models we know a Jetson can run.
 
-  The pointer file is the single source of truth for which model this branch
-  means, so a file sitting in the model root only counts when it is the object
-  that pointer names. Accepting any big file under that name would let a model
-  fetched for one branch answer for another, and the two are not the same
-  network: sunnypilot substitutes its own big model for comma's.
-
-  When .lfsconfig has not excluded the object, the worktree holds the real
-  thing and there is nothing to fetch.
+  Hand-maintained from comma's history rather than discovered, because there is
+  nothing to discover from: openpilot overwrites one file, so the older models
+  exist only as git-lfs objects that no manifest lists. See models.json.
   """
-  from openpilot.sunnypilot.jetlink import lfs
-  pointer = big_model_pointer()
-  parsed = lfs.parse_pointer(pointer)
-  if parsed is None:
-    if pointer.is_file() and pointer.stat().st_size > 1_000_000:
-      return pointer
+  try:
+    with open(MODEL_INDEX) as f:
+      return json.load(f).get('models', [])
+  except Exception:
+    cloudlog.exception("jetlink: could not read the model index")
+    return []
+
+
+def selected_model() -> dict | None:
+  """The entry the user picked, or the default.
+
+  An unknown name falls back rather than leaving the device with no model at
+  all: the index can shrink under a param that outlived it.
+  """
+  models = model_index()
+  if not models:
     return None
-  _, size = parsed
-  fetched = Path(Paths.model_root()) / BIG_MODEL_NAME
-  if fetched.is_file() and fetched.stat().st_size == size:
-    return fetched
-  return None
+  wanted = _get(P_MODEL)
+  if wanted:
+    for m in models:
+      if m.get('name') == wanted:
+        return m
+    cloudlog.warning("jetlink: no model called %r in the index, using the default", wanted)
+  return next((m for m in models if m.get('default')), models[0])
 
 
-def fetch_shipped_model(progress=None, should_stop=None) -> Path | None:
-  """Download the pinned large model if it is only a pointer here.
+def shipped_model_path() -> Path | None:
+  """The chosen large model, if it has been fetched.
 
-  Costs ~0.8-1.8 GB once, on a device that has an accelerator attached, rather
-  than on every install. Returns None when there is nothing to fetch.
+  Keyed on the index entry rather than on whatever the worktree pins: the
+  in-tree pointer moves with upstream syncs and is also what a chestnut device
+  compiles, so tying the Jetson's model to it would couple two unrelated
+  decisions. Size is the cheap check that the file on disk is the one we mean.
   """
-  from openpilot.sunnypilot.jetlink import lfs
-  return lfs.fetch(big_model_pointer(), Path(Paths.model_root()) / BIG_MODEL_NAME,
-                   repo_root(), progress=progress, should_stop=should_stop)
+  model = selected_model()
+  if model is None:
+    return None
+  path = Path(Paths.model_root()) / model_file_name(model)
+  if path.is_file() and path.stat().st_size == model['size']:
+    return path
+  return None
 
 
 def _materialise(path: Path) -> Path | None:
@@ -302,6 +318,26 @@ def cleanup_unchunked(keep: Path | None = None) -> None:
   for p in root.glob(f'*{UNCHUNKED_SUFFIX}'):
     if keep is None or p != keep:
       p.unlink(missing_ok=True)
+
+
+def model_file_name(model: dict) -> str:
+  """One file per model, so switching back does not re-download."""
+  return f"{model['oid'][:16]}.onnx"
+
+
+def fetch_shipped_model(progress=None, should_stop=None) -> Path | None:
+  """Download the chosen large model if it is not here yet.
+
+  Costs 0.2-1.8 GB once per model, on a device that has an accelerator
+  attached, rather than on every install. Returns None when nothing is chosen.
+  """
+  from openpilot.sunnypilot.jetlink import lfs
+  model = selected_model()
+  if model is None:
+    return None
+  dest = Path(Paths.model_root()) / model_file_name(model)
+  return lfs.fetch_oid(model['oid'], model['size'], dest, repo_root(),
+                       progress=progress, should_stop=should_stop)
 
 
 # -- readiness ------------------------------------------------------------

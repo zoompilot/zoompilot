@@ -139,46 +139,94 @@ if __name__ == '__main__':
   unittest.main()
 
 
+class TestModelIndex(unittest.TestCase):
+  """comma overwrites one ONNX file, so every earlier big model exists only as a
+  git-lfs object no manifest lists. The index is how we keep hold of them."""
+
+  def test_the_shipped_index_parses(self):
+    models = helpers.model_index()
+    assert models, "no models in models.json"
+
+  def test_every_entry_is_complete(self):
+    for m in helpers.model_index():
+      for field in ('name', 'oid', 'size', 'commit', 'date'):
+        assert m.get(field), f"{m.get('name')!r} is missing {field}"
+      assert len(m['oid']) == 64, f"{m['name']}: oid is not a sha256"
+      assert m['size'] > 1_000_000, f"{m['name']}: implausible size"
+
+  def test_names_and_oids_are_unique(self):
+    models = helpers.model_index()
+    assert len({m['name'] for m in models}) == len(models)
+    assert len({m['oid'] for m in models}) == len(models)
+
+  def test_exactly_one_default(self):
+    # Two defaults, or none, and selected_model() silently picks by list order.
+    assert sum(1 for m in helpers.model_index() if m.get('default')) == 1
+
+  def test_file_names_do_not_collide(self):
+    names = [helpers.model_file_name(m) for m in helpers.model_index()]
+    assert len(set(names)) == len(names)
+
+
+class TestSelectedModel(unittest.TestCase):
+  INDEX = [
+    {'name': 'Alpha', 'oid': 'a' * 64, 'size': 10, 'commit': 'c1', 'date': 'd'},
+    {'name': 'Beta', 'oid': 'b' * 64, 'size': 20, 'commit': 'c2', 'date': 'd', 'default': True},
+  ]
+
+  def select_with(self, param):
+    with mock.patch.object(helpers, 'model_index', return_value=self.INDEX), \
+         mock.patch.object(helpers, '_get', return_value=param):
+      return helpers.selected_model()
+
+  def test_unset_takes_the_default(self):
+    assert self.select_with(None)['name'] == 'Beta'
+
+  def test_a_name_selects_it(self):
+    assert self.select_with('Alpha')['name'] == 'Alpha'
+
+  def test_an_unknown_name_falls_back(self):
+    # The index can shrink under a param that outlived it; leaving the device
+    # with no model at all would be worse than quietly using the default.
+    assert self.select_with('Gone')['name'] == 'Beta'
+
+  def test_an_empty_index_is_no_model(self):
+    with mock.patch.object(helpers, 'model_index', return_value=[]):
+      assert helpers.selected_model() is None
+
+
 class TestShippedModelPath(unittest.TestCase):
-  """The pointer decides which model this branch means. sunnypilot substitutes
-  its own big model for comma's, so a file of the wrong size under that name is
-  a model fetched for a different branch, not this one."""
+  """A file counts only when it is the model we mean, at the size we expect.
+  Models live one file per oid so switching back does not re-download."""
+
+  MODEL = {'name': 'Alpha', 'oid': 'a' * 64, 'size': 4096, 'commit': 'c', 'date': 'd'}
 
   def setUp(self):
     self.root = tempfile.mkdtemp()
-    self.tree = Path(tempfile.mkdtemp())
     paths = mock.patch('openpilot.sunnypilot.jetlink.helpers.Paths')
     self.addCleanup(paths.stop)
     paths.start().model_root.return_value = self.root
-    pointer = mock.patch.object(helpers, 'big_model_pointer', return_value=self.tree / 'big.onnx')
-    self.addCleanup(pointer.stop)
-    pointer.start()
-
-  def write_pointer(self, size: int) -> None:
-    (self.tree / 'big.onnx').write_text(
-      f"version https://git-lfs.github.com/spec/v1\noid sha256:{'a' * 64}\nsize {size}\n")
+    chosen = mock.patch.object(helpers, 'selected_model', return_value=self.MODEL)
+    self.addCleanup(chosen.stop)
+    chosen.start()
 
   def fetched(self, size: int) -> Path:
-    path = Path(self.root) / helpers.BIG_MODEL_NAME
+    path = Path(self.root) / helpers.model_file_name(self.MODEL)
     path.write_bytes(b'\0' * size)
     return path
 
   def test_nothing_fetched_yet(self):
-    self.write_pointer(4096)
     assert helpers.shipped_model_path() is None
 
-  def test_the_pinned_object_is_accepted(self):
-    self.write_pointer(4096)
+  def test_the_chosen_model_is_accepted(self):
     fetched = self.fetched(4096)
     assert helpers.shipped_model_path() == fetched
 
-  def test_a_different_branch_model_is_rejected(self):
-    self.write_pointer(4096)
+  def test_a_truncated_download_is_rejected(self):
+    # Half a model is exactly what must not reach TensorRT.
     self.fetched(2048)
     assert helpers.shipped_model_path() is None
 
-  def test_an_unexcluded_object_is_used_in_place(self):
-    # A checkout that did fetch the object has the real thing in the worktree.
-    real = self.tree / 'big.onnx'
-    real.write_bytes(b'\0' * 2_000_000)
-    assert helpers.shipped_model_path() == real
+  def test_no_model_chosen_is_no_path(self):
+    with mock.patch.object(helpers, 'selected_model', return_value=None):
+      assert helpers.shipped_model_path() is None

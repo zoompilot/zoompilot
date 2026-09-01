@@ -183,8 +183,13 @@ def fetch(pointer: Path, dest: Path, repo_root: Path,
   parsed = parse_pointer(pointer)
   if parsed is None:
     return None
-  oid, size = parsed
+  return fetch_oid(*parsed, dest, repo_root, progress=progress, should_stop=should_stop)
 
+
+def fetch_oid(oid: str, size: int, dest: Path, repo_root: Path,
+              progress: Callable[[float], None] | None = None,
+              should_stop: Callable[[], bool] | None = None) -> Path:
+  """Materialise one lfs object by oid, from whichever server has it."""
   if dest.is_file() and dest.stat().st_size == size:
     return dest
 

@@ -139,6 +139,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // a reboot, or every ignition cycle would rebuild a ~3 minute TensorRT engine.
     {"JetlinkEnabled", {PERSISTENT | BACKUP, BOOL}},
     {"JetlinkEndpoint", {PERSISTENT | BACKUP, STRING}},
+    {"JetlinkModel", {PERSISTENT | BACKUP, STRING}},
     {"JetlinkEngineReady", {PERSISTENT, STRING}},
     {"JetlinkSpec", {PERSISTENT, JSON}},
     {"JetlinkProgress", {CLEAR_ON_MANAGER_START, JSON}},
