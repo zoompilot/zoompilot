@@ -211,14 +211,17 @@ def _artifact_names(bundle) -> list[str]:
 def active_model_path() -> Path | None:
   """Path to the selected large model's ONNX, materialising chunks if needed.
 
-  Returns None when no large model is selected or it has not finished
-  downloading; the caller then simply stays on the small model.
+  Returns None when there is no large model here yet; the caller then simply
+  stays on the small model.
+
+  No bundle selected is the normal case, not a dead end: every bundle the
+  model manager offers is a tinygrad pkl compiled for chestnut's GPU, and none
+  of them ships an ONNX, so what a Jetson actually runs is the model openpilot
+  itself pins. Falling through to it is the whole point.
   """
   bundle = active_bundle()
-  if bundle is None:
-    return None
   root = Path(Paths.model_root())
-  for name in _artifact_names(bundle):
+  for name in _artifact_names(bundle) if bundle is not None else []:
     plain = root / name
     if plain.is_file() and plain.stat().st_size > 1_000_000:
       return plain
@@ -226,8 +229,6 @@ def active_model_path() -> Path | None:
     manifest = root / f'{name}.chunkmanifest'
     if manifest.is_file():
       return _materialise(root / name)
-  # Nothing in the bundle. Fall back to the model openpilot itself pins, which
-  # every chestnut-class device already agrees on.
   return shipped_model_path()
 
 

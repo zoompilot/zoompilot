@@ -93,8 +93,18 @@ class TestActiveModelPath(unittest.TestCase):
       models.append(mock.Mock(artifact=artifact))
     return mock.Mock(models=models)
 
-  def test_no_bundle_is_no_path(self):
-    with mock.patch.object(helpers, 'active_bundle', return_value=None):
+  def test_no_bundle_falls_through_to_the_pinned_model(self):
+    # The normal case on a Jetson: no chestnut bundle ships an ONNX, so what
+    # runs is the model openpilot pins. Returning None here would mean a
+    # provisioned device silently stayed on the small model.
+    pinned = Path(self.root) / helpers.BIG_MODEL_NAME
+    with mock.patch.object(helpers, 'active_bundle', return_value=None), \
+         mock.patch.object(helpers, 'shipped_model_path', return_value=pinned):
+      assert helpers.active_model_path() == pinned
+
+  def test_no_bundle_and_nothing_pinned_is_no_path(self):
+    with mock.patch.object(helpers, 'active_bundle', return_value=None), \
+         mock.patch.object(helpers, 'shipped_model_path', return_value=None):
       assert helpers.active_model_path() is None
 
   def test_finds_a_plain_onnx(self):
