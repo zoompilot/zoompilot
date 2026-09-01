@@ -501,3 +501,62 @@ class TestLayoutsSurviveRender:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.home import MiciHomeLayoutSP
 
     render(MiciHomeLayoutSP())
+
+
+class TestJetlinkProgressRenders:
+  """The models panel grew a jetlink line that no test had ever drawn.
+
+  Provisioning an attached Jetson is an upload plus a TensorRT build, minutes
+  long, and this is the only place a user sees it happening. The layout sweep
+  above runs with no progress set, so every one of these branches was dead code
+  as far as the suite was concerned.
+  """
+
+  STAGES = ['download', 'connect', 'upload', 'build', 'failed']
+
+  def _info(self, stage, frac):
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    ui_state.jetlink_progress = {'stage': stage, 'frac': frac, 'msg': ''}
+    try:
+      from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
+      return _model_info()
+    finally:
+      ui_state.jetlink_progress = None
+
+  @pytest.mark.parametrize("stage", STAGES)
+  def test_every_stage_gives_a_line(self, params, stage):
+    active, header, info = self._info(stage, 0.42)
+    assert active and header and info
+
+  def test_a_percentage_is_shown_while_working(self, params):
+    _, _, info = self._info('download', 0.42)
+    assert '42%' in info
+
+  def test_failure_says_so_rather_than_showing_100_percent(self, params):
+    _, _, info = self._info('failed', 1.0)
+    assert '100%' not in info
+
+  def test_ready_falls_back_to_the_normal_line(self, params):
+    # 'ready' is the steady state: the panel must go back to naming the model,
+    # not sit on a finished progress bar forever.
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts import models as models_layout
+    ready = self._info('ready', 1.0)
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    ui_state.jetlink_progress = None
+    assert ready == models_layout._model_info()
+
+  @pytest.mark.parametrize("stage", STAGES)
+  def test_the_panel_draws_with_progress_set(self, params, stage):
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
+
+    ui_state.jetlink_progress = {'stage': stage, 'frac': 0.5, 'msg': ''}
+    try:
+      layout = ModelsLayoutMici()
+      render(layout)
+      render(layout)
+      for item in layout._scroller.items:
+        render(item)
+      render(layout.current_model_info)
+    finally:
+      ui_state.jetlink_progress = None
