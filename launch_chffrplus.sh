@@ -79,13 +79,24 @@ function launch {
   ln -sfn rednose_repo/rednose rednose
   ln -sfn teleoprtc_repo/teleoprtc teleoprtc
   ln -sfn tinygrad_repo/tinygrad tinygrad
-  [ -d jetlink_repo ] && ln -sfn jetlink_repo/jetlink jetlink
-
-  # jetlink: the comma is the USB gadget, so its endpoints have to exist before
-  # jetlinkd or modeld can open them. This is boot-time hardware init, like the
-  # rest of this block - not something a daemon should be shelling out to do.
-  if [ -f /AGNOS ] && [ -d jetlink_repo ]; then
-    bash jetlink_repo/scripts/setup_gadget.sh >/dev/null 2>&1 || true
+  # jetlink: a submodule checkout if there is one, otherwise the out-of-tree
+  # copy. It has to be able to live outside the repo until it is a real
+  # submodule, because the updater's reset --hard + clean deletes untracked
+  # files inside the repo, which would take the package with it.
+  JETLINK_REPO=""
+  if [ -d jetlink_repo ]; then
+    JETLINK_REPO=jetlink_repo
+  elif [ -d /data/jetlink_repo ]; then
+    JETLINK_REPO=/data/jetlink_repo
+  fi
+  if [ -n "$JETLINK_REPO" ]; then
+    ln -sfn "$JETLINK_REPO/jetlink" jetlink
+    # The comma is the USB gadget, so its endpoints have to exist before
+    # jetlinkd or modeld can open them. Boot-time hardware init, like the rest
+    # of this block, not something a daemon should shell out to do.
+    if [ -f /AGNOS ]; then
+      bash "$JETLINK_REPO/scripts/setup_gadget.sh" >/dev/null 2>&1 || true
+    fi
   fi
 
   # hardware specific init
