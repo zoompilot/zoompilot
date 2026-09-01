@@ -95,7 +95,11 @@ function launch {
     # jetlinkd or modeld can open them. Boot-time hardware init, like the rest
     # of this block, not something a daemon should shell out to do.
     if [ -f /AGNOS ]; then
-      bash "$JETLINK_REPO/scripts/setup_gadget.sh" >/dev/null 2>&1 || true
+      # This script runs as `comma`, and configuring a USB gadget needs root.
+      # Do not silence the failure: a swallowed error here looks exactly like a
+      # working gadget until modeld cannot open an endpoint.
+      sudo -n bash "$JETLINK_REPO/scripts/setup_gadget.sh" >/dev/null ||
+        echo "jetlink: USB gadget setup failed" >&2
     fi
   fi
 
