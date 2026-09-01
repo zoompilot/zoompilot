@@ -21,6 +21,11 @@
     "text": "Chestnut detected! Switch to the %1 branch to use chestnut-class models.",
     "severity": 0
   },
+  "Offroad_JetlinkGadget": {
+    "text": "Jetson link unavailable: %1",
+    "severity": 0,
+    "_comment": "Set extra field to the reason from scripts/setup_gadget.sh."
+  },
   "Offroad_UnregisteredHardware": {
     "text": "Failed to register with comma.ai backend. It will not connect or upload to comma.ai servers, and receives no support from comma.ai. If this is a device purchased at comma.ai/shop, open a ticket at https://comma.ai/support.",
     "severity": 1

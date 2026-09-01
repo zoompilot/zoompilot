@@ -65,7 +65,7 @@ class JetlinkModelState(ModelStateBase):
     small_img = jits['metadata']['input_shapes']['img']
     if tuple(small_img[2:]) != tuple(spec.input_shapes['img'][2:]):
       raise RuntimeError(f"warp geometry {small_img[2:]} does not match the large model "
-                         f"{spec.input_shapes['img'][2:]}; a large-model warp JIT is needed")
+                         + f"{spec.input_shapes['img'][2:]}; a large-model warp JIT is needed")
 
     self.input_shapes = spec.input_shapes
     self.output_slices = spec.output_slices

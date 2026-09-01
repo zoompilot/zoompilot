@@ -62,6 +62,29 @@ def link_endpoint() -> tuple[str, int] | None:
 GADGET_PATH = Path("/sys/kernel/config/usb_gadget/jetlink")
 FFS_MOUNT = Path("/dev/ffs-jetlink")
 UDC_PATH = Path("/sys/class/udc")
+# Written by scripts/setup_gadget.sh at boot: "ok", or "error: <reason>".
+# tmpfs, so it describes this boot and costs the flash nothing.
+GADGET_STATUS = Path("/dev/shm/jetlink-gadget")
+
+
+def gadget_error() -> str | None:
+  """Why the USB gadget is unavailable, if it is.
+
+  The gadget is set up once at boot, by root, from launch_chffrplus.sh - long
+  before any of this runs and nowhere a user would look. Without this the whole
+  feature just silently does not appear on a device whose kernel lacks the
+  gadget drivers, or where the package was never installed.
+
+  A missing file is not an error: it means a build that never ran the setup at
+  all, which is the same as jetlink not being installed here.
+  """
+  try:
+    reason = GADGET_STATUS.read_text().strip()
+  except OSError:
+    return None
+  if not reason or reason == 'ok':
+    return None
+  return reason.removeprefix('error:').strip() or None
 
 
 def gadget_bound() -> bool:
@@ -151,6 +174,21 @@ def enabled() -> bool:
   """Should we run the link at all? Absent param means "auto"."""
   v = _get(P_ENABLED)
   return link_configured() if v is None else bool(v)
+
+
+def opted_in() -> bool:
+  """Has the user actually asked for the link, rather than left it on auto?
+
+  The distinction only matters for complaining. On auto, a device that cannot
+  present the gadget should simply not offer the feature; once someone has
+  turned it on, silence is the wrong answer.
+  """
+  return bool(_get(P_ENABLED))
+
+
+def gadget_alert() -> str | None:
+  """The gadget failure worth putting in front of the user, if any."""
+  return gadget_error() if opted_in() else None
 
 
 # -- the model ------------------------------------------------------------

@@ -97,10 +97,18 @@ function launch {
     if [ -f /AGNOS ]; then
       # This script runs as `comma`, and configuring a USB gadget needs root.
       # Do not silence the failure: a swallowed error here looks exactly like a
-      # working gadget until modeld cannot open an endpoint.
+      # working gadget until modeld cannot open an endpoint. setup_gadget.sh
+      # also leaves the reason in /dev/shm/jetlink-gadget, which is what the UI
+      # reads to tell the user why the Jetson is unavailable.
       sudo -n bash "$JETLINK_REPO/scripts/setup_gadget.sh" >/dev/null ||
         echo "jetlink: USB gadget setup failed" >&2
     fi
+  elif [ -f /AGNOS ]; then
+    # No package at all - most likely a fresh switch to this branch where the
+    # submodule was never fetched. Say so where the UI can find it rather than
+    # leaving the link mysteriously absent.
+    echo "error: the jetlink package is not installed; expected jetlink_repo/ or /data/jetlink_repo" \
+      > /dev/shm/jetlink-gadget 2>/dev/null || true
   fi
 
   # hardware specific init
