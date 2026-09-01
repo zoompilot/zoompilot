@@ -11,8 +11,9 @@ from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_selected_bundle
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.ui_state import ui_state, device
-from openpilot.selfdrive.ui.sunnypilot.model_info import (active_source, big_model_state, bundles_for_source, carrying_model,
-                                                           default_model_name, model_info, queued_name)
+from openpilot.selfdrive.ui.sunnypilot.model_info import (active_source, big_model_progress, big_model_state,
+                                                          bundles_for_source, carrying_model,
+                                                          default_model_name, model_info, queued_name)
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import Widget
@@ -30,6 +31,12 @@ def _model_info() -> tuple[str, str, str]:
     big = get_selected_bundle(ui_state.params, "chestnut")
     carry_display = big.displayName if big else default_model_name("chestnut")
   active_text = (carry_display or active_name).lower()
+  jetlink = big_model_progress()
+  if jetlink is not None:
+    stage, frac = jetlink
+    if stage == 'failed':
+      return active_text, tr("big model"), tr("jetson failed")
+    return active_text, tr("big model"), f"{tr(stage)} {frac * 100:.0f}%"
   if state == 'failed':
     return active_text, tr("big model"), tr("unavailable")
   if state == 'loading':

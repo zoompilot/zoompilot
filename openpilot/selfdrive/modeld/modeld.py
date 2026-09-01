@@ -34,6 +34,7 @@ from openpilot.common.file_chunker import open_file_chunked
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.helpers import chestnut_present, chestnut_compiled, modeld_pkl_path, get_tg_input_devices, load_oob
 
+from openpilot.sunnypilot.jetlink import hook as jetlink
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeController
@@ -222,8 +223,11 @@ class ModelState(ModelStateBase):
 def main(demo=False):
   cloudlog.warning("modeld init")
 
-  CHESTNUT = chestnut_present() and chestnut_compiled()
-  if CHESTNUT:
+  # A provisioned jetlink Jetson stands in for chestnut: same big model, same
+  # params, same chestnutState. See sunnypilot/jetlink/.
+  JETLINK = jetlink.available()
+  CHESTNUT = JETLINK or (chestnut_present() and chestnut_compiled())
+  if CHESTNUT and not JETLINK:
     os.environ['HCQDEV_WAIT_TIMEOUT_MS'] = '3000'
   params = Params()
   params.put_bool("ChestnutLoading", CHESTNUT)
@@ -262,7 +266,8 @@ def main(demo=False):
     def load_big():
       nonlocal big_model
       try:
-        m = ModelState(vipc_client_main.width, vipc_client_main.height, True)
+        m = (jetlink.make_model_state(vipc_client_main.width, vipc_client_main.height) if JETLINK
+             else ModelState(vipc_client_main.width, vipc_client_main.height, True))
         m.warmup()
         big_model = m
       except Exception:
@@ -287,7 +292,7 @@ def main(demo=False):
 
   publish_state = PublishState()
   params = Params()
-  chestnut_state = ChestnutState(pm, model.chestnut) if CHESTNUT else None
+  chestnut_state = model.make_chestnut_state(pm) if CHESTNUT else None
 
   # setup filter to track dropped frames
   frame_dropped_filter = FirstOrderFilter(0., 10., 1. / ModelConstants.MODEL_RUN_FREQ)

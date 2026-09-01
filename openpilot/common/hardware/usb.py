@@ -84,4 +84,10 @@ def set_usb_state(device_state, devices: list[dict]) -> None:
     if (entry.vendorId, entry.productId) in CHESTNUT_USB_IDS:
       chestnut_present = True
 
+  # A jetlink Jetson is a large-model accelerator too, and this field - not
+  # modeld.helpers.chestnut_present() - is what the model manager, the UI and
+  # selfdrived actually gate on, so it has to know.
+  if not chestnut_present:
+    from openpilot.sunnypilot.jetlink.helpers import gadget_present
+    chestnut_present = gadget_present()
   device_state.chestnutPresent = chestnut_present

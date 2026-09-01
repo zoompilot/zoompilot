@@ -79,6 +79,14 @@ function launch {
   ln -sfn rednose_repo/rednose rednose
   ln -sfn teleoprtc_repo/teleoprtc teleoprtc
   ln -sfn tinygrad_repo/tinygrad tinygrad
+  [ -d jetlink_repo ] && ln -sfn jetlink_repo/jetlink jetlink
+
+  # jetlink: the comma is the USB gadget, so its endpoints have to exist before
+  # jetlinkd or modeld can open them. This is boot-time hardware init, like the
+  # rest of this block - not something a daemon should be shelling out to do.
+  if [ -f /AGNOS ] && [ -d jetlink_repo ]; then
+    bash jetlink_repo/scripts/setup_gadget.sh >/dev/null 2>&1 || true
+  fi
 
   # hardware specific init
   if [ -f /AGNOS ]; then

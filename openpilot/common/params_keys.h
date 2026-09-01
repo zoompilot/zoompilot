@@ -134,6 +134,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"UptimeOnroad", {PERSISTENT, FLOAT, "0.0"}},
     {"ChestnutActive", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION | CLEAR_ON_IGNITION_ON, BOOL}},
     {"ChestnutLoading", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION | CLEAR_ON_IGNITION_ON, BOOL}},
+    // jetlink: run the large models on an attached Jetson. Readiness must survive
+    // a reboot, or every ignition cycle would rebuild a ~3 minute TensorRT engine.
+    {"JetlinkEnabled", {PERSISTENT | BACKUP, BOOL}},
+    {"JetlinkEndpoint", {PERSISTENT | BACKUP, STRING}},
+    {"JetlinkEngineReady", {PERSISTENT, STRING}},
+    {"JetlinkSpec", {PERSISTENT, JSON}},
+    {"JetlinkProgress", {CLEAR_ON_MANAGER_START, JSON}},
     {"Version", {PERSISTENT, STRING}},
 
     // --- sunnypilot params --- //

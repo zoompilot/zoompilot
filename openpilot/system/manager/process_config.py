@@ -91,6 +91,11 @@ def is_tinygrad_model(started, params, CP: car.CarParams) -> bool:
   """Check if the active model runner is tinygrad."""
   return bool(get_active_model_runner(params, not started) == custom.ModelManagerSP.Runner.tinygrad)
 
+def jetlink_enabled(started, params, CP: car.CarParams) -> bool:
+  from openpilot.sunnypilot.jetlink.helpers import enabled
+  return enabled()
+
+
 def is_stock_model(started, params, CP: car.CarParams) -> bool:
   """Check if the active model runner is stock."""
   return bool(get_active_model_runner(params, not started) == custom.ModelManagerSP.Runner.stock)
@@ -173,6 +178,7 @@ procs = [
 procs += [
   # Models
   PythonProcess("models_manager", "openpilot.sunnypilot.models.manager", only_offroad),
+  PythonProcess("jetlinkd", "openpilot.sunnypilot.jetlink.jetlinkd", and_(only_offroad, jetlink_enabled)),
   NativeProcess("modeld_tinygrad", "openpilot/sunnypilot/modeld_v2", ["./modeld"], and_(only_onroad, is_tinygrad_model)),
 
   # Backup

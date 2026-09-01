@@ -37,6 +37,22 @@ def big_model_state() -> str | None:
           ChestnutState.LOADING: 'loading'}.get(ui_state.chestnut_state)
 
 
+def big_model_progress() -> tuple[str, float] | None:
+  """(stage, 0..1) while an attached Jetson is being provisioned, else None.
+
+  Provisioning is upload + a TensorRT build, so it reads to the user exactly
+  like the on-device compilation big_model_state() reports. Lives here, next
+  to that, so every layout gets it rather than only the one that asked.
+  """
+  progress = getattr(ui_state, 'jetlink_progress', None)
+  if not progress:
+    return None
+  stage = str(progress.get('stage', ''))
+  if stage in ('', 'ready'):
+    return None
+  return stage, float(progress.get('frac', 0.0))
+
+
 def carrying_model() -> tuple[str | None, str | None, str | None]:
   """(source, internal name, display name) of what actually drives. Runner-matched:
   when a Default big cannot carry, stock modeld runs the Default small, never the

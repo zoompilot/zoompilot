@@ -16,7 +16,7 @@ from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.models.constants import Meta, MetaSimPose, MetaTombRaider
 from openpilot.common.hardware.hw import Paths
-from openpilot.selfdrive.modeld.helpers import chestnut_present
+from openpilot.sunnypilot.jetlink.helpers import accelerator_present
 
 # SET ME TO THE EXACT JSON VERSION WE SET IN SUNNYPILOT_MODELS REPO
 REQUIRED_JSON_VERSION = 18
@@ -129,7 +129,7 @@ def get_selected_bundle(params: Params | None = None, source: str = "qcom") -> "
 def get_active_source(chestnut: bool | None = None, chestnut_active: bool | None = None,
                       chestnut_loading: bool | None = None, offroad: bool | None = None) -> str:
   if chestnut is None:
-    chestnut = chestnut_present()
+    chestnut = accelerator_present()
   state_valid = chestnut_active is not None or chestnut_loading is not None or offroad is not None
   big_active = chestnut and (not state_valid or chestnut_active or chestnut_loading or offroad)
   return "chestnut" if big_active else "qcom"
