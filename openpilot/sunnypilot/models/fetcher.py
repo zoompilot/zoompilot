@@ -76,8 +76,10 @@ class ModelParser:
 
       manifest_path = get_manifest_path(base_path)
       expected = str(num_chunks)
-      if os.path.exists(manifest_path) and open(manifest_path).read().strip() == expected:
-        return
+      if os.path.isfile(manifest_path):
+        with open(manifest_path) as f:
+          if f.read().strip() == expected:
+            return
 
       with open(manifest_path, "w") as f:
         f.write(expected)

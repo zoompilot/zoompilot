@@ -671,7 +671,7 @@ class TestActiveBundleValidation(OpenpilotTestCase):
 
   def test_empty_catalog_does_not_reset_slot(self):
     params = self._params(qcom=self._raw_bundle("small"))
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=False):
+    with mock.patch("openpilot.sunnypilot.models.helpers.accelerator_present", return_value=False):
       validate_active_bundles(params, {"qcom": [], "chestnut": []})
     params.remove.assert_not_called()
 
@@ -681,7 +681,7 @@ class TestActiveBundleValidation(OpenpilotTestCase):
     params = self._params(qcom=self._raw_bundle("gone"), chestnut=big_raw)
     catalog = {"qcom": [custom.ModelManagerSP.ModelBundle(**self._raw_bundle("other"))],
                "chestnut": [custom.ModelManagerSP.ModelBundle(**big_raw)]}
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=True):
+    with mock.patch("openpilot.sunnypilot.models.helpers.accelerator_present", return_value=True):
       validate_active_bundles(params, catalog)
     params.remove.assert_called_once_with("ModelManager_ActiveBundle")
     runner_puts = [call for call in params.put.call_args_list if call.args[0] == "ModelRunnerTypeCache"]
@@ -720,23 +720,24 @@ class TestActiveBundleSelection(OpenpilotTestCase):
 
   def test_no_gpu_uses_qcom_slot(self):
     params = self._params(qcom=self._raw_bundle("small"), chestnut=self._raw_bundle("big"))
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=False):
+    with mock.patch("openpilot.sunnypilot.models.helpers.accelerator_present", return_value=False):
       assert get_active_bundle(params).ref == "small"
 
   def test_gpu_uses_chestnut_slot(self):
     params = self._params(qcom=self._raw_bundle("small"), chestnut=self._raw_bundle("big"))
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=True):
+    with mock.patch("openpilot.sunnypilot.models.helpers.accelerator_present", return_value=True):
       assert get_active_bundle(params).ref == "big"
 
   def test_gpu_without_big_selection_is_hardware_default(self):
     params = self._params(qcom=self._raw_bundle("small"), chestnut=None)
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=True):
+    with mock.patch("openpilot.sunnypilot.models.helpers.accelerator_present", return_value=True):
       assert get_active_bundle(params) is None
 
 
 class TestEffectiveSource(OpenpilotTestCase):
-  """One gate decides the active source. With no flags it is runtime truth (GPU
-  attached); display callers (mici) pass the ui_state flags, which additionally
+  """One gate decides the active source. With no flags it is runtime truth (an
+  accelerator attached, chestnut or a jetlink Jetson); display callers (mici)
+  pass the ui_state flags, which additionally
   require the big model to be loading, active, or the device offroad. The active
   bundle is simply the selected bundle of that source."""
 
@@ -748,11 +749,11 @@ class TestEffectiveSource(OpenpilotTestCase):
     return bundle.to_dict()
 
   def test_runtime_no_gpu(self):
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=False):
+    with mock.patch("openpilot.sunnypilot.models.helpers.accelerator_present", return_value=False):
       assert get_active_source() == "qcom"
 
   def test_runtime_gpu_present(self):
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=True):
+    with mock.patch("openpilot.sunnypilot.models.helpers.accelerator_present", return_value=True):
       assert get_active_source() == "chestnut"
 
   def test_display_offroad_gpu_present_shows_big(self):
@@ -774,7 +775,7 @@ class TestEffectiveSource(OpenpilotTestCase):
     params = mock.MagicMock()
     params.get.side_effect = lambda key: {"ModelManager_ActiveBundle": self._raw_bundle("small"),
                                           "ModelManager_ActiveBundleChestnut": self._raw_bundle("big")}.get(key)
-    with mock.patch("openpilot.sunnypilot.models.helpers.chestnut_present", return_value=False):
+    with mock.patch("openpilot.sunnypilot.models.helpers.accelerator_present", return_value=False):
       assert get_active_bundle(params).ref == "small"
     assert get_selected_bundle(params, get_active_source(chestnut=True, chestnut_active=False,
                                                          chestnut_loading=False, offroad=True)).ref == "big"
