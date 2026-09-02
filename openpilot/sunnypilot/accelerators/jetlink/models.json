@@ -16,6 +16,14 @@
   ],
   "models": [
     {
+      "name": "TGC v2",
+      "date": "2026-09-01",
+      "commit": "1e4e01ee0e",
+      "oid": "1791d5940b2c048d0639813426dd2cf1d6f2a6727ed51e17c8bcea8bbe754123",
+      "size": 765950064,
+      "built_seconds": 166
+    },
+    {
       "name": "BMRLNAP",
       "date": "2026-08-31",
       "commit": "4adbb85742",
