@@ -13,7 +13,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.lib.prime_state import PrimeState
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.hardware import HARDWARE, PC
-from openpilot.selfdrive.modeld.helpers import chestnut_compiled
+from openpilot.sunnypilot import accelerators
 
 from openpilot.selfdrive.ui.sunnypilot.ui_state import UIStateSP, DeviceSP
 
@@ -93,7 +93,7 @@ class UIState(UIStateSP):
     self.experimental_mode: bool = self.params.get_bool("ExperimentalMode")
     self.experimental_mode_confirmed: bool = self.params.get_bool("ExperimentalModeConfirmed")
     self.chestnut_present: bool = False
-    self.chestnut_compiled: bool = chestnut_compiled()
+    self.chestnut_compiled: bool = accelerators.ready()
     self.chestnut_active: bool | None = None
     self.chestnut_loading: bool = False
     self.chestnut_state = ChestnutState.DISCONNECTED
@@ -251,8 +251,7 @@ class UIState(UIStateSP):
     self.always_on_dm = self.params.get_bool("AlwaysOnDM")
     self.experimental_mode = self.params.get_bool("ExperimentalMode")
     self.experimental_mode_confirmed = self.params.get_bool("ExperimentalModeConfirmed")
-    if not self.chestnut_compiled:
-      self.chestnut_compiled = chestnut_compiled()
+    self.chestnut_compiled = accelerators.ready()
     self.chestnut_active = self.params.get("ChestnutActive")
     self.chestnut_loading = self.params.get_bool("ChestnutLoading")
 

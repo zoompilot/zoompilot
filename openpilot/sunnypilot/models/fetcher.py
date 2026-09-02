@@ -190,8 +190,8 @@ class ModelFetcher:
     }, block=True)
 
   @staticmethod
-  def active_source(chestnut_present: bool) -> str:
-    return "chestnut" if chestnut_present else "qcom"
+  def active_source(chestnut_catalog: bool) -> str:
+    return "chestnut" if chestnut_catalog else "qcom"
 
   def _fetch_and_cache_models(self, source: str) -> list[custom.ModelManagerSP.ModelBundle] | None:
     """Fetches fresh model data from remote and updates cache.

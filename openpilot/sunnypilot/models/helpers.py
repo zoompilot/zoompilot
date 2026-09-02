@@ -128,8 +128,12 @@ def get_selected_bundle(params: Params | None = None, source: str = "qcom") -> "
 
 def get_active_source(chestnut: bool | None = None, chestnut_active: bool | None = None,
                       chestnut_loading: bool | None = None, offroad: bool | None = None) -> str:
+  # `chestnut` is whether the chestnut catalog is in play, not whether a board is
+  # fitted. Every bundle in that catalog is a tinygrad pkl for comma's GPU, so an
+  # accelerator with its own model registry must never see one become active:
+  # it would route modeld to modeld_tinygrad on the small model.
   if chestnut is None:
-    chestnut = accelerators.present()
+    chestnut = accelerators.catalog() == "chestnut"
   state_valid = chestnut_active is not None or chestnut_loading is not None or offroad is not None
   big_active = chestnut and (not state_valid or chestnut_active or chestnut_loading or offroad)
   return "chestnut" if big_active else "qcom"

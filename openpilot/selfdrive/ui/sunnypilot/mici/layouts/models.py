@@ -7,9 +7,10 @@ See the LICENSE.md file in the root directory for more details.
 import pyray as rl
 
 from openpilot.cereal import custom
+from openpilot.sunnypilot import accelerators
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_selected_bundle
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigMultiToggle
 from openpilot.selfdrive.ui.ui_state import ui_state, device
 from openpilot.selfdrive.ui.sunnypilot.model_info import (active_source, big_model_progress, big_model_state,
                                                           bundles_for_source, carrying_model,
@@ -19,6 +20,62 @@ from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.scroller import NavScroller
+
+# The user's say over the accelerator link. Absent means auto and the backend
+# decides from what it finds; true and false force it. The backend reads the
+# param, this panel only writes it, so the name lives here and never on screen.
+LINK_PARAM = "JetlinkEnabled"
+LINK_STATES = ("auto", "on", "off")
+
+
+def read_link_state() -> str:
+  """auto | on | off. Never raises: a params library older than the key would
+  otherwise take the settings panel down, the guard accelerators.progress() has."""
+  try:
+    value = ui_state.params.get(LINK_PARAM)
+  except Exception:
+    return "auto"
+  return "auto" if value is None else "on" if value else "off"
+
+
+def write_link_state(state: str) -> None:
+  try:
+    if state == "auto":
+      ui_state.params.remove(LINK_PARAM)
+    else:
+      ui_state.params.put_bool(LINK_PARAM, state == "on", block=True)
+  except Exception:
+    pass  # the same unknown-key case as the read; nothing the panel can do about it
+
+
+def link_toggle_meaningful() -> bool:
+  """Whether to show the toggle at all. A plain device with no accelerator, no
+  complaint and nothing set must not. ready() is on the list for the link whose
+  engine is cached while the hardware is out of the car: on auto that is exactly
+  when someone wants to turn it off."""
+  return (accelerators.present() or accelerators.ready() or read_link_state() != "auto"
+          or accelerators.unavailable_reason() is not None)
+
+
+class AcceleratorLinkToggle(BigMultiToggle):
+  """auto / on / off over one bool param, where absent means auto.
+
+  BigMultiParamToggle stores an option index and cannot say "unset", which is
+  the state every device should stay in until someone decides otherwise.
+  """
+
+  def __init__(self):
+    super().__init__(tr("accelerator link"), [tr(state) for state in LINK_STATES], select_callback=self._store)
+    self.refresh()
+
+  def _store(self, label: str) -> None:
+    write_link_state(LINK_STATES[self._options.index(label)])
+
+  def refresh(self) -> None:
+    label = self._options[LINK_STATES.index(read_link_state())]
+    if label != self.value:
+      self.set_value(label)
+
 
 def _model_info() -> tuple[str, str, str]:
   """(active model, info header, info text) for the panel. Runner-matched: the
@@ -91,7 +148,10 @@ class ModelsLayoutMici(NavScroller):
     self.cancel_download_btn = BigButton(tr("cancel download"))
     self.cancel_download_btn.set_click_callback(lambda: ui_state.params.remove("ModelManager_DownloadRef"))
 
-    self.main_items = [self.current_model_info, self.select_model_btn, self.cancel_download_btn]
+    self.link_toggle = AcceleratorLinkToggle()
+    self.link_toggle.set_visible(link_toggle_meaningful())
+
+    self.main_items = [self.current_model_info, self.select_model_btn, self.cancel_download_btn, self.link_toggle]
     self._scroller.add_widgets(self.main_items)
 
   @property
@@ -205,6 +265,10 @@ class ModelsLayoutMici(NavScroller):
     should_update = self._download_frame % (gui_app.target_fps / 2) == 0
     if should_update:
       self._download_progress = self._download_progress + "." if len(self._download_progress) < 3 else ""
+      # present() and unavailable_reason() read sysfs, so they ride this half-second
+      # tick rather than the frame
+      self.link_toggle.refresh()
+      self.link_toggle.set_visible(link_toggle_meaningful())
 
     is_downloading = (manager.selectedBundle
                       and manager.selectedBundle.status == custom.ModelManagerSP.DownloadStatus.downloading)

@@ -11,7 +11,7 @@ from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL, DEFAULT_MO
 
 
 def active_source() -> str:
-  return get_active_source(chestnut=ui_state.chestnut_present,
+  return get_active_source(chestnut=ui_state.chestnut_catalog,
                            chestnut_active=ui_state.chestnut_active, chestnut_loading=ui_state.chestnut_loading,
                            offroad=ui_state.is_offroad())
 
@@ -63,7 +63,7 @@ def carrying_model() -> tuple[str | None, str | None, str | None]:
       return "chestnut", bundle.internalName, bundle.displayName
     name = default_model_name("chestnut")
     return "chestnut", name, name
-  if ui_state.chestnut_present:
+  if ui_state.chestnut_catalog:
     if get_selected_bundle(ui_state.params, "chestnut") is None:
       name = default_model_name("qcom")
       return "qcom", name, name

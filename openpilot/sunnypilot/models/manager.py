@@ -14,6 +14,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware.hw import Paths
+from openpilot.sunnypilot import accelerators
 
 from openpilot.cereal import messaging, custom
 from openpilot.sunnypilot.models.fetcher import ModelFetcher
@@ -35,12 +36,11 @@ class ModelManagerSP:
     self.params = Params()
     self.model_fetcher = ModelFetcher(self.params)
     self.pm = messaging.PubMaster(["modelManagerSP"])
-    self.sm = messaging.SubMaster(["deviceState"])
-    self.chestnut_present = False
+    self.chestnut_catalog = False
     self.available_models: list[custom.ModelManagerSP.ModelBundle] = []
     self.source_models: dict[str, list[custom.ModelManagerSP.ModelBundle]] = {}
     self.selected_bundle: custom.ModelManagerSP.ModelBundle = None
-    self.active_bundle: custom.ModelManagerSP.ModelBundle = get_active_bundle(self.params, chestnut=self.chestnut_present)
+    self.active_bundle: custom.ModelManagerSP.ModelBundle = get_active_bundle(self.params, chestnut=self.chestnut_catalog)
     self._chunk_size = 128 * 1000  # 128 KB chunks
     self._download_start_times: dict[str, float] = {}  # Track start time per model
     self._download_ref: bytes | str | None = None
@@ -280,7 +280,7 @@ class ModelManagerSP:
         raise DownloadCancelled("Download cancelled")
       self.selected_bundle.status = custom.ModelManagerSP.DownloadStatus.downloaded
       self.params.put(ACTIVE_BUNDLE_KEYS[source], model_bundle.to_dict(), block=True)
-      self.active_bundle = get_active_bundle(self.params, chestnut=self.chestnut_present)
+      self.active_bundle = get_active_bundle(self.params, chestnut=self.chestnut_catalog)
 
     except Exception:
       if self.selected_bundle is not None:
@@ -321,12 +321,13 @@ class ModelManagerSP:
 
     while True:
       try:
-        self.sm.update(0)
-        self.chestnut_present = self.sm['deviceState'].chestnutPresent
+        # Not deviceState.chestnutPresent: a present accelerator with its own model
+        # registry cannot run anything in the chestnut catalog, so it stays on qcom.
+        self.chestnut_catalog = accelerators.catalog() == "chestnut"
         self.source_models = {source: self.model_fetcher.get_bundles_for_source(source) for source in ModelFetcher.MODEL_SOURCES}
-        self.available_models = self.source_models[ModelFetcher.active_source(self.chestnut_present)]
+        self.available_models = self.source_models[ModelFetcher.active_source(self.chestnut_catalog)]
         validate_active_bundles(self.params, self.source_models)
-        self.active_bundle = get_active_bundle(self.params, chestnut=self.chestnut_present)
+        self.active_bundle = get_active_bundle(self.params, chestnut=self.chestnut_catalog)
 
         self._process_download_requests()
 

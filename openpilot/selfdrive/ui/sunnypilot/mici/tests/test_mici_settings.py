@@ -559,3 +559,100 @@ class TestAcceleratorProgressRenders:
       render(layout.current_model_info)
     finally:
       ui_state.accelerator_progress = None
+
+
+class TestAcceleratorLinkToggle:
+  """The models panel's auto / on / off control over the accelerator link.
+
+  Absent means auto, which the stock index toggle cannot store, and the control
+  is hidden on a device it means nothing to: a plain comma must not grow a
+  setting for hardware it will never see.
+  """
+
+  PARAM = "JetlinkEnabled"
+
+  @staticmethod
+  def _accelerators(present=False, ready=False, reason=None):
+    from contextlib import ExitStack
+    from unittest import mock
+
+    stack = ExitStack()
+    stack.enter_context(mock.patch("openpilot.sunnypilot.accelerators.present", return_value=present))
+    stack.enter_context(mock.patch("openpilot.sunnypilot.accelerators.ready", return_value=ready))
+    stack.enter_context(mock.patch("openpilot.sunnypilot.accelerators.unavailable_reason", return_value=reason))
+    return stack
+
+  def _meaningful(self, **accelerators) -> bool:
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import link_toggle_meaningful
+    with self._accelerators(**accelerators):
+      return link_toggle_meaningful()
+
+  def test_hidden_on_a_plain_device(self, params):
+    params.remove(self.PARAM)
+    assert not self._meaningful()
+
+  def test_shown_when_an_accelerator_is_attached(self, params):
+    params.remove(self.PARAM)
+    assert self._meaningful(present=True)
+
+  def test_shown_when_ready_with_the_hardware_out_of_the_car(self, params):
+    # the engine is cached, so on auto modeld will still try the link at the next
+    # ignition. this is the case the off position exists for
+    params.remove(self.PARAM)
+    assert self._meaningful(ready=True)
+
+  def test_shown_when_the_backend_has_a_complaint(self, params):
+    params.remove(self.PARAM)
+    assert self._meaningful(reason="no gadget")
+
+  def test_shown_once_the_user_has_set_it(self, params):
+    params.put_bool(self.PARAM, False, block=True)
+    assert self._meaningful()
+
+  def test_reads_all_three_states(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import read_link_state
+
+    params.remove(self.PARAM)
+    assert read_link_state() == "auto"
+    params.put_bool(self.PARAM, True, block=True)
+    assert read_link_state() == "on"
+    params.put_bool(self.PARAM, False, block=True)
+    assert read_link_state() == "off"
+
+  def test_tap_cycles_auto_on_off_and_back(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle, LINK_STATES
+    from openpilot.system.ui.lib.application import MousePos
+
+    params.remove(self.PARAM)
+    toggle = AcceleratorLinkToggle()
+    assert toggle.value == toggle._options[LINK_STATES.index("auto")]
+    toggle._handle_mouse_release(MousePos(0, 0))
+    assert params.get(self.PARAM) is True
+    toggle._handle_mouse_release(MousePos(0, 0))
+    assert params.get(self.PARAM) is False
+    toggle._handle_mouse_release(MousePos(0, 0))
+    assert params.get(self.PARAM) is None, "auto is the absence of the param, not a third value"
+
+  def test_refresh_follows_the_param(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle, LINK_STATES
+
+    params.remove(self.PARAM)
+    toggle = AcceleratorLinkToggle()
+    params.put_bool(self.PARAM, False, block=True)
+    toggle.refresh()
+    assert toggle.value == toggle._options[LINK_STATES.index("off")]
+
+  def test_layout_hides_the_toggle_until_it_means_something(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
+
+    params.remove(self.PARAM)
+    with self._accelerators():
+      layout = ModelsLayoutMici()
+      assert not layout.link_toggle.is_visible
+      assert layout.link_toggle in layout._scroller.items
+    with self._accelerators(present=True):
+      layout = ModelsLayoutMici()
+      assert layout.link_toggle.is_visible
+      render(layout)
+      render(layout)
+      render(layout.link_toggle)
