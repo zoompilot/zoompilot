@@ -1467,7 +1467,17 @@
               "key": "ShowTurnSignals",
               "widget": "toggle",
               "title": "Display Turn Signals",
-              "description": "When enabled, visual turn indicators are drawn on the HUD."
+              "description": "When enabled, visual turn indicators are drawn on the HUD.",
+              "visibility": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "capability",
+                    "field": "device_type",
+                    "equals": "mici"
+                  }
+                }
+              ]
             },
             {
               "key": "RoadNameToggle",
