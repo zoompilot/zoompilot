@@ -18,6 +18,12 @@ arrives, however long that takes.
 The second job is provisioning: uploading the model and building a TensorRT
 engine takes minutes, far longer than modeld's 60 s big-model timeout, so it
 happens offroad and the result is cached on the Jetson and recorded in a param.
+The engine is also left loaded on the server, so modeld's connect at ignition
+is a round trip rather than a 13 to 25 s deserialization.
+
+manager stops this daemon with SIGINT at the onroad transition and SIGKILLs it
+5 s later. Every long wait in here polls `stop`, because a FunctionFS owner
+killed mid-transfer leaves the gadget in a state only a reboot reliably clears.
 
 Ownership of the link is exclusive: jetlinkd offroad, modeld onroad. manager's
 only_offroad gate enforces that. On the handover the gadget briefly unbinds and
@@ -63,6 +69,8 @@ class Jetlinkd:
     self.failures = 0
     self.was_attached = False
     self.fetch_failed = False
+    self.verified = False   # the server has confirmed the ready param this attach
+    self._identity: tuple | None = None   # (source, sha256, nbytes) of the hashed file
 
   # -- lifecycle ------------------------------------------------------------
 
@@ -132,30 +140,45 @@ class Jetlinkd:
 
     # Steady state must not touch the model file: hashing 766 MB takes longer
     # than this loop's period, so doing it per poll would peg a core for as
-    # long as the car is parked. The spec is cached against the file it came
-    # from and nothing else - keying it on the engine being ready too would
-    # re-hash the file on every retry against a Jetson that is not serving.
+    # long as the car is parked. The identity is cached against the file it
+    # came from and nothing else - keying it on the engine being ready too
+    # would re-hash the file on every retry against a Jetson that is not
+    # serving. The shapes come back from the server, which is the only side
+    # that parses the ONNX: a stock device has no parser for every export.
     st = model_path.stat()
     source = (str(model_path), st.st_mtime_ns, st.st_size)
-    spec = spec_cache.load()
-    if spec is None or spec_cache.source() != source:
-      from jetlink.spec import spec_from_onnx
-      spec = spec_from_onnx(str(model_path))
-      spec_cache.store(spec, model_path)
+    cached = spec_cache.load()
+    if cached is not None and spec_cache.source() == source:
+      sha256, nbytes = cached.sha256, cached.nbytes
+    elif self._identity is not None and self._identity[0] == source:
+      _, sha256, nbytes = self._identity
+    else:
+      from jetlink.spec import sha256_file
+      sha256, nbytes = sha256_file(str(model_path))
+      # Remembered here as well as in the spec param, because the param is
+      # only written once the server has answered, and a server that never
+      # answers is the case the retry loop exists for.
+      self._identity = (source, sha256, nbytes)
 
-    if helpers.engine_ready_for(spec.sha256):
+    # The param says ready, but the Jetson's cache may have been pruned,
+    # re-flashed or swapped since. Ask once per attach; after that the answer
+    # cannot change under us.
+    if self.verified and helpers.engine_ready_for(sha256):
       return True
 
     cloudlog.warning("jetlink: provisioning %s (%d MB, sha %s)",
-                     model_path.name, spec.nbytes >> 20, spec.sha256[:16])
+                     model_path.name, nbytes >> 20, sha256[:16])
     accelerators.report_progress('connect', 0.0, 'talking to the jetson')
 
     hello = self.client.hello(timeout=10.0)
     cloudlog.warning("jetlink: server %s trt %s", hello.get('device'), hello.get('trt_version'))
-    self.client.ensure_engine(model_path, spec=spec, progress=accelerators.report_progress,
-                              build_timeout=1800.0)
+    spec = self.client.ensure_engine(sha256, nbytes, onnx_path=model_path,
+                                     progress=accelerators.report_progress,
+                                     build_timeout=1800.0, should_stop=lambda: self.stop)
 
+    spec_cache.store(spec, model_path)
     helpers.set_engine_ready(spec.sha256)
+    self.verified = True
     accelerators.report_progress('ready', 1.0, 'engine ready')
     helpers.cleanup_unchunked(keep=model_path)
     cloudlog.warning("jetlink: engine ready for %s", spec.sha256[:16])
@@ -192,9 +215,11 @@ class Jetlinkd:
       self.was_attached = attached
       if attached:
         # A host that has just arrived gets a clean slate rather than sitting
-        # out a backoff earned by whatever was on the link before it.
+        # out a backoff earned by whatever was on the link before it, and its
+        # engine cache is checked before the ready param is trusted again.
         self.failures = 0
         self.next_provision = 0.0
+        self.verified = False
       else:
         # It powered down or rebooted. Readiness is about the engine on the
         # Jetson, which survives, so keep it; modeld reconnects on its own.

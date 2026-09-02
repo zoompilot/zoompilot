@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 
 from openpilot.common.hardware.hw import Paths
@@ -127,22 +128,42 @@ def link_configured() -> bool:
     return False
 
 
+# How long chestnutPresent stays true after the UDC last read "configured".
+# selfdrived soft-disables on chestnutPresent dropping while the big model is
+# active, and a USB3 link recovery the client rides out passes through
+# "addressed" for a moment. Chestnut's own check is an enumerated USB id, which
+# is stickier than a UDC state read at 2 Hz; this makes ours comparable.
+PRESENCE_HOLD = 5.0
+_last_configured = 0.0
+
+
 def gadget_present() -> bool:
   """Is a Jetson actually on the other end right now?
 
   This is the one that answers "is an accelerator attached", so it is what
   deviceState.chestnutPresent uses. It only becomes true once something is
-  holding the gadget open and a host has configured us.
+  holding the gadget open and a host has configured us, and it holds for
+  PRESENCE_HOLD after that stops being true.
   """
+  global _last_configured
   if link_endpoint() is not None:
     return True
-  return host_attached()
+  now = time.monotonic()
+  if host_attached():
+    _last_configured = now
+    return True
+  return now - _last_configured < PRESENCE_HOLD
 
 
 def connect(deadline: float | None = None):
-  """Open the link. USB unless an endpoint override is set (bring-up over ethernet)."""
-  from jetlink.client import DEFAULT_DEADLINE, JetlinkClient
-  deadline = DEFAULT_DEADLINE if deadline is None else deadline
+  """Open the link. USB unless an endpoint override is set (bring-up over ethernet).
+
+  `deadline` is per frame and defaults to the client's FRAME_TIMEOUT: modeld
+  blocks on a frame the way it blocks on a chestnut, and only a stall that long
+  means the Jetson is gone.
+  """
+  from jetlink.client import FRAME_TIMEOUT, JetlinkClient
+  deadline = FRAME_TIMEOUT if deadline is None else deadline
   endpoint = link_endpoint()
   if endpoint is not None:
     host, port = endpoint

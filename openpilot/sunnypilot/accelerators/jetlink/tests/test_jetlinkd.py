@@ -54,12 +54,19 @@ def fake_jetlink_spec_module(counter: list):
   """A stand-in for jetlink.spec, which is not importable without the package."""
   mod = types.ModuleType('jetlink.spec')
 
-  def spec_from_onnx(path, *a, **kw):
+  def sha256_file(path, *a, **kw):
     counter.append(path)
-    return FakeSpec()
+    return 'deadbeef', 1 << 20
 
-  mod.spec_from_onnx = spec_from_onnx
+  mod.sha256_file = sha256_file
   return {'jetlink': types.ModuleType('jetlink'), 'jetlink.spec': mod}
+
+
+def serving_client(spec=None):
+  """A client whose server already has the engine."""
+  client = mock.Mock()
+  client.ensure_engine.return_value = spec or FakeSpec()
+  return client
 
 
 class TestProvisionCost(unittest.TestCase):
@@ -91,7 +98,9 @@ class TestProvisionCost(unittest.TestCase):
       with self.assertRaises(RuntimeError):
         d.provision()
     assert self.hashed == [str(self.model)]
-    assert self.cache.stores == 1
+    # The shapes come from the server, so there is nothing to cache until it
+    # answers; the identity is what must survive the retries, and it did.
+    assert self.cache.stores == 0
 
   def test_a_changed_model_is_hashed_again(self):
     d = jetlinkd.Jetlinkd()
@@ -107,9 +116,48 @@ class TestProvisionCost(unittest.TestCase):
   def test_a_ready_engine_short_circuits_without_touching_the_file(self):
     self.cache.store(FakeSpec(), self.model)
     d = jetlinkd.Jetlinkd()
+    d.verified = True
     with mock.patch.object(jetlinkd.helpers, 'engine_ready_for', return_value=True):
       assert d.provision() is True
     assert self.hashed == []
+
+  def test_a_ready_param_is_checked_with_the_server_once_per_attach(self):
+    # The Jetson's cache can be pruned, re-flashed or swapped under a param
+    # that says ready; trusting it blindly used to cost every drive until
+    # someone cleared the param by hand.
+    self.cache.store(FakeSpec(), self.model)
+    d = jetlinkd.Jetlinkd()
+    d.client = serving_client()
+    with mock.patch.object(jetlinkd.helpers, 'engine_ready_for', return_value=True), \
+         mock.patch.object(jetlinkd.helpers, 'set_engine_ready') as ready:
+      assert d.provision() is True
+      assert d.client.ensure_engine.call_count == 1
+      assert d.verified
+      assert d.provision() is True
+      assert d.client.ensure_engine.call_count == 1, "verified once, then the param is trusted"
+    assert self.hashed == []
+    ready.assert_called_with('deadbeef')
+
+  def test_the_shapes_come_from_the_server_not_the_file(self):
+    d = jetlinkd.Jetlinkd()
+    d.client = serving_client(FakeSpec(sha256='deadbeef', nbytes=1 << 20))
+    with mock.patch.object(jetlinkd.helpers, 'set_engine_ready'):
+      assert d.provision() is True
+    d.client.ensure_engine.assert_called_once()
+    kwargs = d.client.ensure_engine.call_args.kwargs
+    assert kwargs['onnx_path'] == self.model
+    assert callable(kwargs['should_stop'])
+    assert self.cache.stores == 1 and self.cache.spec.sha256 == 'deadbeef'
+
+  def test_stop_is_polled_through_the_long_wait(self):
+    d = jetlinkd.Jetlinkd()
+    d.client = serving_client()
+    with mock.patch.object(jetlinkd.helpers, 'set_engine_ready'):
+      d.provision()
+    should_stop = d.client.ensure_engine.call_args.kwargs['should_stop']
+    assert should_stop() is False
+    d.request_stop()
+    assert should_stop() is True
 
 
 class TestBackoff(unittest.TestCase):

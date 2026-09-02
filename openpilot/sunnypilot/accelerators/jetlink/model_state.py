@@ -45,7 +45,7 @@ class JetlinkModelState(ModelStateBase):
 
   prev_desire: np.ndarray  # for tracking the rising edge of the pulse
 
-  def __init__(self, cam_w: int, cam_h: int, client, spec):
+  def __init__(self, cam_w: int, cam_h: int, client, spec, small=None):
     ModelStateBase.__init__(self)
     self.client = client
     self.spec = spec
@@ -60,9 +60,15 @@ class JetlinkModelState(ModelStateBase):
     # model runs afterwards, and the small and large models share a 256x128
     # input. So reuse the small model's warp and never compile a large tinygrad
     # pkl on the comma - which is the expensive step jetlink exists to avoid.
-    jits = load_oob(open_file_chunked(modeld_pkl_path(chestnut=False)))
-    self.warp = jits[(cam_w, cam_h)]
-    small_img = jits['metadata']['input_shapes']['img']
+    # modeld hands us its own small ModelState for that; loading the pkl a
+    # second time here would race the main thread on the same tinygrad device.
+    if small is not None:
+      self.warp = small.warp
+      small_img = small.input_shapes['img']
+    else:
+      jits = load_oob(open_file_chunked(modeld_pkl_path(chestnut=False)))
+      self.warp = jits[(cam_w, cam_h)]
+      small_img = jits['metadata']['input_shapes']['img']
     if tuple(small_img[2:]) != tuple(spec.input_shapes['img'][2:]):
       raise RuntimeError(f"warp geometry {small_img[2:]} does not match the large model "
                          + f"{spec.input_shapes['img'][2:]}; a large-model warp JIT is needed")
@@ -130,6 +136,9 @@ class JetlinkModelState(ModelStateBase):
     # Publish health while the Jetson works, exactly where modeld puts it.
     if after_enqueue is not None:
       after_enqueue()
+    # Blocks like a chestnut frame does. A long frame is a dropped camera
+    # frame, which modeld counts; only a stall past the client's FRAME_TIMEOUT
+    # raises, and that lands in modeld's fallback to the small model.
     model_output = self.client.infer_end(seq)
 
     # The non-finite guard that upstream's ModelState.run does here runs on the
@@ -142,6 +151,11 @@ class JetlinkModelState(ModelStateBase):
     if SEND_RAW_PRED:
       outputs_dict['raw_pred'] = model_output.copy()
     return outputs_dict
+
+  def close(self) -> None:
+    """Let go of the link. modeld calls this on a big model that finished
+    loading after it had already given up and started the small one."""
+    self.client.close()
 
   def warmup(self) -> None:
     dummy_frames = {k: np.zeros(self.frame_buf_params[k][3], dtype=np.uint8) for k in self.vision_input_names}

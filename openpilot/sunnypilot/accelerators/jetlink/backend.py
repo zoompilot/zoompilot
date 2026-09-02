@@ -85,30 +85,50 @@ class JetlinkAccelerator:
   def prepare(self) -> None:
     pass
 
-  def make_model_state(self, cam_w: int, cam_h: int):
+  def make_model_state(self, cam_w: int, cam_h: int, small=None):
+    from jetlink.client import EngineMissing
     from openpilot.sunnypilot.accelerators.jetlink.model_state import JetlinkModelState
 
-    spec = spec_cache.load()
-    if spec is None:
+    cached = spec_cache.load()
+    if cached is None:
       raise RuntimeError("no cached jetlink model spec; jetlinkd has not provisioned")
 
     # Two things can keep us waiting, and both resolve on their own: manager
     # stops jetlinkd and starts modeld in the same pass without waiting, so the
     # endpoints may still be held; and the Jetson may still be booting.
     client = _connect_patiently()
-
-    hello = client.hello(timeout=10.0)
-    cloudlog.warning("jetlink: %s trt %s, engine %s",
-                     hello.get('device'), hello.get('trt_version'), hello.get('engine_state'))
-    # The engine is already built and cached; this only loads it, ~1 s.
-    client.ensure_engine('/nonexistent', spec=spec, build_timeout=120.0)
-    return JetlinkModelState(cam_w, cam_h, client, spec)
+    try:
+      hello = client.hello(timeout=10.0)
+      cloudlog.warning("jetlink: %s trt %s, engine %s, loaded %s",
+                       hello.get('device'), hello.get('trt_version'),
+                       hello.get('engine_state'), str(hello.get('loaded'))[:16])
+      # jetlinkd left the engine loaded on the server, so this is normally one
+      # round trip. If the server restarted it is a load from the plan cache,
+      # 13 to 25 s measured, which the timeout has to cover.
+      try:
+        spec = client.ensure_engine(cached.sha256, cached.nbytes, frame_skip=cached.frame_skip,
+                                    build_timeout=120.0)
+      except EngineMissing:
+        # The Jetson's cache was pruned, re-flashed or swapped since jetlinkd
+        # recorded it as ready. Clear the record so jetlinkd provisions again
+        # next time the car is parked, instead of every drive failing here.
+        helpers.set_engine_ready(None)
+        raise
+    except BaseException:
+      client.close()
+      raise
+    return JetlinkModelState(cam_w, cam_h, client, spec, small)
 
   def make_health_publisher(self, pm, model):
     from openpilot.sunnypilot.accelerators.jetlink.state import JetlinkHealth
     # No client when the large model failed to load and modeld fell back to the
     # small one; the publisher then reports an invalid message, as chestnut does.
     return JetlinkHealth(pm, getattr(model, 'client', None))
+
+  def catalog(self) -> str | None:
+    # Every bundle in the chestnut catalog is a tinygrad pkl for the comma's
+    # own GPU; the Jetson runs ONNX from models.json instead.
+    return None
 
   def daemon(self) -> Daemon:
     return Daemon("jetlinkd", "openpilot.sunnypilot.accelerators.jetlink.jetlinkd",

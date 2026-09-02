@@ -110,7 +110,7 @@ def jetlink_params() -> dict:
   from openpilot.common.params import Params
   params = Params()
   out: dict = {'JetlinkEnabled': True}
-  for key in ('JetlinkEngineReady', 'JetlinkSpec', 'JetlinkModel'):
+  for key in ('JetlinkEngineReady', 'JetlinkSpec', 'JetlinkModel', 'JetlinkEndpoint'):
     value = params.get(key)
     if value is not None:
       out[key] = value
