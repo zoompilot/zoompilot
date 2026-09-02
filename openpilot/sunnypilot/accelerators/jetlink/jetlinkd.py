@@ -35,8 +35,22 @@ from openpilot.sunnypilot import accelerators
 from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache
 
 POLL_HZ = 2.0
-RETRY_BACKOFF = 30.0      # after a failed provision
-RECONNECT_BACKOFF = 5.0   # after the link itself failed
+RETRY_BACKOFF = 30.0       # after a failed provision
+RETRY_BACKOFF_MAX = 900.0  # ceiling once the failures keep coming
+RECONNECT_BACKOFF = 5.0    # after the link itself failed
+
+
+def _timed_out(e: BaseException) -> bool:
+  """Did the exchange time out with the stream still usable?
+
+  jetlink draws that line itself: LinkTimeout is documented as leaving the
+  stream in sync, every other LinkError as not.
+  """
+  try:
+    from jetlink.transport.base import LinkTimeout
+  except ImportError:
+    return False  # no way to tell, so assume the worst and reopen
+  return isinstance(e, LinkTimeout)
 
 
 class Jetlinkd:
@@ -45,6 +59,8 @@ class Jetlinkd:
     self.stop = False
     self.ready = False
     self.next_attempt = 0.0
+    self.next_provision = 0.0
+    self.failures = 0
     self.was_attached = False
     self.fetch_failed = False
 
@@ -116,19 +132,18 @@ class Jetlinkd:
 
     # Steady state must not touch the model file: hashing 766 MB takes longer
     # than this loop's period, so doing it per poll would peg a core for as
-    # long as the car is parked.
+    # long as the car is parked. The spec is cached against the file it came
+    # from and nothing else - keying it on the engine being ready too would
+    # re-hash the file on every retry against a Jetson that is not serving.
     st = model_path.stat()
     source = (str(model_path), st.st_mtime_ns, st.st_size)
     spec = spec_cache.load()
-    if (spec_cache.source() == source and spec is not None
-        and helpers.engine_ready_for(spec.sha256)):
-      return True
-
-    from jetlink.spec import spec_from_onnx
-    spec = spec_from_onnx(str(model_path))
+    if spec is None or spec_cache.source() != source:
+      from jetlink.spec import spec_from_onnx
+      spec = spec_from_onnx(str(model_path))
+      spec_cache.store(spec, model_path)
 
     if helpers.engine_ready_for(spec.sha256):
-      spec_cache.store(spec, model_path)   # record the source so the next poll is free
       return True
 
     cloudlog.warning("jetlink: provisioning %s (%d MB, sha %s)",
@@ -140,7 +155,6 @@ class Jetlinkd:
     self.client.ensure_engine(model_path, spec=spec, progress=accelerators.report_progress,
                               build_timeout=1800.0)
 
-    spec_cache.store(spec, model_path)
     helpers.set_engine_ready(spec.sha256)
     accelerators.report_progress('ready', 1.0, 'engine ready')
     helpers.cleanup_unchunked(keep=model_path)
@@ -148,6 +162,15 @@ class Jetlinkd:
     return True
 
   # -- main loop ------------------------------------------------------------
+
+  def backoff(self) -> float:
+    """How long to wait before provisioning again, doubling per failure.
+
+    A Jetson that is powered but never answers is the case this exists for:
+    at a flat 30 s it would be retried 120 times an hour for as long as the
+    car is parked, and every one of those costs a round of USB churn.
+    """
+    return min(RETRY_BACKOFF * 2 ** (self.failures - 1), RETRY_BACKOFF_MAX)
 
   def step(self) -> None:
     if not helpers.enabled():
@@ -167,23 +190,35 @@ class Jetlinkd:
     if attached != self.was_attached:
       cloudlog.warning("jetlink: jetson %s", "attached" if attached else "gone")
       self.was_attached = attached
-      if not attached:
+      if attached:
+        # A host that has just arrived gets a clean slate rather than sitting
+        # out a backoff earned by whatever was on the link before it.
+        self.failures = 0
+        self.next_provision = 0.0
+      else:
         # It powered down or rebooted. Readiness is about the engine on the
         # Jetson, which survives, so keep it; modeld reconnects on its own.
         self.ready = False
-    if not attached:
+    # Provisioning backs off on its own timer, so that a long wait for an
+    # unresponsive server still leaves us watching for one that reappears.
+    if not attached or time.monotonic() < self.next_provision:
       return
 
     try:
       self.ready = self.provision()
-      self.next_attempt = 0.0
-    except Exception:
+      self.failures = 0
+      self.next_provision = 0.0
+    except Exception as e:
       cloudlog.exception("jetlink: provisioning failed")
       accelerators.report_progress('failed', 1.0, 'see the log')
       self.ready = False
-      # Drop the link too: a half-open session is worse than a fresh one.
-      self.close_link()
-      self.next_attempt = time.monotonic() + RETRY_BACKOFF
+      # Only reopen when the link itself is suspect. Unbinding the gadget
+      # makes the host re-enumerate, and doing that every time a server that
+      # is simply not up yet fails to answer is hours of USB churn.
+      if not _timed_out(e):
+        self.close_link()
+      self.failures += 1
+      self.next_provision = time.monotonic() + self.backoff()
 
   def run(self) -> None:
     rk = Ratekeeper(POLL_HZ)
