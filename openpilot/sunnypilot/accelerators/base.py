@@ -71,11 +71,26 @@ class Accelerator(Protocol):
   def prepare(self) -> None:
     """Process-wide setup modeld must do before loading. modeld only."""
 
-  def make_model_state(self, cam_w: int, cam_h: int):
-    """The large-model ModelState. Raising falls modeld back to the small model."""
+  def make_model_state(self, cam_w: int, cam_h: int, small=None):
+    """The large-model ModelState. Raising falls modeld back to the small model.
+
+    `small` is the small-model ModelState modeld has already loaded on the
+    main thread. A backend that only needs the warp borrows it rather than
+    loading a second copy of the same pkl on the same device from a thread the
+    main thread is racing.
+    """
 
   def make_health_publisher(self, pm, model):
     """Publisher for the chestnutState message, or None if there is no telemetry."""
+
+  def catalog(self) -> str | None:
+    """The model-manager catalog this backend's models come from, or None.
+
+    comma's board runs the bundles the model manager downloads into its
+    "chestnut" slot. A backend with its own registry answers None, and the
+    manager then keeps offering the small-model catalog: a bundle it cannot
+    run must not be selectable.
+    """
 
   def daemon(self) -> Daemon | None:
     """An offroad process this backend needs, or None."""

@@ -109,12 +109,15 @@ class ChestnutAccelerator:
   def prepare(self) -> None:
     os.environ['HCQDEV_WAIT_TIMEOUT_MS'] = HCQ_WAIT_TIMEOUT_MS
 
-  def make_model_state(self, cam_w: int, cam_h: int):
+  def make_model_state(self, cam_w: int, cam_h: int, small=None):
     from openpilot.selfdrive.modeld.modeld import ModelState  # modeld imports us
     return ModelState(cam_w, cam_h, True)
 
   def make_health_publisher(self, pm, model):
     return ChestnutState(pm, model.chestnut)
+
+  def catalog(self) -> str | None:
+    return "chestnut"
 
   def daemon(self) -> Daemon | None:
     return None

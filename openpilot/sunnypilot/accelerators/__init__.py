@@ -67,6 +67,20 @@ def active() -> Accelerator | None:
   return next((b for b in backends() if _ask(b, 'ready', False)), None)
 
 
+def ready() -> bool:
+  """Can something run the large model right now? What the UI calls 'compiled'."""
+  return active() is not None
+
+
+def catalog() -> str | None:
+  """The model-manager catalog the attached accelerator draws from, if any.
+
+  Only a present backend gets a say, and the first one wins like everywhere
+  else here. None means the manager stays on the small-model catalog.
+  """
+  return next((c for b in backends() if _ask(b, 'present', False) and (c := _ask(b, 'catalog'))), None)
+
+
 def unavailable_reason() -> str | None:
   """The first backend complaint worth showing offroad, if any."""
   return next((r for b in backends() if (r := _ask(b, 'unavailable_reason'))), None)

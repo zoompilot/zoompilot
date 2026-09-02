@@ -199,24 +199,39 @@ def main(demo=False):
 
   st = time.monotonic()
   cloudlog.warning("loading model")
+  # The small model first, on this thread: it is the fallback either way, and
+  # a backend may borrow its warp rather than load the same pkl again from a
+  # thread this one would be racing on the same device.
+  small_model = ModelState(vipc_client_main.width, vipc_client_main.height, False)
   model = None
   if CHESTNUT:
     big_model = None
+    abandoned = False
+    handoff = threading.Lock()
     def load_big():
       nonlocal big_model
       try:
-        m = accel.make_model_state(vipc_client_main.width, vipc_client_main.height)
+        m = accel.make_model_state(vipc_client_main.width, vipc_client_main.height, small_model)
         m.warmup()
-        big_model = m
+        with handoff:
+          if abandoned:
+            # Past BIG_MODEL_TIMEOUT and modeld is already driving on the small
+            # model. Let go of the hardware rather than hold it all drive.
+            close = getattr(m, 'close', None)
+            if close is not None:
+              close()
+          else:
+            big_model = m
       except Exception:
         cloudlog.exception("big model load failed")
     loader = threading.Thread(target=load_big, daemon=True)
     loader.start()
     loader.join(BIG_MODEL_TIMEOUT)
-    model = big_model
+    with handoff:
+      abandoned = True
+      model = big_model
     params.put_bool("ChestnutActive", model is not None)
 
-  small_model = ModelState(vipc_client_main.width, vipc_client_main.height, False) if model is None or CHESTNUT else None
   if model is None:
     model = small_model
   params.put_bool("ChestnutLoading", False)
