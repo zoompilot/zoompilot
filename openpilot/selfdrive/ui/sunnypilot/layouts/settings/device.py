@@ -17,7 +17,6 @@ from openpilot.system.ui.widgets.button import ButtonStyle
 from openpilot.system.ui.widgets.confirm_dialog import alert_dialog, ConfirmDialog
 from openpilot.system.ui.widgets.list_view import text_item
 from openpilot.system.ui.widgets.scroller_tici import LineSeparator
-from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
 
 offroad_time_options = {
   0: 0,
@@ -177,7 +176,7 @@ class DeviceLayoutSP(DeviceLayout):
 
     def _set_always_offroad(result: int):
       if result == DialogResult.CONFIRM and not ui_state.engaged:
-        request_offroad_mode(ui_state.params, not _offroad_mode_state)
+        ui_state.params.put_bool("OffroadMode", not _offroad_mode_state)
 
     gui_app.push_widget(ConfirmDialog(_offroad_mode_str, tr("Confirm"), callback=lambda result: _set_always_offroad(result)))
 

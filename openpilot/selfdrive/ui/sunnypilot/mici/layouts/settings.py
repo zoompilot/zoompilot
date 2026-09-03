@@ -19,7 +19,6 @@ from openpilot.selfdrive.ui.sunnypilot.mici.layouts.visuals import VisualsLayout
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
-from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
 
 SP_ICON = "../../sunnypilot/selfdrive/assets/offroad"
 BIG_ICON_SIZE = 110
@@ -106,7 +105,7 @@ class SettingsLayoutSP(OP.SettingsLayout):
 
     def _set_offroad_status(status: bool):
       if not ui_state.engaged:
-        request_offroad_mode(ui_state.params, status)
+        ui_state.params.put_bool("OffroadMode", status)
         ui_state.always_offroad = status
 
     if not enable:
