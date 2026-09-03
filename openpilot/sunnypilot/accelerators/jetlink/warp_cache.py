@@ -41,6 +41,22 @@ from openpilot.common.swaglog import cloudlog
 CACHE_DIR = Path(Paths.comma_home()) / 'jetlink'
 
 
+def call_warp(warp, tfm, big_tfm, frame, big_frame):
+  """Call a warp JIT. Every caller goes through here, capture included.
+
+  TinyJit names its inputs in _prepare_jit_inputs as `enumerate(args)` plus
+  `sorted(kwargs)`, so a positional call captures [0, 1, 2, 3] and a keyword one
+  captures ['big_frame', 'big_tfm', 'frame', 'tfm']. It then refuses to run a
+  capture whose names differ from the call, which means the compile and every
+  later call have to agree on the convention. They did not: compile_warp called
+  positionally and model_state by keyword, so the JIT built offroad raised
+  JitError the first time modeld ran a frame, one drive after the warp was
+  built and nowhere near the code that built it. One function making both calls
+  is the only way that cannot come back.
+  """
+  return warp(tfm=tfm, big_tfm=big_tfm, frame=frame, big_frame=big_frame)
+
+
 def device_geometry() -> tuple[int, int, int, int]:
   """(cam_w, cam_h, model_w, model_h) for this device.
 
@@ -135,7 +151,7 @@ def compile_warp(cam_w: int, cam_h: int, model_w: int, model_h: int) -> Path:
   for _ in range(3):
     tfm_npy[:] = rng.standard_normal((3, 3)).astype(np.float32)
     big_tfm_npy[:] = rng.standard_normal((3, 3)).astype(np.float32)
-    warp_jit(tfm, big_tfm, frame, big_frame).realize()
+    call_warp(warp_jit, tfm, big_tfm, frame, big_frame).realize()
   Device.default.synchronize()
 
   pkl = warp_path(cam_w, cam_h, model_w, model_h)

@@ -135,8 +135,8 @@ class JetlinkModelState(ModelStateBase):
     self.npy['tfm'][:, :] = transforms['img'][:, :]
     self.npy['big_tfm'][:, :] = transforms['big_img'][:, :]
 
-    warped = self.warp(**self.warp_inputs,
-                       frame=self.full_frames['img'], big_frame=self.full_frames['big_img'])
+    warped = warp_cache.call_warp(self.warp, **self.warp_inputs,
+                                  frame=self.full_frames['img'], big_frame=self.full_frames['big_img'])
 
     self._frame_id += 1
     # .data() rather than .numpy(): same mean cost (~4.4 ms, this is a

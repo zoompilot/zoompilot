@@ -133,3 +133,38 @@ class TestGeometry(WarpCacheTest):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+class TestCallConvention(unittest.TestCase):
+  """The compile and the per-frame call have to name the JIT's inputs the same way.
+
+  TinyJit derives its input names from `enumerate(args)` plus `sorted(kwargs)`
+  and refuses a call whose names differ from the capture, so a positional
+  compile and a keyword call produce a JitError on the first frame of a drive,
+  long after the warp was built. Pinning the convention here is cheap; finding
+  it on the car cost a session.
+  """
+
+  def test_call_warp_passes_everything_by_keyword(self):
+    seen = {}
+
+    def recorder(*args, **kwargs):
+      seen['args'], seen['kwargs'] = args, kwargs
+      return 'warped'
+
+    out = warp_cache.call_warp(recorder, 'T', 'BT', 'F', 'BF')
+    self.assertEqual(out, 'warped')
+    self.assertEqual(seen['args'], (), "positional args make TinyJit capture [0, 1, 2, 3]")
+    self.assertEqual(seen['kwargs'], {'tfm': 'T', 'big_tfm': 'BT', 'frame': 'F', 'big_frame': 'BF'})
+
+  def test_both_call_sites_go_through_the_helper(self):
+    # A second call site that calls the JIT directly would diverge again without
+    # anything failing until a frame runs on the car. Read the sources rather
+    # than import them: model_state pulls in tinygrad and msgq, and this check
+    # has to run off the device too.
+    pkg = Path(warp_cache.__file__).parent
+    for name in ('warp_cache.py', 'model_state.py'):
+      for line in (pkg / name).read_text().splitlines():
+        stripped = line.strip()
+        if ('warp_jit(' in stripped or 'self.warp(' in stripped) and 'call_warp' not in stripped:
+          self.fail(f"{name} calls the warp JIT directly: {stripped}")
