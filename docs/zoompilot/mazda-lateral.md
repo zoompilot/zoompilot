@@ -253,6 +253,40 @@ The camera's ERR_BIT_1 ("LKAS Fault: Restart the Car") has been captured three w
    driver-torque sample staleness at a multiplier of 15. Fixed 2026-09-01 by 12/12 in the panda
    and the 10-sample driver-torque window plus 2-count margin in the controller.
 
+## TJA button as the MADS switch
+
+Some gen1 trims carry a physical TJA button on the wheel, CRZ_BTNS bit 11 (byte 1, bit 3).
+It is a momentary press of 140 to 170 ms (tja_cts_route_29, four presses) and is low in every
+frame captured on a CX-5 2022 without it. Neither MAZDA_CX5_2022 nor MAZDA_CX9_2021 predicts
+the button, the camera firmware is identical on both cars (GSH7-67XK2-U), and the camera's own
+TJA field on 0x440 reports whether TJA is switched on, not whether the button exists. So the
+driver declares it: `MazdaTjaButton` under Steering, MADS, on mici, tici and sunnylink, shown
+for Mazda only.
+
+Declared, it becomes `MazdaFlagsSP.TJA_BUTTON` on CarParamsSP and `MAZDA_PARAM_SP_TJA_BUTTON`
+in the sunnypilot safety param, and on both sides the button is the only lateral switch:
+
+| Start | Press | Result |
+| --- | --- | --- |
+| MADS off, MRCC off | TJA | MADS on, MRCC off |
+| MADS off, MRCC off | MRCC main | MADS off, MRCC armed |
+| MADS on, MRCC armed | SET | MADS on, MRCC active |
+| MADS off, MRCC armed | SET | MADS off, MRCC active (UEM does not couple) |
+| MADS on, MRCC active | TJA | MADS off, MRCC active |
+| MADS on, MRCC active | CANCEL | MADS on, MRCC armed |
+| MADS on, MRCC armed | MRCC main off | MADS on, MRCC off |
+
+Software: `mads.py` sets `allow_always` and `no_main_cruise` from the flag and blocks unified
+engagement, so `MadsMainCruiseAllowed` and `MadsUnifiedEngagementMode` no longer touch lateral.
+Panda: `mazda.h` stops writing `acc_main_on` and drives `mads_button_press` from bit 11.
+Carstate emits the lkas button event only when declared, so a stray bit on an undeclared car
+cannot toggle lateral through the generic MADS button path.
+
+Undeclared cars are byte-identical to before: ACC main arms and disarms MADS, UEM couples
+SET/RES, bit 11 is ignored. A runtime latch on the first press was tried first (one press per
+ignition to switch paths) and replaced by the toggle because it made the first press of every
+drive ambiguous and left the panda and software latches able to drift after a process restart.
+
 ## Constants
 
 | Constant | Value | Measurement | Routes |

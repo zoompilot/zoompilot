@@ -9,7 +9,7 @@ import pyray as rl
 
 from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlagsSP
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake
+from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, offroad_brand
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.network import NavButton
@@ -27,6 +27,9 @@ MADS_UNIFIED_ENGAGEMENT_MODE_BASE_DESC = "{engage}<br><h4>{note}</h4>".format(
   engage=tr("Engage lateral and longitudinal control with cruise control engagement."),
   note=tr("Note: Once lateral control is engaged via UEM, it will remain engaged until it is manually disabled via the MADS button or car shut off."),
 )
+
+MADS_TJA_BUTTON_DESC = tr("The physical TJA button toggles Automatic Lane Centering and MRCC only controls cruise. "
+                          + "Main Cruise and UEM no longer engage or disengage lateral control. Enable only if your car has the button.")
 
 STATUS_CHECK_COMPATIBILITY = tr("Start the vehicle to check vehicle compatibility.")
 DEFAULT_TO_OFF = tr("This feature defaults to OFF, and does not allow selection due to vehicle limitations.")
@@ -63,10 +66,19 @@ class MadsSettingsLayout(Widget):
       callback=self._update_steering_mode_description,
     )
 
+    self._tja_button_toggle = toggle_item_sp(
+      title=lambda: tr("Mazda TJA Button"),
+      description=MADS_TJA_BUTTON_DESC,
+      param="MazdaTjaButton",
+      enabled=ui_state.is_offroad,
+    )
+    self._tja_button_toggle.set_visible(lambda: offroad_brand(ui_state.params, ui_state.CP, ui_state.is_offroad()) == "mazda")
+
     self.items = [
       self._main_cruise_toggle,
       self._unified_engagement_toggle,
       self._steering_mode,
+      self._tja_button_toggle,
     ]
 
   def _update_state(self):
@@ -85,13 +97,7 @@ class MadsSettingsLayout(Widget):
 
   @staticmethod
   def _mads_limited_settings() -> bool:
-    brand = ""
-    if ui_state.is_offroad():
-      bundle = ui_state.params.get("CarPlatformBundle")
-      if bundle:
-        brand = bundle.get("brand", "")
-    if not brand:
-      brand = ui_state.CP.brand if ui_state.CP is not None else ""
+    brand = offroad_brand(ui_state.params, ui_state.CP, ui_state.is_offroad())
 
     if brand == "rivian":
       return True

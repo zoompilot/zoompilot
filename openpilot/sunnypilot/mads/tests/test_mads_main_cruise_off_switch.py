@@ -23,12 +23,13 @@ def make_car_state(available):
   return cs
 
 
-def make_mads(mocker, brand, prev_available, flags=0):
+def make_mads(mocker, brand, prev_available, flags=0, sp_flags=0):
   sd = mocker.MagicMock()
   sd.CP = structs.CarParams()
   sd.CP.brand = brand
   sd.CP.flags = int(flags)
   sd.CP_SP = structs.CarParamsSP()
+  sd.CP_SP.flags = int(sp_flags)
   sd.params = mocker.MagicMock()
   sd.params.get_bool = mocker.MagicMock(side_effect=lambda k: {
     "Mads": True, "MadsMainCruiseAllowed": True,

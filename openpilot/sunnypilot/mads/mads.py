@@ -11,7 +11,7 @@ from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
 from openpilot.common.params import Params
 from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON, \
-  MADS_LATCHING_BUTTON
+  mads_button_owns_lateral
 from openpilot.sunnypilot.mads.state import StateMachine, GEARS_ALLOW_PAUSED_SILENT
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -58,9 +58,12 @@ class ModularAssistiveDrivingSystem:
     if self.CP.brand in MADS_NO_ACC_MAIN_BUTTON:
       self.no_main_cruise = True
 
-    # Fitted to some trims only, so the fingerprint cannot say. Stay on the ACC-main path
-    # until a press proves the button exists. Mirrors the panda-side latch.
-    self.latching_button = self.CP.brand in MADS_LATCHING_BUTTON
+    # A declared button is the only lateral switch: engage regardless of ACC main, and keep
+    # ACC main from enabling or disabling. Mirrors the panda-side safety param.
+    self.button_owns_lateral = mads_button_owns_lateral(self.CP, self.CP_SP)
+    if self.button_owns_lateral:
+      self.allow_always = True
+      self.no_main_cruise = True
 
     # read params on init
     self.enabled_toggle = self.params.get_bool("Mads")
@@ -91,6 +94,10 @@ class ModularAssistiveDrivingSystem:
   def block_unified_engagement_mode(self) -> bool:
     # UEM disabled
     if not self.unified_engagement_mode:
+      return True
+
+    # Longitudinal engagement must not re-enable lateral behind the button's back.
+    if self.button_owns_lateral:
       return True
 
     if self.enabled:
@@ -177,12 +184,6 @@ class ModularAssistiveDrivingSystem:
       if self.main_enabled_toggle and not self.no_main_cruise:
         if CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available:
           self.events_sp.add(EventNameSP.lkasEnable)
-
-    if self.latching_button and any(be.type == ButtonType.lkas for be in CS.buttonEvents):
-      # The button is present, so it owns lateral from here: engage regardless of ACC main,
-      # and stop letting ACC main disable. Latched before the press below so the first one counts.
-      self.allow_always = True
-      self.no_main_cruise = True
 
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:

@@ -123,6 +123,24 @@
                   ]
                 },
                 {
+                  "key": "MazdaTjaButton",
+                  "widget": "toggle",
+                  "title": "Mazda TJA Button",
+                  "description": "The physical TJA button toggles Automatic Lane Centering and MRCC only controls cruise. Main Cruise and UEM no longer engage or disengage lateral control. Enable only if your car has the button.",
+                  "visibility": [
+                    {
+                      "type": "capability",
+                      "field": "brand",
+                      "equals": "mazda"
+                    }
+                  ],
+                  "enablement": [
+                    {
+                      "type": "offroad_only"
+                    }
+                  ]
+                },
+                {
                   "key": "MadsSteeringMode",
                   "widget": "multiple_button",
                   "title": "Steering Mode on Brake Pedal",

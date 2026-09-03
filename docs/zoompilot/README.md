@@ -8,7 +8,7 @@ repo.
 - mazda-longitudinal.md: radar takeover and hand-back, CRZ_INFO checksum, stop-and-go,
   MRCC state semantics, alpha-long availability
 - mazda-lateral.md: 2022 EPS detection and flag, 1200/12/12 envelope, speed-dependent
-  STEER_MAX, LKAS_BLOCK and the non-delivery latch, camera ERR_BIT_1 history
+  STEER_MAX, LKAS_BLOCK and the non-delivery latch, camera ERR_BIT_1 history, TJA button
 - mazda-fingerprinting.md: VIN decode table and the EPS-swap fallback
 - lateral-tune.md: v0/v1/v2 lineage, the v2 mechanisms and their attribution, the
   steer-limit classifier, the speed-bin learner and its cache
