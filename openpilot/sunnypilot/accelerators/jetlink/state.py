@@ -43,18 +43,25 @@ INT_FIELDS = {
 
 
 class JetlinkHealth:
-  def __init__(self, pm: messaging.PubMaster, client):
+  def __init__(self, pm: messaging.PubMaster, model):
     self.pm = pm
-    self.client = client
-    # False also when there is no client at all: the large model failed to load
-    # and modeld is on the small one, so there is no link to report on. modeld
-    # clears this too if the large model dies mid-drive.
-    self.big = client is not None
+    self.model = model
+    # modeld clears this if the large model dies mid-drive and it takes over the
+    # fallback itself. Otherwise the link is whatever the model has right now:
+    # a joining state has none until the Jetson turns up, and can lose and
+    # regain one without modeld ever hearing about it, so ask per send rather
+    # than capture a client that was never going to stay put.
+    self.big = True
+
+  @property
+  def client(self):
+    return getattr(self.model, 'client', None)
 
   def send(self) -> None:
     msg = messaging.new_message('chestnutState')
     state = msg.chestnutState
-    telemetry = self.client.last_state if self.big else None
+    client = self.client if self.big else None
+    telemetry = client.last_state if client is not None else None
 
     if telemetry:
       for field, key in FLOAT_FIELDS.items():
@@ -65,5 +72,5 @@ class JetlinkHealth:
           setattr(state, field, max(lo, min(hi, int(telemetry[key]))))
       state.pcieLtssm = LTSSM_L0
 
-    msg.valid = bool(telemetry) and not self.client.dead
+    msg.valid = bool(telemetry) and not client.dead
     self.pm.send('chestnutState', msg)

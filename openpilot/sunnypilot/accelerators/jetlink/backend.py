@@ -20,11 +20,12 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.accelerators.base import Daemon
 from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache
 
-# modeld loads the large model in a thread with BIG_MODEL_TIMEOUT = 60 s, so we
-# have most of a minute. Use it: the comma and the Jetson power up on different
-# rails, usually the comma first, and a Jetson still booting when the car goes
-# onroad would otherwise cost the large model for the whole drive - openpilot's
-# fallback to the small model is one-way.
+# How long one attempt holds the gadget open waiting for a host. This is no
+# longer a deadline on the large model: make_model_state returns immediately and
+# JoiningModelState keeps retrying for the life of the drive, because the Jetson
+# is on the ignition rail and its boot starts after the comma is already onroad.
+# Holding the gadget while we wait is the point - the Jetson sees us the moment
+# it enumerates rather than on our next poll.
 CONNECT_TIMEOUT = 45.0
 CONNECT_DELAY = 0.5
 
@@ -83,14 +84,14 @@ class JetlinkAccelerator:
     return helpers.gadget_alert()
 
   def prepare(self) -> bool:
-    # Nothing process-wide to set up, and nothing to wait for: ready() already
-    # asked the server, and the link either opens in make_model_state or does
-    # not. Failing there is the same one-way fallback as failing here.
+    # Nothing process-wide to set up, and nothing to wait for on the link:
+    # make_model_state returns immediately now and joins in the background.
     #
-    # The warp is worth checking first though. jetlinkd builds it offroad and
-    # without one there is no large model, so finding out here costs nothing;
-    # finding out in make_model_state means opening the link and waiting up to
-    # CONNECT_TIMEOUT for a Jetson before failing on something local. The
+    # The warp is the one thing worth refusing on, and it is not a race we can
+    # join our way out of: only jetlinkd compiles it and manager runs jetlinkd
+    # offroad only, so a warp that is missing when modeld starts stays missing
+    # for the whole drive. Saying no here keeps ChestnutActive honest instead of
+    # leaving a joining thread to retry something that cannot arrive. The
     # constructor still checks, against the geometry modeld actually has.
     from openpilot.sunnypilot.accelerators.jetlink import warp_cache
     if not warp_cache.is_cached(*warp_cache.device_geometry()):
@@ -99,8 +100,24 @@ class JetlinkAccelerator:
     return True
 
   def make_model_state(self, cam_w: int, cam_h: int, small=None):
+    # Returns straight away with the small model in the driving seat. See
+    # joining.py for why modeld must not be made to wait for a Jetson.
+    from openpilot.sunnypilot.accelerators.jetlink.joining import JoiningModelState
+
+    def build(client, spec):
+      from openpilot.sunnypilot.accelerators.jetlink.model_state import JetlinkModelState
+      return JetlinkModelState(cam_w, cam_h, client, spec, small)
+
+    return JoiningModelState(cam_w, cam_h, small, self._open_link, build)
+
+  def _open_link(self):
+    """Get a client and a spec. Link IO only, so it is safe off modeld's thread.
+
+    Everything that touches tinygrad stays in `build`, on modeld's own thread:
+    unpickling the warp JIT next to the small model running frames on the same
+    device is not a race worth taking.
+    """
     from jetlink.client import EngineMissing
-    from openpilot.sunnypilot.accelerators.jetlink.model_state import JetlinkModelState
 
     cached = spec_cache.load()
     if cached is None:
@@ -127,16 +144,17 @@ class JetlinkAccelerator:
         # next time the car is parked, instead of every drive failing here.
         helpers.set_engine_ready(None)
         raise
-      return JetlinkModelState(cam_w, cam_h, client, spec, small)
+      return client, spec
     except BaseException:
       client.close()
       raise
 
   def make_health_publisher(self, pm, model):
     from openpilot.sunnypilot.accelerators.jetlink.state import JetlinkHealth
-    # No client when the large model failed to load and modeld fell back to the
-    # small one; the publisher then reports an invalid message, as chestnut does.
-    return JetlinkHealth(pm, getattr(model, 'client', None))
+    # The model, not its client: with a joining state the link arrives after
+    # modeld has already built this, and may go away and come back mid-drive.
+    # Reading `model.client` per send is what lets chestnutState follow it.
+    return JetlinkHealth(pm, model)
 
   def catalog(self) -> str | None:
     # Every bundle in the chestnut catalog is a tinygrad pkl for the comma's
