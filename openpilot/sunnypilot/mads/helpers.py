@@ -14,6 +14,11 @@ from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlags
 
 MADS_NO_ACC_MAIN_BUTTON = ("rivian", "tesla")
 
+# Brands whose MADS button is fitted to some trims only, so presence cannot be read off the
+# fingerprint. They start on the ACC-main path and switch over on the first button press.
+# Mazda: the physical TJA button, CRZ_BTNS bit 11.
+MADS_LATCHING_BUTTON = ("mazda",)
+
 
 class MadsSteeringModeOnBrake:
   REMAIN_ACTIVE = 0

@@ -10,7 +10,8 @@ from openpilot.cereal import log, custom
 from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
 from openpilot.common.params import Params
-from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON
+from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON, \
+  MADS_LATCHING_BUTTON
 from openpilot.sunnypilot.mads.state import StateMachine, GEARS_ALLOW_PAUSED_SILENT
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -56,6 +57,10 @@ class ModularAssistiveDrivingSystem:
 
     if self.CP.brand in MADS_NO_ACC_MAIN_BUTTON:
       self.no_main_cruise = True
+
+    # Fitted to some trims only, so the fingerprint cannot say. Stay on the ACC-main path
+    # until a press proves the button exists. Mirrors the panda-side latch.
+    self.latching_button = self.CP.brand in MADS_LATCHING_BUTTON
 
     # read params on init
     self.enabled_toggle = self.params.get_bool("Mads")
@@ -169,9 +174,15 @@ class ModularAssistiveDrivingSystem:
         self.events.remove(EventName.pcmEnable)
         self.events.remove(EventName.buttonEnable)
     else:
-      if self.main_enabled_toggle:
+      if self.main_enabled_toggle and not self.no_main_cruise:
         if CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available:
           self.events_sp.add(EventNameSP.lkasEnable)
+
+    if self.latching_button and any(be.type == ButtonType.lkas for be in CS.buttonEvents):
+      # The button is present, so it owns lateral from here: engage regardless of ACC main,
+      # and stop letting ACC main disable. Latched before the press below so the first one counts.
+      self.allow_always = True
+      self.no_main_cruise = True
 
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:
