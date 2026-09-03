@@ -25,7 +25,6 @@ lkas_block_scenarios.json
 lkas_block_pr_data.json
 accel_cmd_characterization.json
 
-# plots: *.png is LFS-tracked against a push-inaccessible remote, so committing one bricks
-# device installs (CLAUDE.md). Regenerate from the tool that drew it instead.
+# PNG files use an LFS remote unavailable to device installers. Regenerate them from source.
 *.png
 *.svg

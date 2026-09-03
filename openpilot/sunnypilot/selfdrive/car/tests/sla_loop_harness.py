@@ -179,7 +179,7 @@ class Loop:
       self._card_tick(enabled=True)
     assert abs(self.helper.v_cruise_kph - baseline_mph * self.u_kph) < 0.1
 
-  # -- message construction ------------------------------------------------------------
+  # message construction
   def _cs(self, button_events=None):
     CS = car.CarState(cruiseState={"available": True,
                                    "speed": self.ecu.dash * self.u_ms,
@@ -216,7 +216,7 @@ class Loop:
     CC_SP.intelligentCruiseButtonManagement.state = self.servo.state
     return CC_SP
 
-  # -- per-layer ticks -----------------------------------------------------------------
+  # per-layer ticks
   def _card_tick(self, CS=None, enabled=True, lp_msg=None, cc_msg=None):
     CS = CS if CS is not None else self._cs()
     lp_msg, cc_msg = lp_msg or self._lp_sp(), cc_msg or self._cc_sp()
@@ -302,7 +302,7 @@ class Loop:
       if assert_each is not None:
         assert_each(self)
 
-  # -- driver actions ------------------------------------------------------------------
+  # driver actions
   def driver_press(self, button, in_seconds, hold_s=0.15):
     self.driver_queue[self.tick_n + int(in_seconds / DT_CTRL)] = (button, max(1, int(hold_s / DT_CTRL)))
 

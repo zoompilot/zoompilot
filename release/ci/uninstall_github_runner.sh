@@ -39,7 +39,7 @@ stop_and_uninstall_service() {
 remove_runner() {
     [ -d "$RUNNER_DIR" ] || return 0
     cd "$RUNNER_DIR"
-    # deregister BEFORE deleting .runner — config.sh needs it to know what to remove
+    # Deregister before deleting .runner because config.sh reads it during removal.
     if [ -n "$GITHUB_TOKEN" ] && [ -f .runner ]; then
         sudo su -c "./config.sh remove --token $GITHUB_TOKEN" "$RUNNER_USERNAME" || true
     fi

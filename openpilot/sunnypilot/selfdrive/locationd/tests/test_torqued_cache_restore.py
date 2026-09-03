@@ -110,7 +110,6 @@ class TestCacheRestore:
     est._restore_ext_cache(_cache(decay=200.0), cache_CP=est.CP)
     assert_untouched(est, seeds)
 
-  # --- decay ---
 
   def test_decay_comes_from_cache_not_min(self, fake_params):
     """At init self.decay does not exist yet; the cache's decay is what upstream restores, so
@@ -150,7 +149,6 @@ class TestCacheRestore:
     est._restore_ext_cache(_cache(decay=float('nan')), cache_CP=est.CP, cache_sp=_sp(est, lafs, frictions))
     assert_untouched(est, seeds)
 
-  # --- guards mirrored from upstream's global restore ---
 
   def test_nan_in_one_bin_rejects_whole_cache(self, fake_params):
     """Upstream drops the entire cache on any bad content (one try/except, full reset on NaN).
@@ -277,7 +275,6 @@ class TestCacheRestore:
 
     assert_untouched(est, seeds, n_points=2, decay=200.0)
 
-  # --- the points are checked on their own; bad ones cost the points, not the values ---
 
   def _restore_with_points(self, est, points):
     lafs, frictions = in_bounds_values(est)

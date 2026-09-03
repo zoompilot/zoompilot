@@ -38,7 +38,7 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot import accelerators
-from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache
+from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache, warp_cache
 
 POLL_HZ = 2.0
 RETRY_BACKOFF = 30.0       # after a failed provision
@@ -71,6 +71,7 @@ class Jetlinkd:
     self.fetch_failed = False
     self.verified = False   # the server has confirmed the ready param this attach
     self._identity: tuple | None = None   # (source, sha256, nbytes) of the hashed file
+    self.warp_built = False  # tried the comma-side warp this run
 
   # -- lifecycle ------------------------------------------------------------
 
@@ -126,6 +127,23 @@ class Jetlinkd:
       self.fetch_failed = True
       return None
     return path
+
+  def build_warp(self) -> None:
+    """Compile the comma-side warp, once per run, while we are parked.
+
+    Not part of provision(): the warp depends only on this device's camera and
+    the small model's input size, not on which large model is selected or on
+    the Jetson answering. A Jetson that never provisions still leaves a warp
+    ready for the next one, and a warp that cannot be built costs the large
+    model, not the drive - modeld falls back exactly as it does for any other
+    big-model load failure.
+    """
+    if self.warp_built:
+      return
+    self.warp_built = True
+    accelerators.report_progress('warp', 0.0, 'compiling the camera warp')
+    if warp_cache.ensure(*warp_cache.device_geometry()):
+      accelerators.clear_progress()
 
   def provision(self) -> bool:
     """Make the Jetson ready for the selected model. Host must be attached."""
@@ -224,9 +242,14 @@ class Jetlinkd:
         # It powered down or rebooted. Readiness is about the engine on the
         # Jetson, which survives, so keep it; modeld reconnects on its own.
         self.ready = False
+    if not attached:
+      return
+    # Ahead of the provisioning backoff: this needs no server, and a Jetson
+    # that is slow to answer must not leave modeld without a warp.
+    self.build_warp()
     # Provisioning backs off on its own timer, so that a long wait for an
     # unresponsive server still leaves us watching for one that reappears.
-    if not attached or time.monotonic() < self.next_provision:
+    if time.monotonic() < self.next_provision:
       return
 
     try:

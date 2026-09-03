@@ -84,9 +84,8 @@ class AlphaLongToggleMonitor:
     # tracked every frame so a request made while parked is acted on at once
     stopped = self.standstill.update(CS.vEgo)
     if self.done:
-      # CC_SP is rebuilt every frame, so a hand-back that ran stays asserted until the
-      # process exits: the session manager reads a dropped assert as a withdrawal and
-      # would re-silence the radar it just handed back
+      # Keep hand-back asserted because CC_SP is rebuilt each frame and the session manager
+      # treats a cleared request as a new takeover.
       if self.handback_frames > 0:
         CC_SP.stockEcuHandBack = True
       return
@@ -100,11 +99,10 @@ class AlphaLongToggleMonitor:
       self.handback_frames = 0
       return
 
-    # every finish waits out an active engagement and a standstill: the UIs block both
-    # actions while engaged, but the params can flip from anywhere. A hand-back already
-    # running is not withdrawn by either; only the cycle/grant is held.
+    # Wait for disengagement and standstill because parameters can change outside the UI.
+    # Once started, hand-back remains asserted while the final cycle or grant waits.
     if self.CP.brand != "mazda" or not self.CP.openpilotLongitudinalControl:
-      # nothing to tear down (enable direction, or a brand without a silenced ECU)
+      # No ECU hand-back is required when enabling or on unaffected platforms.
       if not CC.enabled and stopped:
         self._finish(toggle_mismatch)
       return
@@ -114,7 +112,6 @@ class AlphaLongToggleMonitor:
 
     CC_SP.stockEcuHandBack = True
     self.handback_frames += 1
-    # accFaulted doubles as "stock radar heard" while op-long is active; once the
-    # radar is broadcasting again the car is back to fully stock
+    # Under openpilot longitudinal, accFaulted also indicates restored stock radar traffic.
     if (CS.accFaulted or self.handback_frames >= HANDBACK_TIMEOUT_FRAMES) and not CC.enabled and stopped:
       self._finish(toggle_mismatch)

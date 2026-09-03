@@ -212,9 +212,7 @@ class TestLateralMismatchCounter(OpenpilotTestCase):
     assert mads.lateral_mismatch_counter == 200
 
   def test_warning_precedes_the_disable(self, mocker):
-    # the panda rejecting our steering means an unsteered wheel from the first rejected frame
-    # (Mazda routes 00000116/117: 2 s of rejections latched the EPS fault before the disable
-    # fired), so the driver is told well before the 200-frame disable
+    # Alert before the disable because steering is unavailable from the first rejected frame.
     mads, sd = make_mads(mocker, MadsSteeringModeOnBrake.PAUSE)
     mads.enabled = True
     mads.active = True

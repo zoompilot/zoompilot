@@ -33,7 +33,7 @@ def main():
     gap = (v - setv) * MPH  # mph the dash sits BELOW actual speed
     limiter = np.isin(d['src'], ('sccVision', 'sccMap', 'speedLimitAssist'))
 
-    # ---- 1. the ECU response curve as flown on this route ----
+    # 1. the ECU response curve as flown on this route
     print("=== MRCC response: achieved decel vs (vEgo - dash) gap ===")
     print("   (engaged, no lead, no pedals, steady-ish gap)")
     ok = eng & ~d['lead'] & ~d['gas'] & ~d['brake'] & (v > 8)
@@ -60,7 +60,7 @@ def main():
     for a, g in zip(p['decel_bp'], p['gap_v']):
         print(f"    want {a:5.2f} m/s2 -> command {g:4.1f} mph gap")
 
-    # ---- 2. request vs delivery during limiter-owned decel ----
+    # 2. request vs delivery during limiter-owned decel
     print("\n=== during SCC/limiter-owned frames: request vs delivery ===")
     m = eng & limiter & (v > 8) & (d['aT'] < -0.15)
     print(f"  {m.sum()} frames with a decel request")
@@ -71,7 +71,7 @@ def main():
     print(f"  frames delivering LESS decel than asked: {short.sum()} ({short.mean()*100:.0f}%)")
     print(f"  median shortfall: {np.median((a_meas[m] - d['aT'][m])[short]):.2f} m/s2")
 
-    # ---- 3. dash tracking: does the servo reach the commanded target? ----
+    # 3. dash tracking: does the servo reach the commanded target?
     print("\n=== servo walk rate achieved (decreasing state) ===")
     dec = d['icbm'] == 'decreasing'
     ds = np.diff(setv * MPH)
@@ -100,7 +100,7 @@ def main():
             lr_rate = np.array([r[1] / r[0] for r in long_runs])
             print(f"  runs > 2 s (n={len(long_runs)}): median {np.median(lr_rate):.2f} mph/s")
 
-    # ---- 4. per-episode chain breakdown for the hot apexes ----
+    # 4. per-episode chain breakdown for the hot apexes
     print("\n=== hot apexes: chain breakdown ===")
     hot = sorted([e for e in eps if e['lat_apex'] > 1.95], key=lambda e: -e['lat_apex'])
     for e in hot:

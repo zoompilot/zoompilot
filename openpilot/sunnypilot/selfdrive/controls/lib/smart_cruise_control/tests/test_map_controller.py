@@ -137,8 +137,7 @@ class TestSmartCruiseControlMap(OpenpilotTestCase):
     assert self.scc_m.output_a_target == pytest.approx(expected, abs=1e-3)
 
   def test_commit_gate_and_decel_are_the_shared_solver(self):
-    # the map path used to hand-roll (v^2 - tv^2) / (2 d) twice; both now come from
-    # speed_profile.required_decel, so a gate change there moves the map controller too
+    # The commit gate and output must share speed_profile.required_decel.
     lat0, lon0 = 32.0, -117.0
     self.mem_params.put("LastGPSPosition", json.dumps({"latitude": lat0, "longitude": lon0}), block=True)
     self.mem_params.put("MapTargetVelocities", json.dumps([

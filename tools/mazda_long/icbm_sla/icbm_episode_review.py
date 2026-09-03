@@ -52,7 +52,7 @@ def main(route_glob):
       elif w == 'carState' and state is not None:
         rows.append((t, round(msg.carState.cruiseState.speedCluster * MS_MPH), state, btn, vt, lps))
 
-  # ---- episodes ----------------------------------------------------------------------
+  # episodes
   episodes = []
   cur = None
   for t, dash, st, b, vt_, lps_ in rows:

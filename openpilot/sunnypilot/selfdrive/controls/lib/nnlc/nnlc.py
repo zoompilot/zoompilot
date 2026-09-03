@@ -69,7 +69,7 @@ class NeuralNetworkLateralControl(LatControlTorqueJerkAware):
     # _nnlc_enabled depends on model_valid, which is False at construction (no modelV2
     # yet) and can flip either way mid-drive. The shared PID's limits differ by mode
     # (torque-space +-steer_max vs the host's lat-accel-space limits), so re-assert them
-    # on every transition — otherwise the NNLC integrator runs against limits ~LAF x
+    # on every transition; otherwise the NNLC integrator runs against limits ~LAF x
     # too wide until the next unrelated update_limits() call.
     was_enabled = self._nnlc_enabled
     super().update_model_v2(model_v2)

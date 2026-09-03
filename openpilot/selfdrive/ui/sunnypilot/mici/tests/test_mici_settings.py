@@ -5,9 +5,7 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-# Regression tests for the SP MICI settings widgets. These cover the param<->display contracts
-# that are easy to break silently: nothing renders differently when a scaling factor or a value
-# map is wrong, the setting just quietly writes the wrong number.
+# Regression coverage for MICI parameter-to-display contracts.
 
 import os
 
@@ -46,7 +44,7 @@ def params(gui):
 
 
 def render(widget):
-  """Drive one frame the way gui_app does — Widget.render() is what calls _update_state()."""
+  """Drive one frame through Widget.render, which calls _update_state."""
   import pyray as rl
   widget.render(rl.Rectangle(0, 0, 800, 600))
 
@@ -140,8 +138,7 @@ class TestMultiParamValueMapping:
     from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP
     from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AutoLaneChangeMode
 
-    # AutoLaneChangeTimer defaults to "0" (nudge) in params_keys.h — an unset param must not
-    # read as "off" (-1), which is a different index AND a different stored value
+    # The declared default is nudge (0), while off is stored as -1.
     params.remove("AutoLaneChangeTimer")
     w = BigMultiParamToggleSP("t", "AutoLaneChangeTimer", list(ALC_LABELS.values()), values=list(ALC_LABELS))
     assert w.value == ALC_LABELS[AutoLaneChangeMode.NUDGE]
@@ -419,11 +416,7 @@ class TestMadsLimitedCallSignature:
       ui_state.CP, ui_state.CP_SP = old_cp, old_cp_sp
 
 
-# Everything above drives _update_state() and asserts on widget state, so nothing here ever
-# executed a _draw_content override. That is exactly where the SP widgets reach into upstream
-# internals, and it is how BigButtonSP kept calling BigButton._width_hint() after the
-# 2026-08-24 sync split it into _title_width_hint()/_subtitle_width_hint(): the suite stayed
-# green and the UI died on the first frame with AttributeError. These tests draw.
+    # State-only tests do not cover widget overrides that depend on upstream drawing internals.
 
 LAYOUT_TARGETS = [
   ("cruise", "CruiseLayoutMici"),

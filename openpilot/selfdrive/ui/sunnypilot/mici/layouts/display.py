@@ -88,7 +88,7 @@ class DisplayLayoutMici(NavScroller):
     )
 
     self._screensaver = BigParamControl(tr("screen saver"), "ScreenSaverEnabled")
-    # 60-600 s in whole minutes — same range/step as the TICI screen saver duration
+    # Match the TICI screen-saver range and one-minute step.
     self._screensaver_timeout = BigParamOption(
       tr("saver duration"), "ScreenSaverTimeout",
       min_value=60, max_value=600, value_change_step=60,

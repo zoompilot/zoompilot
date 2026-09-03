@@ -9,13 +9,12 @@ import pyray as rl
 
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr
-from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, LineSeparatorSP
+from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, multiple_button_item_sp, LineSeparatorSP
 from openpilot.system.ui.widgets.network import NavButton
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
 
 from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AutoLaneChangeMode
-from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import PACE_MIN, PACE_MAX, pace_profile_time
 
 
 class LaneChangeSettingsLayout(Widget):
@@ -52,23 +51,16 @@ class LaneChangeSettingsLayout(Widget):
       description=lambda: tr("Toggle to enable a delay timer for seamless lane changes when blind spot monitoring " +
                              "(BSM) detects a obstructing vehicle, ensuring safe maneuvering."),
     )
-    self._smoothing_toggle = toggle_item_sp(
+    # stored value is the index into lane_change_smoothing.LEVELS, off first
+    self._smoothing_level = multiple_button_item_sp(
+      title=lambda: tr("Lane Change Smoothing"),
+      description=lambda: tr("Slow automatic lane changes to a chosen pace. Off is stock; every pace is gentler " +
+                             "than stock. The end-of-maneuver correction keeps its authority at every pace, so the " +
+                             "car settles into the new lane without a wheel snap."),
+      buttons=[lambda: tr("Off"), lambda: tr("Fast"), lambda: tr("Medium"), lambda: tr("Slow"), lambda: tr("Extra Slow")],
       param="LaneChangeSmoothing",
-      title=lambda: tr("Smooth Lane Changes"),
-      description=lambda: tr("Set the pace of automatic lane changes. Lower pace is gentler. The end-of-maneuver " +
-                             "correction keeps its authority at every pace, so the car settles into the new lane " +
-                             "without a wheel snap."),
-    )
-    # stored value is the 1-9 pace index; the label shows the sinusoidal profile time it
-    # selects, which is the physically meaningful quantity (higher pace = quicker)
-    self._smoothing_pace = option_item_sp(
-      param="LaneChangeSmoothingPace",
-      title=lambda: tr("Lane Change Duration"),
-      min_value=PACE_MIN,
-      max_value=PACE_MAX,
-      value_change_step=1,
-      description="",
-      label_callback=lambda pace: f"~{pace_profile_time(pace):.1f} {tr('s')}",
+      button_width=280,
+      inline=False,
     )
     self._road_edge_block = toggle_item_sp(
       param="RoadEdgeLaneChangeEnabled",
@@ -83,8 +75,7 @@ class LaneChangeSettingsLayout(Widget):
       LineSeparatorSP(40),
       self._road_edge_block,
       LineSeparatorSP(40),
-      self._smoothing_toggle,
-      self._smoothing_pace,
+      self._smoothing_level,
     ]
 
     return items
@@ -108,4 +99,3 @@ class LaneChangeSettingsLayout(Widget):
     if not enable_bsm and ui_state.params.get_bool("AutoLaneChangeBsmDelay"):
       ui_state.params.remove("AutoLaneChangeBsmDelay")
     self._bsm_delay.action_item.set_enabled(enable_bsm and ui_state.params.get("AutoLaneChangeTimer", return_default=True) > AutoLaneChangeMode.NUDGE)
-    self._smoothing_pace.set_visible(self._smoothing_toggle.action_item.get_state())

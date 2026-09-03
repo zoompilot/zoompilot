@@ -37,8 +37,7 @@ class HardwaredExt:
     # Force-offroad requests defer to card so brands that silence a stock ECU can hand
     # it back first (openpilot/sunnypilot/selfdrive/car/alpha_long_toggle.py). Grant
     # directly when there is no onroad session to hand back from, or if card has not
-    # finished in time - the request must never silently fail - but never under a moving
-    # car (openpilot/sunnypilot/system/offroad_request.py).
+    # finished in time. Never grant a fallback while the car is moving.
     v_ego = sm[self.SERVICE].vEgo if sm.alive[self.SERVICE] else None
     if not self.offroad_request_gate.update(self.params.get_bool("OffroadModeRequested"), session_active, engaged, v_ego):
       return False

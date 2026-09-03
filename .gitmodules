@@ -1,7 +1,5 @@
-# zoompilot develop: opendbc submodule served from the zoompilot org fork
-# (zoompilot/opendbc). Touch this file to force `git submodule sync` to rewrite
-# cached URLs on devices upgrading from snapshots that pointed at
-# zephleggett/opendbc-sunnypilot.git or zephleggett/opendbc.git.
+# Use the zoompilot opendbc fork. Changes to this file make submodule sync refresh
+# legacy URLs.
 [submodule "panda"]
   path = panda
   url = https://github.com/sunnyhaibin/panda.git

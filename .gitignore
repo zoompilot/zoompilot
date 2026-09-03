@@ -106,8 +106,7 @@ SKILL.md
 !.idea/tools/*
 !.run/*
 
-# screenshot test output: *.png is LFS-tracked against a push-inaccessible remote,
-# so a committed screenshot bricks installs (see CLAUDE.md)
+# Screenshot output stays untracked because PNG files use an LFS remote unavailable to installers.
 openpilot/sunnypilot/selfdrive/ui/tests/screenshots/
 notes/
 

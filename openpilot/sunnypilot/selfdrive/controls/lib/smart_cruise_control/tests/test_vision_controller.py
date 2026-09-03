@@ -86,11 +86,10 @@ class TestBrakeAtBudget(VisionCase):
         assert a <= prev + 1e-9
         assert prev - a <= j * DT_MDL + 1e-6
       prev = a
-    assert prev < -1.0  # converged to a real decel request, not the old smear
+    assert prev < -1.0  # converged to a material deceleration request
 
   def test_planned_slowdown_does_not_lower_the_estimate(self):
-    # The old lat-acc form used the model's velocity plan, so a planned slowdown lowered
-    # the prediction below the abort threshold mid-braking. Geometry divides it back out.
+    # Geometry-derived curvature must remain stable as the model velocity plan slows.
     self.run_road(V_EGO, curve_at(100.), v_model=0.7 * V_EGO)
     assert self.scc_v.is_active
 
@@ -144,8 +143,7 @@ class TestFarFieldCurvatureBias(VisionCase):
     assert self.scc_v.v_dip_ahead > truth  # under-corrects: the cap is deliberate
 
   def test_bias_correction_commits_earlier(self):
-    # the whole point: a corner the reported geometry leaves under the commit gate is
-    # already worth braking for once the model's under-read is undone
+    # Bias correction moves the reported corner above the commit threshold.
     road = curve_at(110., kappa=0.013)
     self.run_road(V_EGO, road, attenuate=True)
     assert self.scc_v.is_active
@@ -221,8 +219,7 @@ class TestFarFieldCurvatureBias(VisionCase):
     assert self.scc_v.v_dip_ahead < raw.v_dip_ahead - 1.
 
   def test_real_curve_commits_exactly_as_before_the_fade(self):
-    # 35 mph into a real corner (r=50 m, reported with the model's under-read): inside the
-    # fitted band the shipped numbers are unchanged
+    # The fitted speed band retains the calibrated correction.
     v = 15.6
     road = curve_at(90., kappa=CURVE_KAPPA)
     self.run_road(v, road, setpoint=v, attenuate=True)

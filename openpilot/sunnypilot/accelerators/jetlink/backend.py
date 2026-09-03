@@ -82,8 +82,21 @@ class JetlinkAccelerator:
   def unavailable_reason(self) -> str | None:
     return helpers.gadget_alert()
 
-  def prepare(self) -> None:
-    pass
+  def prepare(self) -> bool:
+    # Nothing process-wide to set up, and nothing to wait for: ready() already
+    # asked the server, and the link either opens in make_model_state or does
+    # not. Failing there is the same one-way fallback as failing here.
+    #
+    # The warp is worth checking first though. jetlinkd builds it offroad and
+    # without one there is no large model, so finding out here costs nothing;
+    # finding out in make_model_state means opening the link and waiting up to
+    # CONNECT_TIMEOUT for a Jetson before failing on something local. The
+    # constructor still checks, against the geometry modeld actually has.
+    from openpilot.sunnypilot.accelerators.jetlink import warp_cache
+    if not warp_cache.is_cached(*warp_cache.device_geometry()):
+      cloudlog.warning("jetlink: no warp compiled yet, staying on the small model")
+      return False
+    return True
 
   def make_model_state(self, cam_w: int, cam_h: int, small=None):
     from jetlink.client import EngineMissing
@@ -114,10 +127,10 @@ class JetlinkAccelerator:
         # next time the car is parked, instead of every drive failing here.
         helpers.set_engine_ready(None)
         raise
+      return JetlinkModelState(cam_w, cam_h, client, spec, small)
     except BaseException:
       client.close()
       raise
-    return JetlinkModelState(cam_w, cam_h, client, spec, small)
 
   def make_health_publisher(self, pm, model):
     from openpilot.sunnypilot.accelerators.jetlink.state import JetlinkHealth

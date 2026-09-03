@@ -28,7 +28,7 @@ def main():
     no_lead = clean & ~d['lead']
     print(f"engaged clean frames {clean.sum()}, of which no-lead {no_lead.sum()}")
 
-    # ---- sustained ceiling: longest windows of continuous deceleration ----
+    # sustained ceiling: longest windows of continuous deceleration
     print("\n=== sustained deceleration episodes (no lead, no pedals, >=2 s) ===")
     braking = no_lead & (a < -0.2)
     runs = []
@@ -56,7 +56,7 @@ def main():
         print(f"\n  transient peak decel: median {np.median(peaks):.2f}  best {min(peaks):.2f}")
         print(f"  run-mean decel:       median {np.median(means):.2f}  best {min(means):.2f}")
 
-    # ---- response vs gap, conditioned on the gap having been held ----
+    # response vs gap, conditioned on the gap having been held
     print("\n=== steady-state response vs gap (gap held +-1 mph for >=1.5 s) ===")
     held = np.ones(len(gap), dtype=bool)
     for k in range(1, 31):
@@ -70,7 +70,7 @@ def main():
         print(f"  {lo:3}-{lo+1:<5} {m.sum():6} {np.median(a[m]):7.2f} "
               f"{np.percentile(a[m],10):7.2f} {np.percentile(a[m],90):7.2f}")
 
-    # ---- the marginal value of gap depth ----
+    # the marginal value of gap depth
     print("\n=== marginal value of extra gap ===")
     for lo, hi in ((3, 5), (5, 7), (7, 9), (9, 14)):
         m = m0 & (gap >= lo) & (gap < hi)
@@ -79,7 +79,7 @@ def main():
         print(f"  gap {lo:2}-{hi:<3}: n={m.sum():5}  median a = {np.median(a[m]):5.2f}  "
               f"p10 = {np.percentile(a[m],10):5.2f}")
 
-    # ---- latency: gap step -> decel response ----
+    # latency: gap step -> decel response
     print("\n=== response latency: from the plan asking to the car decelerating ===")
     lim = np.isin(d['src'], ('sccVision', 'sccMap'))
     starts = np.where(lim[1:] & ~lim[:-1])[0] + 1

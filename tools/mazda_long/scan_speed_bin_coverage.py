@@ -269,7 +269,7 @@ def main():
     s["route"] = route_of(s["path"])
 
 
-  # ── measure learning depth (rlogs don't carry speedBinPoints) ──────────────
+  # measure learning depth (rlogs don't carry speedBinPoints)
   # torqued_ext only attaches speedBinPoints to the param-cache write, never to the published
   # message, so logged point counts are always zero.
   # Instead: count the samples each segment contributes under torqued's own admission
@@ -286,7 +286,7 @@ def main():
     s["ltp_msgs"] = d.get("msgs", 0)
     s["max_can"] = d.get("max_can", 0)
 
-  # ── aggregate per route ────────────────────────────────────────────────────
+  # aggregate per route
   def seg_index(path):
     stem = Path(path).parent.name
     try:
@@ -333,7 +333,7 @@ def main():
         + ("   (consistent - no rescaling needed)" if len(eras) <= 1
            else "   MIXED - low-speed laf must be rescaled by SM_current/SM_logged"))
 
-  # ── per-bin best source ────────────────────────────────────────────────────
+  # per-bin best source
   print(f"\n{'=' * 112}")
   print("PER-BIN BEST: route with the most admissible samples for that bin, value from its last segment")
   print("=" * 112)
@@ -367,7 +367,7 @@ def main():
   print("  'pin' = the learned value is sitting on the +/-30% (laf) / +/-50% (friction) sanity")
   print("  bound around the current seed, so the true value is probably outside it.")
 
-  # ── cross-route agreement ──────────────────────────────────────────────────
+  # cross-route agreement
   print(f"\n{'=' * 112}")
   print("CROSS-ROUTE AGREEMENT (one value per route, from its last segment)")
   print("=" * 112)
@@ -384,7 +384,7 @@ def main():
           f"{v.max():>8.3f} {100 * (v.max() - v.min()) / float(np.median(v)):>6.0f}% "
           f"{float(np.median(fr)):>9.3f}")
 
-  # ── proposed TOML ──────────────────────────────────────────────────────────
+  # proposed TOML
   print(f"\n{'=' * 112}")
   print("PROPOSED SEEDS")
   print("=" * 112)

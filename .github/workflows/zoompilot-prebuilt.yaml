@@ -1,15 +1,13 @@
 name: zoompilot prebuilt
 
-# Cuts a release: builds develop on the self-hosted comma device and publishes the
-# compiled tree to main, which is the branch users install. main is owned by this
-# workflow and force-pushed on every release, so never commit to it by hand and never
-# merge into it; develop is the source of truth.
+# Build develop on the self-hosted comma device and publish the compiled tree to main.
+# The workflow owns and force-pushes main; develop remains the source of truth.
 #
-# Run it manually from develop (Actions > Run workflow) when you want to cut a release.
+# Start releases manually from develop through Actions > Run workflow.
 #
-# The runner only picks jobs up while the device is off the car: hardwared sets
+# The runner accepts jobs only while the device is offroad. hardwared sets
 # GithubRunnerSufficientVoltage above 9V and process_config stops the runner service
-# when it is set. Bench-power the device to let a build run.
+# when set. Use bench power for release builds.
 
 env:
   BUILD_DIR: "/data/openpilot"
@@ -25,8 +23,7 @@ on:
 
 jobs:
   guard:
-    # Cheap gate so a wrong branch never occupies the device or force-pushes the
-    # release branch with a build of itself.
+    # Reject unexpected refs before reserving the device or publishing main.
     runs-on: ubuntu-24.04
     steps:
       - name: Refuse to cut a release from anything but develop
@@ -78,8 +75,8 @@ jobs:
           # BUILD_DIR is the CI copy bind-mounted over /data/openpilot inside the
           # runner service's private mount namespace, not the real install.
           mkdir -p "${BUILD_DIR}/"
-          # Refuse to wipe anything but that bind mount: a runner started outside the
-          # unit (no unshare -m) sees the real install at this path.
+          # Verify the bind mount before clearing it. Outside the unit, this path is the
+          # live install.
           mountpoint -q "$BUILD_DIR" || { echo "::error::$BUILD_DIR is not a mount point; refusing to wipe the real install. Run the runner from its systemd unit."; exit 1; }
           sudo find $BUILD_DIR/ -mindepth 1 -delete
           source ${UV_PROJECT_ENVIRONMENT}/bin/activate

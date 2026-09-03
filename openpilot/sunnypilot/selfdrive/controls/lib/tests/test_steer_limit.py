@@ -327,11 +327,11 @@ class TestIntegratorUnderTheNewFlag:
     new = self._run(use_classifier=True)
     old = self._run(use_classifier=False)
     assert old['deepening'].old_duty > 0.7, 'the upstream flag must fire on most frames for this test to mean anything'
-    # error on the integrator's side: both flags hold it (only the few clean frames integrate)
+    # Both classifiers freeze error that would deepen saturation.
     assert new['deepening'].new_duty > 0.7
     assert new['deepening'].i == pytest.approx(self.SEED_I, abs=0.03)
     assert old['deepening'].i == pytest.approx(self.SEED_I, abs=0.03)
-    # error flips: the old flag keeps it pinned, the new one lets it bleed
+    # The directional classifier permits integrator decay away from saturation.
     assert new['decaying'].new_duty < 0.05
     assert old['decaying'].i == pytest.approx(old['deepening'].i, abs=0.03)
     expected_bleed = self.KI * DT * self.ERROR * self.FRAMES

@@ -93,8 +93,8 @@ class TestHighwayHorizon(VisionCase):
     assert a_min == pytest.approx(A_PUB_MIN, abs=1e-6)
 
   def test_published_decel_stays_within_the_clip(self):
-    # required_decel screams through its distance floor when a constraint sits inside the
-    # actuation lead, and the gain puts more constraints there. The publication cap owns it.
+    # Constraints inside the actuation lead can produce a large required deceleration, which
+    # the publication cap must bound.
     stock = SmartCruiseControlVision(make_cp(op_long=False))
     self.run_road(V_EGO, curve_at(100., kappa=0.012), n=60, scc=stock, attenuate=True)
     assert stock.output_a_target >= -2.0

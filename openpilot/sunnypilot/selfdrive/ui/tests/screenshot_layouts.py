@@ -75,7 +75,7 @@ def setup_params():
   params.put_bool("LiveTorqueParamsRelaxedToggle", True)
   params.put_bool("CustomTorqueParams", True)
   params.put_bool("TorqueParamsOverrideEnabled", True)
-  # physical values — the picker scales x100 for its 1..500 / 1..100 integer domain
+  # The picker scales physical float values into its integer domain.
   params.put("TorqueParamsOverrideLatAccelFactor", 2.5)
   params.put("TorqueParamsOverrideFriction", 0.5)
 

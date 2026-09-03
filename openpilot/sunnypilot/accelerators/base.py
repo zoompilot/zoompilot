@@ -68,8 +68,14 @@ class Accelerator(Protocol):
     hardware simply not being fitted.
     """
 
-  def prepare(self) -> None:
-    """Process-wide setup modeld must do before loading. modeld only."""
+  def prepare(self) -> bool:
+    """Process-wide setup modeld must do before loading, and a last veto. modeld only.
+
+    False means the hardware is fitted but not fit to load on right now, and
+    modeld should take the small model for this drive. This is where a backend
+    puts a check it cannot afford in ready(), which the UI and hardwared poll:
+    waiting on a chestnut's PCIe link to train, on 12V to recover from a crank.
+    """
 
   def make_model_state(self, cam_w: int, cam_h: int, small=None):
     """The large-model ModelState. Raising falls modeld back to the small model.

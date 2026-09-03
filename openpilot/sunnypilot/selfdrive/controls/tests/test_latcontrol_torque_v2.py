@@ -391,7 +391,7 @@ class TestInactivePriming:
     v0 = make_lac(LatControlTorqueV0, friction=FRICTION)
     log, _ = self._engage_after(v0, 100)
     assert log.error == pytest.approx(0.0, abs=1e-6)  # setpoint == request regardless
-    assert abs(log.desiredLateralJerk) > 1.0  # the whole hold read as jerk
+    assert abs(log.desiredLateralJerk) > 1.0  # the buffered hold appears as jerk
 
   def test_unprimed_v2_would_push_against_the_held_wheel(self, params):
     """The counterfactual: without the inactive frames the stale buffer makes the shaped jerk

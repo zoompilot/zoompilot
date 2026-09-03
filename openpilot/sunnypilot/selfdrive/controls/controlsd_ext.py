@@ -109,14 +109,15 @@ class ControlsExt(ModelStateBase):
     ext.set_actuator_state(applied, limit.at_rail)
     self._applied_torque_prev = applied
 
-  def lane_change_jerk_factor(self, sm: messaging.SubMaster, new_desired_curvature: float, prev_desired_curvature: float) -> float:
+  def lane_change_jerk_factor(self, sm: messaging.SubMaster, lat_active: bool,
+                              new_desired_curvature: float, prev_desired_curvature: float) -> float:
     """Lane-change smoothing's jerk factor for clip_curvature (1.0 outside a smoothed lane
     change). The lateral maneuver mode's scripted commands pass through the stock clip."""
     if sm.valid['lateralManeuverPlan']:
-      # a lane-change arrest armed before maneuver mode must not resume stale after it
+      # a lane-change unwind armed before maneuver mode must not resume stale after it
       self.lane_change_smoothing.reset()
       return 1.0
-    return self.lane_change_smoothing.update(sm['carState'], sm['modelV2'], new_desired_curvature, prev_desired_curvature)
+    return self.lane_change_smoothing.update(sm['carState'], sm['modelV2'], lat_active, new_desired_curvature, prev_desired_curvature)
 
   @staticmethod
   def get_lead_data(_lead, src: log.RadarState.LeadData) -> None:
@@ -156,7 +157,7 @@ class ControlsExt(ModelStateBase):
     CC_SP.intelligentCruiseButtonManagement.vTarget = icbm_src.vTarget
 
     # lane-change pace clamp telemetry, for offline validation
-    CC_SP.zoompilot.laneChangeSmoothing.jerkFactor = float(self.lane_change_smoothing.arrest_jerk_factor)
+    CC_SP.zoompilot.laneChangeSmoothing.jerkFactor = float(self.lane_change_smoothing.jerk_factor)
 
     return CC_SP
 

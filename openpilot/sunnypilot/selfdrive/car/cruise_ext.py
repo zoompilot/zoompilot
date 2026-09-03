@@ -174,9 +174,8 @@ class VCruiseHelperSP:
         self.v_cruise_cluster_kph = self.v_cruise_kph
 
     if self.reconcile_floor and not pressed and self.reconcile_frames <= 0:
-      # a - press dismissed a session and the window has settled: the setpoint may only
-      # come down to meet the dash, whatever the regime (a limiter or the servo can only
-      # have moved it lower still), or the servo restores the old baseline over "slower"
+      # After a decrement dismisses a session, only lower the baseline to the settled dash
+      # value so the servo cannot undo the driver's request.
       self.reconcile_floor = False
       if not self.cruise_arbiter.prompting and dash_kph > 1:
         self.v_cruise_kph = min(self.v_cruise_kph, float(np.clip(round(dash_kph, 1), self.v_cruise_min, V_CRUISE_MAX)))

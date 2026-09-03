@@ -4,79 +4,85 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Lane-change smoothing: a user-paced lateral jerk limit on automatic lane changes.
+Lane-change smoothing: a user-selected lateral jerk limit on automatic lane changes.
 
-Only the jerk (curvature rate) is tightened: capping lateral accel would strangle the
-end-of-maneuver arrest and let the car glide past the new lane center before it can
-build enough counter-curvature. The arrest itself gets proportional extra authority
-(a P-pursuit on how far the command lags the model) so a gentle entry never turns
-into a wheel-snap or an overshoot at the end.
+Three rules, applied as a jerk factor on clip_curvature's curvature-rate limit:
 
-Ported from StarPilot (github.com/firestar5683/StarPilot, controlsd.py); the tuning
-constants and the failure evidence cited beside them are theirs, from rlog-driven
-iteration on their fleet.
+1. Entry: while the model steers into the new lane, the curvature rate is capped at the
+   selected level's fraction of the ISO limit.
+2. Unwind: whenever the model moves curvature back against the entry direction (the
+   arrest at the far side and the counter-steer that stops the lateral drift) the command
+   is instead allowed to track the model as a first-order filter with UNWIND_TAU, up to
+   UNWIND_JERK_MAX of stock. Only the jerk is tightened, never the lateral accel: capping
+   accel strangles the arrest and lets the car glide past the new lane center before it
+   can build enough counter-curvature. The tracker replaces a fixed fast unwind rate on
+   purpose: the slow entry leaves the command lagging the model, and a fixed rate closes
+   that lag as a step at the maneuver crest (a ~2 deg wheel snap in 0.2 s). A rate
+   proportional to the lag crosses zero smoothly at the crest.
+3. Release: both limits taper linearly back to stock over SMOOTH_RELEASE_T after the
+   maneuver, so the final recenter is shaped instead of stepping through an open clamp.
+
+The rate limiter sits downstream of a planner that is closed-loop on the car's lateral
+position, so the model replans against it and the true maneuver duration is set by that
+loop, not by the level's nominal time. Measure durations in logs.
 """
-import math
-
 from openpilot.cereal import log
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
-from openpilot.selfdrive.controls.lib.drive_helpers import MAX_LATERAL_JERK, smooth_value
+from openpilot.selfdrive.controls.lib.drive_helpers import MAX_LATERAL_JERK, MIN_SPEED
 
 LaneChangeState = log.LaneChangeState
+LaneChangeDirection = log.LaneChangeDirection
 
-# Pace setting: 1 = gentlest (~8 s lane change), 9 = quickest (~3.6 s). The jerk factor
-# comes from a sinusoidal lane-change profile (peak jerk j = pi^3 * W / T^3 for a lane
-# width W crossed in time T) with 1.3x headroom.
-PACE_MIN, PACE_MAX, PACE_DEFAULT = 1, 9, 5
-LANE_WIDTH = 3.5      # m
-PACE_T_FASTEST = 3.0  # s, the sinusoidal profile time at the (hypothetical) pace 10
-PACE_T_SPAN = 5.0     # s added to the profile time going from pace 10 to pace 1
-JERK_HEADROOM = 1.3
+# Entry jerk cap per level as a fraction of the 5 m/s^3 ISO limit, each about half the
+# last. Off is stock: the model's own lane change, which plans ~4 s and rides the ISO
+# clamp. The model asks for 2-3 m/s^3 at its peak, so every level sits under that and
+# all of them are longer than stock. Nominal sinusoid times at these caps (peak jerk
+# j = pi^3 W / T^3 for W = 3.5 m, 1.3x headroom): fast ~4.7 s, medium ~5.8 s,
+# slow ~6.9 s, extra slow ~8 s.
+LEVEL_OFF, LEVEL_FAST, LEVEL_MEDIUM, LEVEL_SLOW, LEVEL_EXTRA_SLOW = 0, 1, 2, 3, 4
+LEVEL_JERK_FACTOR = {
+  LEVEL_OFF: 1.0,
+  LEVEL_FAST: 0.30,
+  LEVEL_MEDIUM: 0.15,
+  LEVEL_SLOW: 0.08,
+  LEVEL_EXTRA_SLOW: 0.05,
+}
+# seconds added to DesireHelper's lane-change timeout, so a gentle maneuver is not
+# aborted mid-change by the stock cap
+LEVEL_TIME_EXTRA = {
+  LEVEL_OFF: 0.0,
+  LEVEL_FAST: 0.5,
+  LEVEL_MEDIUM: 1.0,
+  LEVEL_SLOW: 2.0,
+  LEVEL_EXTRA_SLOW: 3.0,
+}
+LEVELS = tuple(LEVEL_JERK_FACTOR)
 
-# After a smoothed lane change ends, ramp the curvature limits back to stock over this
-# time so the final recenter correction is shaped instead of stepping through unclamped.
-SMOOTH_RELEASE_T = 2.0
+# Taper of the limits back to stock after the maneuver.
+SMOOTH_RELEASE_T = 2.0  # s
 
-# Cap on the extra jerk factor granted while the model is unwinding lane-change
-# curvature (the arrest and any correction back toward center). Entry gentleness is
-# comfort, but arrest speed is a correctness constraint: a slow symmetric cap lets the
-# car glide past the new lane center. 0.6 (~ pace-5 rate) fully tracks the arrest
-# demand seen in logs, 40% below stock.
-ARREST_JERK_FLOOR = 0.6
-# The extra unwind authority is proportional to how far the command lags the model
-# (rate = lag/tau, a P-pursuit), NOT a fixed fast rate: a boolean-gated floor engages
-# as a bang-bang switch right at the maneuver crest — where the slow entry command
-# meets a model that already peaked and is diving — snapping the wheel ~2 deg in
-# 0.2 s. With pursuit, lag ~0 at the crest so the rate crosses zero smoothly, and
-# noise-scale lag inside the deadband gets no boost (kills the fast-down/slow-up
-# sawtooth).
-ARREST_PURSUIT_TAU = 0.2    # s
-ARREST_GAP_DEADBAND = 5e-5  # 1/m
-ARREST_RISE_TAU = 0.2
+# Unwind tracker: rate = lag / UNWIND_TAU, capped at UNWIND_JERK_MAX of the ISO limit.
+# Well above every entry cap, tracks the arrest demand seen in logs with margin.
+UNWIND_TAU = 0.2        # s
+UNWIND_JERK_MAX = 0.6
+
+# Sign of the curvature that steers into the new lane (openpilot: left is positive).
+ENTRY_SIGN = {LaneChangeDirection.left: 1.0, LaneChangeDirection.right: -1.0}
 
 
-def read_pace(params) -> int:
-  """The clamped pace setting — the single sanitization point for every consumer
+def read_level(params) -> int:
+  """The clamped level setting, the single sanitization point for every consumer
   (controller, desire helper, settings badges)."""
-  return min(max(int(params.get("LaneChangeSmoothingPace", return_default=True)), PACE_MIN), PACE_MAX)
+  return min(max(int(params.get("LaneChangeSmoothing", return_default=True)), LEVELS[0]), LEVELS[-1])
 
 
-def pace_profile_time(pace: int) -> float:
-  """Target lane-change duration for a pace setting (sinusoidal profile)."""
-  return PACE_T_FASTEST + (10 - pace) * PACE_T_SPAN / 9.0
+def level_jerk_factor(level: int) -> float:
+  return LEVEL_JERK_FACTOR[level]
 
 
-def pace_jerk_factor(pace: int) -> float:
-  t_target = pace_profile_time(pace)
-  j_req = (math.pi ** 3) * LANE_WIDTH / (t_target ** 3)
-  return min(1.0, j_req * JERK_HEADROOM / MAX_LATERAL_JERK)
-
-
-def lane_change_time_extra(pace: int) -> float:
-  """Seconds added to DesireHelper's lane-change timeout, so a gentle maneuver is not
-  aborted mid-change by the stock cap."""
-  return (10 - pace) * 2.0 / 9.0
+def lane_change_time_extra(level: int) -> float:
+  return LEVEL_TIME_EXTRA[level]
 
 
 class LaneChangeSmoothing:
@@ -86,53 +92,47 @@ class LaneChangeSmoothing:
     self.params = Params()
     self.enabled = False
     self.set_jerk = 1.0
-    self.smooth_release = 0.0
+    self.release_timer = 0.0
     self.entry_sign = 0.0
-    self.arrest_jerk_factor = 1.0
+    self.jerk_factor = 1.0
     self.get_params()
 
   def get_params(self) -> None:
-    self.enabled = self.params.get_bool("LaneChangeSmoothing")
-    self.set_jerk = pace_jerk_factor(read_pace(self.params))
+    level = read_level(self.params)
+    self.enabled = level != LEVEL_OFF
+    self.set_jerk = level_jerk_factor(level)
 
   def reset(self) -> None:
-    self.smooth_release = 0.0
+    self.release_timer = 0.0
     self.entry_sign = 0.0
-    self.arrest_jerk_factor = 1.0
+    self.jerk_factor = 1.0
 
-  def update(self, CS, model_v2, new_desired_curvature: float, prev_desired_curvature: float) -> float:
+  def update(self, CS, model_v2, lat_active: bool, new_desired_curvature: float, prev_desired_curvature: float) -> float:
     """Returns the jerk factor for clip_curvature (1.0 = stock limits)."""
-    if not self.enabled:
+    if not self.enabled or not lat_active:
       self.reset()
       return 1.0
 
-    jerk_factor = 1.0
-    in_lane_change = model_v2.meta.laneChangeState in (LaneChangeState.laneChangeStarting,
-                                                       LaneChangeState.laneChangeFinishing)
-    # Hold the tight jerk limit for the whole maneuver, then taper back to stock so the
-    # model's recenter step and mid-change corrections stay shaped instead of passing
-    # through a mostly-relaxed clamp.
-    if in_lane_change:
-      self.smooth_release = SMOOTH_RELEASE_T
-      if self.entry_sign == 0.0 and abs(new_desired_curvature - prev_desired_curvature) > 2e-4:
-        self.entry_sign = math.copysign(1.0, new_desired_curvature - prev_desired_curvature)
+    meta = model_v2.meta
+    if meta.laneChangeState in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing):
+      self.release_timer = SMOOTH_RELEASE_T
+      self.entry_sign = ENTRY_SIGN.get(meta.laneChangeDirection, self.entry_sign)
     else:
-      self.smooth_release = max(self.smooth_release - DT_CTRL, 0.0)
-      if self.smooth_release <= 0.0:
-        self.entry_sign = 0.0
-    if self.smooth_release > 0.0:
-      release = 1.0 - self.smooth_release / SMOOTH_RELEASE_T  # 0 in maneuver -> 1 after
-      jerk_factor = self.set_jerk + (1.0 - self.set_jerk) * release
-      step = new_desired_curvature - prev_desired_curvature
-      model_unwinding = self.entry_sign != 0.0 and abs(step) > ARREST_GAP_DEADBAND and \
-          math.copysign(1.0, step) == -self.entry_sign
-      if model_unwinding:
-        v_lim = max(CS.vEgo, 1.0)
-        gap = max(abs(step) - ARREST_GAP_DEADBAND, 0.0)
-        jf_gap = (gap / ARREST_PURSUIT_TAU) * v_lim ** 2 / MAX_LATERAL_JERK
-        arrest_cap = ARREST_JERK_FLOOR + (1.0 - ARREST_JERK_FLOOR) * release
-        jerk_factor = max(jerk_factor, min(arrest_cap, jerk_factor + jf_gap))
-      if jerk_factor > self.arrest_jerk_factor:
-        jerk_factor = float(smooth_value(jerk_factor, self.arrest_jerk_factor, ARREST_RISE_TAU, DT_CTRL))
-    self.arrest_jerk_factor = jerk_factor
+      self.release_timer = max(self.release_timer - DT_CTRL, 0.0)
+
+    if self.release_timer <= 0.0 or self.entry_sign == 0.0:
+      self.reset()
+      return 1.0
+
+    release = 1.0 - self.release_timer / SMOOTH_RELEASE_T  # 0 in maneuver -> 1 at the end of the taper
+    jerk_factor = self.set_jerk + (1.0 - self.set_jerk) * release
+
+    lag = new_desired_curvature - prev_desired_curvature
+    if lag * self.entry_sign < 0.0:
+      v_ego = max(CS.vEgo, MIN_SPEED)
+      track_factor = (abs(lag) / UNWIND_TAU) * v_ego ** 2 / MAX_LATERAL_JERK
+      unwind_cap = UNWIND_JERK_MAX + (1.0 - UNWIND_JERK_MAX) * release
+      jerk_factor = max(jerk_factor, min(unwind_cap, track_factor))
+
+    self.jerk_factor = jerk_factor
     return jerk_factor

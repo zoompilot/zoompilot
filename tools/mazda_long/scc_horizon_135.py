@@ -87,7 +87,7 @@ def main():
               f"{inh.sum():8} {np.median(true_v):10.1f} {np.median(pred_v):10.1f} "
               f"{np.median(pred_v/true_v):6.2f} {np.median(pred_v-true_v):+7.1f}")
 
-    # ---- how far ahead the profile first drops below the setpoint ----
+    # how far ahead the profile first drops below the setpoint
     print("\n=== when the plan first binds, per episode ===")
     print(f"  {'t_apex':>7} {'latApex':>7} {'setPre':>6} {'firstBind':>9} {'firstSrc':>8} "
           f"{'needTime':>8} {'haveTime':>8} {'deficit':>7}")

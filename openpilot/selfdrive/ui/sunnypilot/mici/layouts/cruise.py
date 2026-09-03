@@ -58,7 +58,6 @@ class CruiseLayoutMici(NavScroller):
     self._prev_sla_available: bool | None = None
     self._prev_overshoot_available: bool | None = None
 
-    # --- Main view items ---
     self._icbm_toggle = BigParamControl(tr("intelligent cruise button management"), "IntelligentCruiseButtonManagement")
     self._dec_toggle = BigParamControl(tr("dynamic experimental control"), "DynamicExperimentalControl")
     self._scc_v_toggle = BigParamControl(tr("smart cruise vision"), "SmartCruiseControlVision")
@@ -76,7 +75,6 @@ class CruiseLayoutMici(NavScroller):
       self._custom_acc_btn, self._speed_limit_btn,
     ])
 
-    # --- Custom ACC sub-panel ---
     self._custom_acc_toggle = BigParamControl(tr("enable custom increments"), "CustomAccIncrementsEnabled")
 
     def _speed_label(v):
@@ -88,7 +86,6 @@ class CruiseLayoutMici(NavScroller):
                                     label_callback=_speed_label, picker_unit=speed_unit)
     self._acc_view = self._custom_acc_btn.link_sub_panel([self._custom_acc_toggle, self._acc_short, self._acc_long])
 
-    # --- Speed limit sub-panel ---
     self._sl_mode = BigMultiParamToggleSP(tr("speed limit mode"), "SpeedLimitMode", SL_MODE_LABELS)
     self._sl_source = BigMultiParamToggleSP(tr("source"), "SpeedLimitPolicy", SL_SOURCE_LABELS)
     self._sl_offset_type = BigMultiParamToggleSP(tr("offset type"), "SpeedLimitOffsetType", [tr("none"), tr("fixed"), "%"])
@@ -96,7 +93,6 @@ class CruiseLayoutMici(NavScroller):
                                            min_value=-30, max_value=30, label_callback=_offset_label, picker_unit=_offset_unit)
     self._sl_view = self._speed_limit_btn.link_sub_panel([self._sl_mode, self._sl_source, self._sl_offset_type, self._sl_offset_value])
 
-  # --- Main view state ---
   def _update_state(self):
     super()._update_state()
 
@@ -110,7 +106,7 @@ class CruiseLayoutMici(NavScroller):
     has_long = cp_ready and ui_state.has_longitudinal_control
     offroad = ui_state.is_offroad()
     icbm_available = cp_ready and ui_state.CP_SP.intelligentCruiseButtonManagementAvailable and not has_long
-    # Compute from toggle state directly — avoids 5s update_params delay
+    # Read live toggle state to avoid the five-second params refresh delay.
     has_icbm = icbm_available and self._icbm_toggle._checked
     # decel overshoot drives the stock ACC through ICBM; needs a measured per-brand plant map
     overshoot_available = has_icbm and cp_ready and ui_state.CP.brand in DECEL_OVERSHOOT_PARAMS
@@ -122,7 +118,7 @@ class CruiseLayoutMici(NavScroller):
     self._scc_do_toggle.set_enabled(overshoot_available)
     self._custom_acc_btn.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and offroad if cp_ready else False)
 
-    # Transition tracking — only remove params on True→False transitions
+    # Remove dependent params only on a true-to-false transition.
     if not icbm_available and self._prev_icbm_available is not False:
       ui_state.params.remove("IntelligentCruiseButtonManagement")
     self._prev_icbm_available = icbm_available
@@ -167,11 +163,9 @@ class CruiseLayoutMici(NavScroller):
         badges.append((f"{sign}{sl_offset_val}{unit}", "on"))
       self._speed_limit_btn.set_badges(badges)
 
-    # --- Sub-panel state (skipped when not visible) ---
     self._update_custom_acc_state()
     self._update_speed_limit_state(cp_ready, has_long, has_icbm, offset_type)
 
-  # --- Custom ACC sub-panel ---
   def _update_custom_acc_state(self):
     if not gui_app.widget_in_stack(self._acc_view):
       return
@@ -183,7 +177,6 @@ class CruiseLayoutMici(NavScroller):
     self._acc_short.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)
     self._acc_long.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)
 
-  # --- Speed limit sub-panel ---
   def _update_speed_limit_state(self, cp_ready: bool, has_long: bool, has_icbm: bool, offset_type: int):
     # SLA availability gating (must always run)
     sla_available = False
@@ -193,7 +186,7 @@ class CruiseLayoutMici(NavScroller):
       sla_always_disallow = brand == "rivian"
       sla_available = (has_long or has_icbm) and not sla_disallow_in_release and not sla_always_disallow
 
-    # Downgrade "assist" to "warning" when unavailable — only on transition
+    # Downgrade unavailable assist mode to warning once per transition.
     if not sla_available and self._prev_sla_available is not False:
       sl_mode_idx = ui_state.params.get("SpeedLimitMode", return_default=True) or 0
       if sl_mode_idx == SL_MODE_ASSIST:

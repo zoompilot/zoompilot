@@ -101,12 +101,12 @@ class LatControlTorque(LatControl):
       setpoint = lat_delay * desired_lateral_jerk + expected_lateral_accel
       error = setpoint - measurement
 
-      # do error correction in lateral acceleration space, convert at end to handle non-linear torque responses correctly
+      # Correct error in lateral-acceleration space, then convert for nonlinear torque response.
       pid_log.error = float(error)
       ff = gravity_adjusted_future_lateral_accel
-      # latAccelOffset corrects roll compensation bias from device roll misalignment relative to car roll
+      # latAccelOffset corrects roll bias from device misalignment relative to the car.
       ff -= self.torque_params.latAccelOffset
-      # TODO jerk is weighted by lat_delay for legacy reasons, but should be made independent of it
+      # TODO: Decouple jerk weighting from lat_delay.
       ff += get_friction(error, lateral_accel_deadzone, FRICTION_THRESHOLD, self.torque_params)
 
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
@@ -124,7 +124,7 @@ class LatControlTorque(LatControl):
 
       # Lateral acceleration torque controller extension updates
       # Overrides pid_log.error and output_torque. Keyword-bound: the signature is long and
-      # shared across controllers, and a positional call fails silently if a sync reorders it.
+      # shared across controllers; keyword binding protects against signature reordering.
       pid_log, output_torque = self.extension.update(CS, VM, self.pid, params, ff, pid_log,
                                                      setpoint=setpoint,
                                                      measurement=measurement,

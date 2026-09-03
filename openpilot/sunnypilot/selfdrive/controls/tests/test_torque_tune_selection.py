@@ -8,7 +8,7 @@ See the LICENSE.md file in the root directory for more details.
 # Which torque controller an unset TorqueControlTune selects. This is easy to get wrong by
 # dropping `return_default=True` from the params read: params_keys.h declares a default, but
 # a bare params.get() returns None for an unset param, and float(None) raises, or, guarded,
-# silently falls through to the upstream controller. Nothing says the car dropped off its tune.
+# can otherwise fall through to the upstream controller without an explicit error.
 # The declared default is upstream's 0.0; the steer-to-zero Mazdas are seeded to 2.0 by
 # _seed_mazda_torque_defaults instead, so other brands never inherit a tune fitted to that EPS.
 #

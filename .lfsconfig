@@ -2,8 +2,6 @@
 	url = https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
 	pushurl = ssh://git@gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git
 	locksverify = false
-	# The big driving model is not used on device (upstream skips it in CI, see
-	# setup_device_ci.sh). Keep its pointer in the worktree but never download the
-	# 1.8 GB object on install: cuts the install LFS payload ~1974 MB -> ~174 MB
-	# (validated: install-style clone drops from ~2 GB to ~486 MB).
+	# The 1.8 GB driving model is not used on device. Keep its pointer but exclude the object
+	# from install fetches, reducing the LFS payload from about 1974 MB to 174 MB.
 	fetchexclude = openpilot/selfdrive/modeld/models/big_driving_supercombo.onnx

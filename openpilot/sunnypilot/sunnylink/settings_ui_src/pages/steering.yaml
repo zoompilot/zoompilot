@@ -266,39 +266,23 @@ sections:
     title: 'Block Lane Change: Road Edge Detection'
     description: Blocks lane change when the model sees a road edge on the side you signal.
   - key: LaneChangeSmoothing
-    widget: toggle
-    title: Smooth Lane Changes
-    description: Set the pace of automatic lane changes. Lower pace is gentler. The end-of-maneuver correction keeps its
-      authority at every pace, so the car settles into the new lane without a wheel snap.
-    sub_items:
-    - key: LaneChangeSmoothingPace
-      widget: option
-      title: Lane Change Duration
-      # values are the 1-9 pace index; labels show the sinusoidal profile time each
-      # selects (keep in sync with lane_change_smoothing.pace_profile_time)
-      options:
-      - value: 1
-        label: ~8.0 s
-      - value: 2
-        label: ~7.4 s
-      - value: 3
-        label: ~6.9 s
-      - value: 4
-        label: ~6.3 s
-      - value: 5
-        label: ~5.8 s
-      - value: 6
-        label: ~5.2 s
-      - value: 7
-        label: ~4.7 s
-      - value: 8
-        label: ~4.1 s
-      - value: 9
-        label: ~3.6 s
-      enablement:
-      - type: param
-        key: LaneChangeSmoothing
-        equals: true
+    widget: option
+    title: Lane Change Smoothing
+    description: Slow automatic lane changes to a chosen pace. Off is stock; every pace is gentler than stock. The
+      end-of-maneuver correction keeps its authority at every pace, so the car settles into the new lane without a
+      wheel snap.
+    # values are the index into lane_change_smoothing.LEVELS, off first
+    options:
+    - value: 0
+      label: 'Off'
+    - value: 1
+      label: Fast
+    - value: 2
+      label: Medium
+    - value: 3
+      label: Slow
+    - value: 4
+      label: Extra Slow
   - key: AutoLaneChangeBsmDelay
     widget: toggle
     title: 'Auto Lane Change: Delay with Blind Spot'

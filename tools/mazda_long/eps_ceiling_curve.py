@@ -146,7 +146,7 @@ def analyse(V, A, G, R, E):
         print(f'{lo:>3}-{lo+2:<3} {m.sum():>9,} {ms.sum():>8,} {req[m].max():>7} '
               f'{eff[m].max():>7} {rail:>6} {shr:>6.1%}  {verdict}')
 
-    # --- does the rail depend on instantaneous speed only? ---
+    # does the rail depend on instantaneous speed only?
     print(f'\nrail vs longitudinal acceleration (|a|<{ACC_BAND} = steady). '
           f'Disagreement here means hysteresis, and a plain speed lookup is wrong.')
     print(f'{"mph":>7} {"decel rail":>12} {"n":>8} {"steady rail":>12} {"n":>8} '
@@ -167,7 +167,7 @@ def analyse(V, A, G, R, E):
         flag = '  <-- HYSTERESIS' if spread > 40 else ''
         print(f'{lo:>3}-{lo+2:<3} {s} {spread:>6}{flag}')
 
-    # --- direction asymmetry ---
+    # direction asymmetry
     print('\nrail vs steering direction (sign of request):')
     print(f'{"mph":>7} {"left rail":>11} {"n":>8} {"right rail":>11} {"n":>8}  delta')
     print('-' * 60)

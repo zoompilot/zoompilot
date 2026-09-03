@@ -106,7 +106,6 @@ class TorqueEstimatorExt:
 
     self.frame += 1
 
-  # --- Speed-binned learning hooks (called from TorqueEstimator) ---
 
   @staticmethod
   def _centers_to_bounds(centers):

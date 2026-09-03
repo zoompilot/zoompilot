@@ -185,7 +185,7 @@ install_service() {
 
     # svc.sh install just wrote .service with the real unit name (derived from the
     # registered org/repo). On a fresh install the pre-install fallback above guessed
-    # "sunnypilot", so re-read it here — disabling the guessed name would fail on the
+    # "sunnypilot", so re-read it here; disabling the guessed name would fail on the
     # nonexistent unit and set -e would kill the script half-installed.
     if [ -f "${RUNNER_DIR}/.service" ]; then
         service_name=$(cat "${RUNNER_DIR}/.service")

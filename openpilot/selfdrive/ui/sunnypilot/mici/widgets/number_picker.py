@@ -9,11 +9,11 @@ from collections.abc import Callable
 
 
 def read_scaled_param(params, param: str, float_param: bool, min_value: int) -> int:
-  """Read a param into the picker's integer domain. Float params store the physical value
-  (2.5 m/s²) while the picker works in a 1..500 integer domain — same x100 convention as
-  OptionControlSP.use_float_scaling on TICI. round, not int(): binary floats make
-  0.29 * 100 == 28.999..., and truncation would walk the stored value down one step on
-  every open/commit cycle."""
+  """Read a param in the picker's integer domain.
+
+  Float params use the TICI control's x100 scaling. Rounding prevents binary float
+  representation from reducing the value on each open and commit cycle.
+  """
   val = params.get(param, return_default=True)
   try:
     return round(float(val) * (100 if float_param else 1)) if val is not None else min_value
@@ -28,8 +28,7 @@ from openpilot.system.ui.widgets.scroller import _Scroller as _BaseScroller
 
 
 class _Scroller(_BaseScroller):
-  """_Scroller with snap_ready guard — skips snap for one frame after show_event
-  so items can be laid out at the correct offset before snap reads their positions."""
+  """Skip snapping until items have been laid out after show_event."""
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -41,8 +40,7 @@ class _Scroller(_BaseScroller):
 
   def _get_scroll(self, visible_items, content_size):
     if self._snap_items and not self._snap_ready:
-      # First layout after show — item positions are stale, skip snap correction
-      # (calling update() with no snap_target skips snap for this frame)
+      # Item positions are stale on the first layout after show_event.
       self._snap_ready = True
       self.scroll_panel.update(self._rect, content_size)
       return self.scroll_panel.get_offset()
@@ -60,7 +58,7 @@ TITLE_HEIGHT = 46
 CAROUSEL_TOP = 36   # carousel overlaps title zone by 10px for tighter layout
 CAROUSEL_HEIGHT = 180
 
-# Selection band — precomputed gradient texture (see _build_band_texture)
+# Precompute the selection-band gradient on first use.
 BAND_COLOR = rl.Color(255, 255, 255, int(255 * 0.25))
 BAND_TOP = CAROUSEL_TOP + 14
 BAND_FADE_LEN = 40
@@ -95,7 +93,7 @@ class PickerItem(Widget):
       self._on_tap(self.raw_value)
 
   def _render(self, rect):
-    # Compute distance from parent (Scroller viewport) center in item-widths
+    # Measure distance from the viewport center in item widths.
     if self._parent_rect is not None:
       parent_center_x = self._parent_rect.x + self._parent_rect.width / 2
     else:
@@ -104,7 +102,6 @@ class PickerItem(Widget):
     item_center_x = self._rect.x + self._rect.width / 2
     dist = abs(item_center_x - parent_center_x) / self._item_width
 
-    # Continuous interpolation of font size, alpha, and weight based on distance
     font_size = int(_lerp(dist, self._DIST_TIERS, self._FONT_SIZES))
     alpha = _lerp(dist, self._DIST_TIERS, self._ALPHAS)
     font_weight = FontWeight.BOLD if dist < 0.5 else FontWeight.ROMAN
@@ -115,10 +112,9 @@ class PickerItem(Widget):
     max_width = self._rect.width - padding
 
     if '\n' in self.display_label:
-      # Multi-line: main line at full size, subtitle smaller and dimmer
       lines = self.display_label.split('\n', 1)
 
-      # Shrink to fit: text labels like "default" (ui timeout) overflow at size 56
+      # Some text labels exceed the item width at the default font size.
       main_size = measure_text_cached(font, lines[0], font_size)
       if main_size.x > max_width and main_size.x > 0:
         font_size = max(int(font_size * max_width / main_size.x), 14)
@@ -128,7 +124,7 @@ class PickerItem(Widget):
       sub_font = gui_app.font(FontWeight.ROMAN)
       sub_size = measure_text_cached(sub_font, lines[1], sub_font_size)
 
-      # Keep main line at same vertical center as single-line items, subtitle below
+      # Keep the main line aligned with single-line items.
       main_y = self._rect.y + (self._rect.height - main_size.y) / 2
       main_x = self._rect.x + (self._rect.width - main_size.x) / 2
       rl.draw_text_ex(font, lines[0], rl.Vector2(main_x, main_y), font_size, 0, color)
@@ -138,7 +134,7 @@ class PickerItem(Widget):
       sub_x = self._rect.x + (self._rect.width - sub_size.x) / 2
       rl.draw_text_ex(sub_font, lines[1], rl.Vector2(sub_x, main_y + main_size.y + gap), sub_font_size, 0, sub_color)
     else:
-      # Shrink to fit: text labels like "default" (ui timeout) overflow at size 56
+      # Some text labels exceed the item width at the default font size.
       text_size = measure_text_cached(font, self.display_label, font_size)
       if text_size.x > max_width and text_size.x > 0:
         font_size = max(int(font_size * max_width / text_size.x), 14)
@@ -149,7 +145,7 @@ class PickerItem(Widget):
 
 
 def _build_band_texture():
-  """Build a 2px-wide vertical gradient strip: fade in → solid → fade out."""
+  """Build a two-pixel vertical gradient strip for a selection-band edge."""
   band_h = CAROUSEL_HEIGHT - 14 * 2
   fade = min(BAND_FADE_LEN, band_h // 3)
   img = rl.gen_image_color(2, band_h, rl.Color(0, 0, 0, 0))
@@ -167,7 +163,7 @@ def _build_band_texture():
   return tex
 
 
-# Lazy singleton — created on first use (needs OpenGL context)
+# Texture creation requires an active OpenGL context.
 _band_texture = None
 
 
@@ -197,7 +193,6 @@ class NumberPickerScreen(Widget):
     self._last_center_value: int | None = None
     self._was_settled = True
 
-    # Build picker items — label_callback and value_map only needed during construction
     self._picker_items: list[PickerItem] = []
     val = min_value
     while val <= max_value:
@@ -206,7 +201,6 @@ class NumberPickerScreen(Widget):
       self._picker_items.append(PickerItem(val, display, on_tap=self._on_item_tap, item_width=item_width))
       val += step
 
-    # Horizontal scroller with snap, centered padding
     pad = (SCREEN_WIDTH - item_width) // 2
     self._scroller = self._child(_Scroller(
       self._picker_items,
@@ -267,7 +261,7 @@ class NumberPickerScreen(Widget):
     center = self._picker_items[self._center_index()]
     if center.raw_value != self._last_center_value:
       self._last_center_value = center.raw_value
-      # put() is non-blocking by default (block=False); upstream removed put_nonblocking
+      # Params.put is non-blocking by default.
       self._params.put(self._param, center.raw_value / 100.0 if self._float_param else center.raw_value)
 
   def _update_state(self):
@@ -278,7 +272,6 @@ class NumberPickerScreen(Widget):
     self._was_settled = settled
 
   def _render(self, rect):
-    # Title
     font = gui_app.font(FontWeight.BOLD)
     title_size = measure_text_cached(font, self._title, 36)
     title_x = rect.x + (rect.width - title_size.x) / 2
@@ -286,11 +279,10 @@ class NumberPickerScreen(Widget):
     rl.draw_text_ex(font, self._title, rl.Vector2(title_x, title_y), 36, 0,
                     rl.Color(255, 255, 255, int(255 * 0.9)))
 
-    # Carousel area
     carousel_rect = rl.Rectangle(rect.x, rect.y + CAROUSEL_TOP, SCREEN_WIDTH, CAROUSEL_HEIGHT)
     self._scroller.render(carousel_rect)
 
-    # Unit label — resolve dynamically if callable, hide for non-numeric labels
+    # Hide units for options represented by non-numeric labels.
     center = self._picker_items[self._center_index()] if self._picker_items else None
     unit_text = self._unit() if not isinstance(self._unit, str) else self._unit
     if unit_text and center is not None:
@@ -299,7 +291,6 @@ class NumberPickerScreen(Widget):
       except ValueError:
         unit_text = ""
 
-    # Selection band lines — precomputed gradient texture drawn at left and right edges
     band_tex = _get_band_texture()
     band_left = rect.x + (SCREEN_WIDTH - self._item_width) / 2 - 1
     band_right = band_left + self._item_width

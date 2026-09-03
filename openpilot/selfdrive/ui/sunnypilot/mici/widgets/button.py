@@ -5,7 +5,7 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-# SP-specific mici widget extensions — keeps upstream button.py clean.
+# sunnypilot extensions for MICI buttons.
 
 import math
 from collections.abc import Callable
@@ -29,16 +29,10 @@ def speed_unit():
 
 
 class BigButtonSP(BigButton):
-  """BigButton with badge pills, disabled pill, active-state tinting, and sub-panel linking.
-
-  Subtitle area modes (mutually exclusive, set by the corresponding method):
-    set_badges()    → green outlined pill chips (key/value summary)
-    set_disabled()  → single grey 'disabled' pill
-    set_value()     → plain text (upstream behavior)
-  """
+  """BigButton with badges, disabled state, active tinting, and sub-panel linking."""
 
   def __init__(self, text: str, value: str = "", icon=None, scroll: bool = False):
-    # Init before super: BigButton.__init__ calls _update_label_layout which reads these
+    # BigButton.__init__ calls _update_label_layout before it returns.
     self._badge_labels: list[str] | None = None
     self._disabled: bool = False
     BigButton.__init__(self, text, value, icon, scroll)
@@ -49,7 +43,7 @@ class BigButtonSP(BigButton):
   def set_badges(self, entries: list[tuple[str, str]]):
     """Set badge pills from (key, value) pairs. 'off' hides, 'on' shows key, else shows value."""
     new_labels = [key if val == 'on' else val for key, val in entries if val != 'off'] or None
-    if new_labels == self._badge_labels and not self._disabled:  # called every frame — guard avoids redundant layout
+    if new_labels == self._badge_labels and not self._disabled:  # avoid rebuilding layout each frame
       return
     self._set_badges(new_labels, disabled=False)
 
@@ -72,7 +66,7 @@ class BigButtonSP(BigButton):
   def _set_badges(self, labels: list[str] | None, disabled: bool):
     self._badge_labels = labels
     self._disabled = disabled
-    self.value = ""  # clears subtitle so upstream _draw_content skips it; we draw badges instead
+    self.value = ""  # badges replace the upstream subtitle
     self._update_label_layout()
 
   def _update_label_layout(self):
@@ -84,7 +78,7 @@ class BigButtonSP(BigButton):
     """Render badge labels as outlined pill chips in a flow layout."""
     font = gui_app.font(FontWeight.BOLD)
     font_size, h_pad, gap = 28, 10, 8
-    alpha_mult = 1.0 if self.enabled else 0.3  # dim badges with the card
+    alpha_mult = 1.0 if self.enabled else 0.3
     border_base, text_base = BADGE_GREY if self._disabled else BADGE_GREEN
     border = rl.Color(border_base.r, border_base.g, border_base.b, int(border_base.a * alpha_mult))
     text_color = rl.Color(text_base.r, text_base.g, text_base.b, int(text_base.a * alpha_mult))
@@ -95,7 +89,6 @@ class BigButtonSP(BigButton):
       text_w = measure_text_cached(font, label, font_size).x
       specs.append((label, text_w + h_pad * 2, text_w))
 
-    # Flow layout: wrap into rows
     rows: list[list] = []
     current_row: list = []
     row_width = 0.0
@@ -114,7 +107,6 @@ class BigButtonSP(BigButton):
     max_h = (rect.height - gap * (len(rows) - 1)) / len(rows) if len(rows) > 1 else rect.height
     badge_h = max(text_h, min(text_h + 10, max_h))
 
-    # Draw rows bottom-up
     cy = rect.y + rect.height - badge_h
     for row in reversed(rows):
       total_badge_w = sum(bw for _, bw, _ in row)
@@ -129,8 +121,7 @@ class BigButtonSP(BigButton):
       cy -= badge_h + gap
 
   def _draw_content(self, btn_y: float):
-    # Upstream draws label + subtitle + icon. set_badges() clears self.value,
-    # so upstream skips the subtitle area — we just draw badges after.
+    # Draw badges in the subtitle area cleared by set_badges.
     super()._draw_content(btn_y)
     if self._badge_labels:
       label_x = self._rect.x + self.LABEL_HORIZONTAL_PADDING
@@ -160,16 +151,15 @@ class BigButtonSP(BigButton):
 
 
 class SubPanelSP(NavScroller):
-  """NavScroller that refreshes its own param widgets while it is on screen.
+  """NavScroller that refreshes its own param widgets while visible.
 
-  gui_app renders only the top `_nav_stack_widgets_to_render` (2 on MICI) nav-stack widgets, so a
-  layout is not rendered — and its _update_state does not run — once a sub-panel opens a sub-panel
-  of its own. A panel nested that deep has to drive its own widgets; the parent layout cannot.
+  MICI only updates the top two navigation widgets. A third-level panel must therefore
+  refresh its controls instead of relying on its parent layout.
   """
 
   def __init__(self, items):
     super().__init__()
-    self._scroller.add_widgets(items)  # upstream NavScroller doesn't expose _Scroller API directly
+    self._scroller.add_widgets(items)  # NavScroller does not expose the _Scroller API
     self._refreshable = [i for i in items if hasattr(i, "refresh")]
 
   def _update_state(self):
@@ -179,15 +169,10 @@ class SubPanelSP(NavScroller):
 
 
 class BigParamControlSP(BigParamControl):
-  """BigParamControl that reads off — and takes no input — while `depends_on` is unmet.
+  """Disable input and display state while a control dependency is unmet.
 
-  For settings the car ignores unless some other setting feeds them, like BSM delay under auto
-  lane change. The param keeps the user's choice, so it comes back when the dependency is met
-  again; only the display is suppressed. Nothing can overwrite it meanwhile: Widget.render only
-  dispatches mouse events while enabled, and `depends_on` gates that too.
-
-  `depends_on` is passed to set_enabled as a callable, so a tap on the parent toggle takes
-  effect the same frame rather than the next one.
+  The stored value remains unchanged and becomes visible again when the dependency is met.
+  The callable dependency lets parent-toggle changes take effect in the same frame.
   """
 
   def __init__(self, text: str, param: str, depends_on: Callable[[], bool] | None = None, **kwargs):
@@ -203,20 +188,18 @@ class BigParamControlSP(BigParamControl):
 
 
 class BigMultiParamToggleSP(BigMultiParamToggle):
-  """BigMultiParamToggle with bounds-checked param reading, refresh, and dynamic pill spacing.
+  """BigMultiParamToggle with bounded reads, refresh, and dynamic pill spacing.
 
-  Upstream stores the selected option's index in the param. Pass `values` (same length as
-  `options`) to store an arbitrary value per option instead — for params whose stored value
-  isn't its position in the list, like AutoLaneChangeTimer, where "off" is -1.
+  When supplied, `values` maps each option to its stored value instead of its list index.
   """
 
   def __init__(self, text: str, param: str, options: list[str], values: list | None = None, **kwargs):
     assert values is None or len(values) == len(options)
-    self._values = values  # set before super(): BigMultiParamToggle.__init__ calls _load_value()
+    self._values = values  # BigMultiParamToggle.__init__ calls _load_value
     super().__init__(text, param, options, **kwargs)
 
   def _draw_content(self, btn_y: float):
-    # Skip BigToggle (draws single pill) — we draw multiple pills with dynamic spacing below
+    # BigToggle draws one pill; this control draws one per option.
     BigButton._draw_content(self, btn_y)
     checked_idx = self._options.index(self.value)
     n = len(self._options)
@@ -228,8 +211,7 @@ class BigMultiParamToggleSP(BigMultiParamToggle):
       y += step
 
   def _get_param_index(self) -> int:
-    """Upstream uses raw `params.get()` without bounds — this clamps to range, or maps
-    the stored value back through self._values."""
+    """Read a bounded index or map a stored value through self._values."""
     if self._values is not None:
       return self._index_from_value()
     idx = self._params.get(self._param, return_default=True) or 0
@@ -255,9 +237,9 @@ class BigMultiParamToggleSP(BigMultiParamToggle):
     if self._values is None:
       super()._handle_mouse_release(mouse_pos)
       return
-    # cycle the option, but skip BigMultiParamToggle._handle_mouse_release's index write
+    # Cycle the label without writing the option index.
     BigMultiToggle._handle_mouse_release(self, mouse_pos)
-    # block: refresh() reads this back every frame, a late write would flip the pill back
+    # refresh reads this value every frame, so commit it synchronously.
     self._params.put(self._param, self._values[self._options.index(self.value)], block=True)
 
   def refresh(self):
@@ -306,15 +288,14 @@ class BigParamOption(BigButton):
       self._current = new
       self._update_display()
     elif self._label_callback:
-      # Label may depend on external state (e.g. offset type), re-render
+      # Labels may depend on external state such as the offset type.
       self._update_display()
 
   def create_picker_screen(self):
     """Create a NumberPickerScreen from this option's config (also used by screenshot tests)."""
     from openpilot.selfdrive.ui.sunnypilot.mici.widgets.number_picker import NumberPickerScreen
     kwargs = {'item_width': self._picker_item_width} if self._picker_item_width else {}
-    # a newline in the button label is a narrow-button layout device; the picker title
-    # has the full screen width, so it renders on one line
+    # The picker has enough width to render narrow-button labels on one line.
     return NumberPickerScreen(
       title=self.text.replace("\n", " "), param=self._param, min_value=self._min_value, max_value=self._max_value,
       step=self._step, label_callback=self._picker_label_callback, value_map=self._value_map,
@@ -322,8 +303,7 @@ class BigParamOption(BigButton):
     )
 
   def _open_picker(self):
-    # NavScroller doesn't pass kwargs to _Scroller (NavWidget.__init__ rejects them),
-    # so we set scroll_indicator and pad directly on _scroller after construction
+    # NavScroller does not forward _Scroller options.
     view = NavScroller()
     view._scroller._show_scroll_indicator = False
     view._scroller._pad = 0

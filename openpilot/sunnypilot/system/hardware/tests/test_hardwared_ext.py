@@ -100,7 +100,7 @@ class TestOffroadRequestGrant:
     assert _run(ext, 1)
 
   def test_dead_carstate_counts_as_stopped(self):
-    # the request must never silently fail; without card nothing openpilot owns is rolling
+    # Without card, no openpilot control process can be driving the car.
     ext, _ = _ext()
     assert _run(ext, TIMEOUT_FRAMES, v_ego=30.0, alive=False)
 

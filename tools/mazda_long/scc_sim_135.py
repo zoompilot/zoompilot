@@ -21,13 +21,13 @@ DT = 0.05
 V_FLOOR = 0.5
 MIN_V = 20 / 3.6
 
-# --- MRCC plant, fitted from this route (scc_plant_135.py) + the corpus map shape ---
+# MRCC plant, fitted from this route (scc_plant_135.py) + the corpus map shape
 PLANT_GAP = np.array([-14., -10., -7., -5., -3., -1.5, 0., 1.5, 2.5, 4., 6., 8., 10., 14.])
 PLANT_A = np.array([1.10, 0.55, 0.54, 0.49, 0.39, 0.20, 0., -0.02, -0.12, -0.32, -0.52, -0.64,
                     -0.80, -0.83])
 PLANT_TAU = 0.8
 
-# --- shipped controller constants (mirrored so a config can vary them) ---
+# shipped controller constants (mirrored so a config can vary them)
 BASE = dict(
     a_lat_max=2.0, plan_margin=0.95, a_budget=0.75, t_lead=1.0, walk_rate=4.0,
     commit_frac=0.7, release_frac=0.3, near_t=3.0,
