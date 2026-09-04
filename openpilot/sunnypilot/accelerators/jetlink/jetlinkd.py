@@ -32,6 +32,7 @@ the Jetson re-enumerates, which both ends handle.
 from __future__ import annotations
 
 import signal
+import threading
 import time
 
 from openpilot.common.realtime import Ratekeeper
@@ -72,6 +73,7 @@ class Jetlinkd:
     self.verified = False   # the server has confirmed the ready param this attach
     self._identity: tuple | None = None   # (source, sha256, nbytes) of the hashed file
     self.warp_built = False  # tried the comma-side warp this run
+    self.warp_thread: threading.Thread | None = None
 
   # -- lifecycle ------------------------------------------------------------
 
@@ -137,13 +139,27 @@ class Jetlinkd:
     ready for the next one, and a warp that cannot be built costs the large
     model, not the drive - modeld falls back exactly as it does for any other
     big-model load failure.
+
+    On a thread, because the compile is ~9 s of GPU work with nothing in it
+    that can poll `stop`, and manager SIGKILLs this daemon 5 s after the SIGINT
+    it sends at the onroad transition. Blocking the loop here meant the link
+    was still open when the kill landed - observed twice in one evening, 7.5 s
+    and 5 s - which is exactly the mid-transfer kill the module docstring says
+    to avoid. Abandoning the compile is safe: it touches no link, and it writes
+    the pickle and its metadata through temporaries, so a killed build leaves
+    nothing half-written for the next run to find.
     """
     if self.warp_built:
       return
     self.warp_built = True
     accelerators.report_progress('warp', 0.0, 'compiling the camera warp')
-    if warp_cache.ensure(*warp_cache.device_geometry()):
-      accelerators.clear_progress()
+
+    def build() -> None:
+      if warp_cache.ensure(*warp_cache.device_geometry()):
+        accelerators.clear_progress()
+
+    self.warp_thread = threading.Thread(target=build, daemon=True, name='jetlink_warp')
+    self.warp_thread.start()
 
   def provision(self) -> bool:
     """Make the Jetson ready for the selected model. Host must be attached."""
@@ -222,6 +238,12 @@ class Jetlinkd:
         self.close_link()
       return
 
+    # Before the link and before the attach gate: the warp needs neither, and
+    # it is the one thing modeld refuses to start the large model without. It
+    # used to sit below `if not attached: return`, so a Jetson that was slow to
+    # enumerate delayed the compile as well, and the compile is the long pole.
+    self.build_warp()
+
     if time.monotonic() < self.next_attempt:
       return
     if not self.open_link():
@@ -244,9 +266,6 @@ class Jetlinkd:
         self.ready = False
     if not attached:
       return
-    # Ahead of the provisioning backoff: this needs no server, and a Jetson
-    # that is slow to answer must not leave modeld without a warp.
-    self.build_warp()
     # Provisioning backs off on its own timer, so that a long wait for an
     # unresponsive server still leaves us watching for one that reappears.
     if time.monotonic() < self.next_provision:
@@ -281,6 +300,8 @@ class Jetlinkd:
         self.close_link()
         self.next_attempt = time.monotonic() + RECONNECT_BACKOFF
     self.close_link()
+    if self.warp_thread is not None and self.warp_thread.is_alive():
+      cloudlog.warning("jetlink: stopped with the warp still compiling; it will rebuild next time")
     cloudlog.warning("jetlink: stopped")
 
 
