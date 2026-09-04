@@ -237,20 +237,23 @@ class UIState(UIStateSP):
 
     model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
     running_big = model_seen and self.sm.alive["modelV2"] and self.sm["modelV2"].big
-    if not self.chestnut_present:
+    if running_big:
+      self.chestnut_state = ChestnutState.ACTIVE
+    elif self.chestnut_loading or not model_seen:
+      # Loading is asked first, before presence and before failure, and it
+      # clears both. An accelerator that is not on the comma's own power cannot
+      # always have its model up by the first frame, so it loads onto a running
+      # small model and says so here; modelV2.big stays false for the whole
+      # join and must not read as a failure. Presence has to come second for
+      # the same reason: a Jetson rebooting mid-drive is not attached for a
+      # minute, and reading that as "unavailable" while the join loop is
+      # actively getting it back is what sent a driver looking for a way to
+      # force a reconnect on the 2026-09-04 drive. There is nothing to force.
+      self.chestnut_state = ChestnutState.LOADING
+    elif not self.chestnut_present:
       self.chestnut_state = ChestnutState.DISCONNECTED
     elif not self.chestnut_compiled:
       self.chestnut_state = ChestnutState.UNCOMPILED
-    elif running_big:
-      self.chestnut_state = ChestnutState.ACTIVE
-    elif self.chestnut_loading or not model_seen:
-      # Loading is asked before failed, and it clears a previous failure. An
-      # accelerator that is not on the comma's own power cannot always have its
-      # model up by the first frame, so it loads onto a running small model and
-      # says so here; modelV2.big stays false for the whole join and must not
-      # read as a failure. It also has to be able to lose the accelerator and
-      # get it back, which a latching failure would not allow.
-      self.chestnut_state = ChestnutState.LOADING
     else:
       self.chestnut_state = ChestnutState.FAILED
 
