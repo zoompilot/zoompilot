@@ -329,7 +329,17 @@ class ModelManagerSP:
         validate_active_bundles(self.params, self.source_models)
         self.active_bundle = get_active_bundle(self.params, chestnut=self.chestnut_catalog)
 
-        if get_selected_bundle(self.params, "chestnut") is not None and get_selected_bundle(self.params, "qcom") is None:
+        # Only a chestnut device needs a qcom model sitting behind its chestnut one,
+        # because that slot is what modeld falls back to when the board is not
+        # available. Anywhere else an empty qcom slot *is* the selection: it means the
+        # hardware default, which only stock modeld runs, and stock modeld is where an
+        # accelerator with its own model registry lives. Filling it moves manager to
+        # modeld_tinygrad, which knows nothing about that accelerator, so the link goes
+        # quiet onroad with nothing logged. Activation rides along with the download
+        # path even when every chunk verifies as cached, so this fires on a device that
+        # downloads nothing at all.
+        if self.chestnut_catalog and get_selected_bundle(self.params, "chestnut") is not None \
+           and get_selected_bundle(self.params, "qcom") is None:
           if self.params.get("ModelManager_DownloadRef") is None:
             from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL_REF
             if DEFAULT_MODEL_REF:
