@@ -144,6 +144,12 @@ class ModelState(ModelStateBase):
     self.prev_desire[:] = 0
 
 
+def _boottime_ns() -> int:
+  """The clock camerad stamps timestamp_eof with (nanos_since_boot)."""
+  clock = getattr(time, 'CLOCK_BOOTTIME', None)
+  return time.clock_gettime_ns(clock) if clock is not None else time.monotonic_ns()
+
+
 def main(demo=False):
   cloudlog.warning("modeld init")
 
@@ -246,6 +252,11 @@ def main(demo=False):
 
   # setup filter to track dropped frames
   frame_dropped_filter = FirstOrderFilter(0., 10., 1. / ModelConstants.MODEL_RUN_FREQ)
+  # How old a frame actually is by the time its output is published, which is
+  # what frame_delay above is guessing at. Same time base as timestamp_eof
+  # (camerad stamps it with nanos_since_boot).
+  frame_age_filter = FirstOrderFilter(DT_MDL, 2.0, 1. / ModelConstants.MODEL_RUN_FREQ)
+  frame_age_worst = 0.
   frame_id = 0
   last_vipc_frame_id = 0
   run_count = 0
@@ -340,6 +351,14 @@ def main(demo=False):
 
     bufs = {name: buf_extra if 'big' in name else buf_main for name in model.vision_input_names}
     transforms = {name: model_transform_extra if 'big' in name else model_transform_main for name in model.vision_input_names}
+    # A constant, and the same one for every runner: the small model, a
+    # chestnut and a Jetson all get 50 ms. Nothing here branches on which is
+    # running, and nothing derives it from modelExecutionTime, which is only
+    # ever logged. The runners differ by their execution time, so an
+    # accelerator slower than the small model is uncompensated by exactly that
+    # difference, on every frame, as a bias rather than as noise. Measured
+    # below and reported; not yet fed back, because action_t steers the car and
+    # changing it wants a drive's worth of numbers first. See frame_age_filter.
     frame_delay = DT_MDL # compensate for time passed since the frame was captured: current_time - timestamp_eof is 50ms on average
     action_delay = DT_MDL / 2 # middle of the interval between model output (current state) and next frame (expected state)
     lat_action_t = lat_delay + frame_delay + action_delay
@@ -400,6 +419,22 @@ def main(demo=False):
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
       pm.send('modelDataV2SP', mdv2sp_send)
+
+      # What frame_delay should have been for this frame. Reported rather than
+      # used: it is an input to action_t, which is computed before the model
+      # runs, so feeding it back means predicting the next frame's age from
+      # this one's - defensible, but it moves the lateral and longitudinal
+      # targets for every runner including the plain small model, and that
+      # wants measurements from a real drive before anyone flips it on.
+      frame_age = (_boottime_ns() - meta_main.timestamp_eof) * 1e-9
+      if 0. < frame_age < 1.:
+        frame_age_filter.update(frame_age)
+        frame_age_worst = max(frame_age_worst, frame_age)
+      if run_count % 400 == 0:
+        cloudlog.warning("modeld: frame age %.1f ms mean, %.1f worst, frame_delay %.1f ms, exec %.1f ms, big %s",
+                         frame_age_filter.x * 1e3, frame_age_worst * 1e3, DT_MDL * 1e3,
+                         model_execution_time * 1e3, model.chestnut)
+        frame_age_worst = 0.
     last_vipc_frame_id = meta_main.frame_id
 
 if __name__ == "__main__":
