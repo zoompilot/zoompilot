@@ -77,7 +77,9 @@ class JoiningTest(unittest.TestCase):
     if self.connect_error is not None:
       raise self.connect_error
     self.joined.set()
-    return ('client', 'spec')
+    # A link the joining state may have to close on its own, when it is torn
+    # down holding a join that never found a disengaged frame to land on.
+    return (mock.MagicMock(name='client'), 'spec')
 
   def _build(self, client, spec):
     return self.big
