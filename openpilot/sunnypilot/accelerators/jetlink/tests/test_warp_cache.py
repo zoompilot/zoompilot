@@ -14,6 +14,7 @@ anything short of an exact build match is a miss, and a miss costs the large
 model rather than producing a wrong one.
 """
 import json
+import pickle
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,18 @@ from unittest import mock
 from openpilot.sunnypilot.accelerators.jetlink import warp_cache
 
 GEOM = (1928, 1208, 512, 256)
+
+
+class FakeCaptured:
+  def __init__(self, names):
+    self.expected_names = names
+
+
+class FakeJit:
+  """Just enough of a TinyJit to be pickled and inspected."""
+
+  def __init__(self, names):
+    self.captured = FakeCaptured(names) if names is not None else None
 
 
 class WarpCacheTest(unittest.TestCase):
@@ -92,6 +105,29 @@ class TestLoad(WarpCacheTest):
     self.write(build='commit-b')
     with self.assertRaises(RuntimeError):
       warp_cache.load_warp(*GEOM)
+
+
+class TestLoadValidation(WarpCacheTest):
+  """A pickle that loads is not yet a warp that can be trusted."""
+
+  def test_a_good_warp_loads(self):
+    self.write(body=pickle.dumps(FakeJit(warp_cache.WARP_INPUT_NAMES)))
+    self.assertIsInstance(warp_cache.load_warp(*GEOM), FakeJit)
+
+  def test_the_wrong_call_convention_is_refused_at_load(self):
+    # This is the shape of the bug that reached the car: captured positionally,
+    # called by keyword, JitError on the first frame of the drive.
+    self.write(body=pickle.dumps(FakeJit([0, 1, 2, 3])))
+    with self.assertRaises(RuntimeError) as e:
+      warp_cache.load_warp(*GEOM)
+    self.assertIn('call_warp passes', str(e.exception))
+
+  def test_an_uncaptured_jit_is_refused(self):
+    # Pickled before TinyJit captured: loads fine, computes nothing.
+    self.write(body=pickle.dumps(FakeJit(None)))
+    with self.assertRaises(RuntimeError) as e:
+      warp_cache.load_warp(*GEOM)
+    self.assertIn('computes nothing', str(e.exception))
 
 
 class TestEnsure(WarpCacheTest):

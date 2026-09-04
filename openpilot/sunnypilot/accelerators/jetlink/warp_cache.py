@@ -24,21 +24,28 @@ single ignition. So jetlinkd does it while the car is parked and pickles the
 result, which is the same shape as upstream's own `compile_dm_warp.py`: a
 standalone warp JIT, built once, loaded by the process that needs it.
 
-The cache is keyed on the openpilot commit rather than on anything finer. A
-pickled TinyJit is only loadable by the tinygrad that made it, tinygrad is a
-submodule, and the commit pins the submodule - so the coarse key is the correct
-one, and it costs a rebuild on update, parked, once.
+The cache is keyed on what the pickle actually depends on: the tinygrad the
+capture was made by, and the sources that decide what was captured. See
+_build_key for why that replaced the openpilot commit, and load_warp for what
+is checked before a cached pickle is allowed near the car.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import pickle
+import subprocess
 from pathlib import Path
 
 from openpilot.common.hardware.hw import Paths
 from openpilot.common.swaglog import cloudlog
 
 CACHE_DIR = Path(Paths.comma_home()) / 'jetlink'
+
+
+# What TinyJit records for the keyword call below: enumerate(args) is empty and
+# sorted(kwargs) gives these four, in this order.
+WARP_INPUT_NAMES = ['big_frame', 'big_tfm', 'frame', 'tfm']
 
 
 def call_warp(warp, tfm, big_tfm, frame, big_frame):
@@ -90,16 +97,51 @@ def ensure(cam_w: int, cam_h: int, model_w: int, model_h: int) -> bool:
   return True
 
 
+# What the pickle actually depends on, besides tinygrad: the graph that was
+# captured, and the NV12 layout it was built around.
+_WARP_SOURCES = (
+  'openpilot/selfdrive/modeld/compile_modeld.py',    # make_warp, make_frame_prepare
+  'openpilot/system/camerad/cameras/nv12_info.py',   # the frame layout the graph indexes
+  'openpilot/sunnypilot/accelerators/jetlink/warp_cache.py',  # call_warp, and the compile itself
+)
+
+
+def _tinygrad_pin() -> str:
+  """The tinygrad the pickle was made by, read as the submodule's pinned oid."""
+  from openpilot.common.basedir import BASEDIR
+  return subprocess.check_output(['git', 'rev-parse', 'HEAD:tinygrad_repo'],
+                                 cwd=BASEDIR, encoding='utf8', timeout=10).strip()
+
+
 def _build_key() -> str:
   """What the pickled JIT is only valid against.
 
-  The openpilot commit, because tinygrad is a submodule it pins: a pickle from
-  another tinygrad will not load, and one that half-loads is worse. Coarse on
-  purpose - the cost of being wrong here is a silent fallback to the small
-  model mid-drive, and the cost of being conservative is one parked rebuild.
+  This was the openpilot commit, on the grounds that a pickled TinyJit only
+  loads under the tinygrad that made it and the commit pins that submodule.
+  True, but far too broad: every update to anything invalidated a warp that was
+  still perfectly good, and rebuilding takes ~9 s that only jetlinkd can spend
+  and only while parked. An update landing shortly before ignition then costs
+  the large model for that drive. Measured that exact loss twice in one
+  evening, once with 6 s between jetlinkd starting and the car going onroad,
+  once with 5 s.
+
+  So key on what the pickle actually depends on instead: the tinygrad the
+  capture was made by, and the sources that decide what was captured. That is
+  strictly narrower than the commit - every one of these changing implies the
+  commit changed - so it cannot accept anything the old key would have
+  rejected, and it stops rejecting warps for a UI or car-port change.
+
+  Anything that fails here raises, is_cached turns that into a miss, and the
+  warp is rebuilt. A wrong warp reaching the car is the one outcome that is
+  not survivable, so every uncertainty resolves to a rebuild.
   """
-  from openpilot.common.version import get_build_metadata
-  return get_build_metadata().openpilot.git_commit
+  from openpilot.common.basedir import BASEDIR
+  h = hashlib.sha256()
+  h.update(_tinygrad_pin().encode())
+  for rel in _WARP_SOURCES:
+    h.update(rel.encode())
+    h.update(hashlib.sha256((Path(BASEDIR) / rel).read_bytes()).digest())
+  return h.hexdigest()
 
 
 def warp_path(cam_w: int, cam_h: int, model_w: int, model_h: int) -> Path:
@@ -180,7 +222,21 @@ def load_warp(cam_w: int, cam_h: int, model_w: int, model_h: int):
   if not is_cached(cam_w, cam_h, model_w, model_h):
     raise RuntimeError(f"no warp cached for {cam_w}x{cam_h} -> {model_w}x{model_h}; jetlinkd builds it offroad")
   with open(warp_path(cam_w, cam_h, model_w, model_h), 'rb') as f:
-    return pickle.load(f)
+    warp = pickle.load(f)
+
+  # Two ways a pickle can load fine and still be useless, both of which have
+  # happened. A JIT pickled before TinyJit captured is an empty one that
+  # silently computes nothing. And one captured with a different call
+  # convention raises JitError on the first frame of a drive, which is the
+  # worst possible place to find out - modeld has already committed to the
+  # large model by then. Both are cheap to rule out right here.
+  captured = getattr(warp, 'captured', None)
+  if captured is None:
+    raise RuntimeError("cached warp was pickled before it captured; it computes nothing")
+  names = list(getattr(captured, 'expected_names', []))
+  if names != WARP_INPUT_NAMES:
+    raise RuntimeError(f"cached warp expects {names}, call_warp passes {WARP_INPUT_NAMES}")
+  return warp
 
 
 def prune(keep: set[Path]) -> None:
