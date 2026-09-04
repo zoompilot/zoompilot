@@ -14,9 +14,13 @@ that a swap never lands on an engaged frame, that a large model which dies
 mid-drive falls back without losing the frame, and that a small-model failure
 still belongs to modeld.
 """
+import re
 import threading
 import unittest
+from pathlib import Path
 from unittest import mock
+
+from openpilot.common.basedir import BASEDIR
 
 from openpilot.sunnypilot.accelerators.jetlink.joining import JoiningModelState
 
@@ -134,6 +138,28 @@ class JoiningTest(unittest.TestCase):
     s._engaged = False
     self._run(s)
     self.assertEqual(self.big.lat_delay, 0.25)
+
+
+class ContractTest(unittest.TestCase):
+  """Whatever modeld touches on the object make_model_state returns.
+
+  Read out of modeld rather than kept by hand, because the list is modeld's and
+  it has already been wrong once: `warmup` is called on the return value and
+  nothing else, so it was missed, and modeld catches the AttributeError as
+  "big model load failed" and spends the drive on the small model. A missing
+  member has to fail here, not on the car.
+  """
+
+  def test_provides_everything_modeld_touches(self):
+    src = Path(BASEDIR) / 'openpilot' / 'selfdrive' / 'modeld' / 'modeld.py'
+    text = src.read_text()
+    # `model` is the one in the frame loop, `m` the one load_big just built.
+    # \b keeps small_model/big_model/sm out of it.
+    names = set(re.findall(r'\bmodel\.([a-zA-Z_][a-zA-Z0-9_]*)', text))
+    names |= set(re.findall(r'\bm\.([a-zA-Z_][a-zA-Z0-9_]*)', text))
+    self.assertIn('warmup', names, "modeld stopped calling warmup; check this test still finds the right names")
+    missing = sorted(n for n in names if not hasattr(JoiningModelState, n))
+    self.assertEqual(missing, [], f"JoiningModelState is missing {missing}, which modeld calls on it")
 
 
 if __name__ == '__main__':

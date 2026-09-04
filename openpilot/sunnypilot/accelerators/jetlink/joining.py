@@ -133,6 +133,17 @@ class JoiningModelState:
       # and chestnutState is published once per frame at most.
       return self._small.run(bufs, transforms, inputs, None)
 
+  def warmup(self) -> None:
+    """modeld warms whatever make_model_state returned. Nothing to do here.
+
+    The small model is already warm: modeld built and warmed it on the main
+    thread before this object existed. The Jetson's model is warmed at the
+    swap instead, on modeld's thread, which is where the tinygrad work has to
+    happen anyway. So this is a no-op, but it has to exist - modeld calls it
+    unconditionally, and an AttributeError is caught as "big model load failed"
+    and costs the whole drive.
+    """
+
   def _maybe_swap(self) -> None:
     if self._joined is None or self._engaged:
       return
