@@ -192,6 +192,33 @@ class Jetlinkd:
     self.warp_thread = threading.Thread(target=build, daemon=True, name='jetlink_warp')
     self.warp_thread.start()
 
+  @staticmethod
+  def _eta(seconds: float) -> str:
+    if seconds >= 90:
+      return f"about {seconds / 60:.0f} min left"
+    return f"about {max(seconds, 1):.0f}s left"
+
+  def _report_with_eta(self, stage: str, frac: float, msg: str) -> None:
+    """Progress, with how long the build still has to run.
+
+    models.json carries `built_seconds` per model and has since it was written,
+    measured on this hardware, so that the UI could say how long a first
+    provision takes. Nothing ever read it, and the panel showed "build 12%"
+    while a driver waited out five minutes with no idea it was five and not
+    thirty. The number belongs here rather than in the UI: it comes from the
+    backend's own registry, and openpilot/selfdrive/ui stays free of any
+    knowledge that jetlink exists.
+
+    Only the build is estimated. The upload already reports MB of MB, and a
+    connect has nothing to predict.
+    """
+    if stage == 'build':
+      entry = helpers.selected_model() or {}
+      built = entry.get('built_seconds')
+      if built:
+        msg = self._eta(float(built) * max(0.0, 1.0 - frac))
+    accelerators.report_progress(stage, frac, msg)
+
   def provision(self) -> bool:
     """Make the Jetson ready for the selected model. Host must be attached."""
     model_path = helpers.active_model_path()
@@ -238,7 +265,7 @@ class Jetlinkd:
     hello = self.client.hello(timeout=10.0)
     cloudlog.warning("jetlink: server %s trt %s", hello.get('device'), hello.get('trt_version'))
     spec = self.client.ensure_engine(sha256, nbytes, onnx_path=model_path,
-                                     progress=accelerators.report_progress,
+                                     progress=self._report_with_eta,
                                      build_timeout=1800.0, should_stop=lambda: self.stop)
 
     spec_cache.store(spec, model_path)

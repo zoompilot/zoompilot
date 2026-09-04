@@ -420,5 +420,38 @@ class TestWarpFallback(TestParked):
     cached.assert_called_once()
 
 
+class BuildEtaTest(unittest.TestCase):
+  """models.json has carried built_seconds all along so the UI could say how
+  long a first provision takes, and nothing read it. A driver watching
+  "build 12%" cannot tell five minutes from thirty."""
+
+  def test_the_build_stage_gets_a_time_remaining(self):
+    from openpilot.sunnypilot.accelerators.jetlink import jetlinkd as J
+    seen = []
+    with mock.patch.object(J.helpers, 'selected_model', return_value={'built_seconds': 300}), \
+         mock.patch.object(J.accelerators, 'report_progress', lambda *a: seen.append(a)):
+      J.Jetlinkd._report_with_eta(J.Jetlinkd, 'build', 0.0, 'building the engine')
+      J.Jetlinkd._report_with_eta(J.Jetlinkd, 'build', 0.8, 'building the engine')
+    self.assertEqual(seen[0][2], "about 5 min left")
+    self.assertEqual(seen[1][2], "about 60s left")
+
+  def test_other_stages_keep_their_own_message(self):
+    from openpilot.sunnypilot.accelerators.jetlink import jetlinkd as J
+    seen = []
+    # The upload already counts MB of MB, and a connect has nothing to predict.
+    with mock.patch.object(J.helpers, 'selected_model', return_value={'built_seconds': 300}), \
+         mock.patch.object(J.accelerators, 'report_progress', lambda *a: seen.append(a)):
+      J.Jetlinkd._report_with_eta(J.Jetlinkd, 'upload', 0.5, '380/766 MB')
+    self.assertEqual(seen[0][2], '380/766 MB')
+
+  def test_a_model_with_no_measured_build_time_is_survived(self):
+    from openpilot.sunnypilot.accelerators.jetlink import jetlinkd as J
+    seen = []
+    with mock.patch.object(J.helpers, 'selected_model', return_value={}), \
+         mock.patch.object(J.accelerators, 'report_progress', lambda *a: seen.append(a)):
+      J.Jetlinkd._report_with_eta(J.Jetlinkd, 'build', 0.3, 'building the engine')
+    self.assertEqual(seen[0][2], 'building the engine')
+
+
 if __name__ == '__main__':
   unittest.main()
