@@ -28,6 +28,14 @@ killed mid-transfer leaves the gadget in a state only a reboot reliably clears.
 Ownership of the link is exclusive: jetlinkd offroad, modeld onroad. manager's
 only_offroad gate enforces that. On the handover the gadget briefly unbinds and
 the Jetson re-enumerates, which both ends handle.
+
+The exception to holding the gadget is the parked car. A Jetson on an
+always-on supply sleeps when it has had no gadget for a while and wakes on
+the next USB edge, so once the engine is ready and DORMANT_HOLD has passed
+this daemon releases the gadget on purpose and only presents it again when
+there is work: a model change, a readiness the server no longer confirms, or
+hardwared asking for the Jetson to be powered off with the comma. modeld's
+bind at ignition is the wake.
 """
 from __future__ import annotations
 
@@ -45,6 +53,16 @@ POLL_HZ = 2.0
 RETRY_BACKOFF = 30.0       # after a failed provision
 RETRY_BACKOFF_MAX = 900.0  # ceiling once the failures keep coming
 RECONNECT_BACKOFF = 5.0    # after the link itself failed
+
+# Once there is nothing left to do, how long after ignition-off (which is when
+# manager starts us) the gadget is released so the Jetson can sleep. The
+# server sleeps 120 s after the gadget goes, so the Jetson is down about three
+# minutes after the car is parked; a quick stop inside the hold rejoins at
+# once, one outside it costs the ~8 s wake. See jetlink/server/sleep.py.
+DORMANT_HOLD = 60.0
+# A sleeping Jetson wakes on the gadget bind: ~6 s to a kernel, ~1 s to
+# enumerate on the bench.
+WAKE_TIMEOUT = 20.0
 
 
 def _timed_out(e: BaseException) -> bool:
@@ -74,6 +92,8 @@ class Jetlinkd:
     self._identity: tuple | None = None   # (source, sha256, nbytes) of the hashed file
     self.warp_built = False  # tried the comma-side warp this run
     self.warp_thread: threading.Thread | None = None
+    self.started = time.monotonic()
+    self.dormant = False     # released the gadget on purpose; see go_dormant
 
   # -- lifecycle ------------------------------------------------------------
 
@@ -218,6 +238,60 @@ class Jetlinkd:
     cloudlog.warning("jetlink: engine ready for %s", spec.sha256[:16])
     return True
 
+  # -- the parked car -------------------------------------------------------
+
+  def go_dormant(self) -> None:
+    """Release the gadget so the Jetson can sleep. The marker goes first so
+    chestnutPresent never blinks: presence follows it, not the UDC, while we
+    are dormant. Readiness is kept; the server is asked again on the next
+    attach as it is after any other detach."""
+    cloudlog.warning("jetlink: nothing left to do, releasing the gadget so the jetson can sleep")
+    helpers.set_dormant(True)
+    self.close_link()
+    self.dormant = True
+    self.was_attached = False
+    self.verified = False
+
+  def wake(self) -> None:
+    """Present the gadget again. If the Jetson is asleep, the bind wakes it."""
+    cloudlog.warning("jetlink: presenting the gadget again")
+    helpers.set_dormant(False)
+    self.dormant = False
+
+  def has_work(self) -> bool:
+    """Is there a reason to wake the Jetson? Only things the link can fix
+    count: the warp is local and build_warp handles it regardless."""
+    spec = spec_cache.load()
+    if spec is None or not helpers.engine_ready_for(spec.sha256):
+      return True
+    path = helpers.active_model_path()
+    if path is None:
+      return False  # nothing selected: nothing the Jetson can do about it
+    st = path.stat()
+    return spec_cache.source() != (str(path), st.st_mtime_ns, st.st_size)
+
+  def shutdown_jetson(self, reason: str) -> None:
+    """hardwared is shutting the comma down and wants the Jetson off too.
+    The request file is ours to remove, whatever happens: hardwared is
+    waiting on it and the comma goes down either way."""
+    cloudlog.warning("jetlink: shutting the jetson down: %s", reason)
+    try:
+      if self.dormant:
+        self.wake()
+      if not self.open_link():
+        raise RuntimeError("could not present the gadget")
+      deadline = time.monotonic() + WAKE_TIMEOUT
+      while not helpers.host_attached():
+        if self.stop or time.monotonic() > deadline:
+          raise TimeoutError(f"no jetson attached within {WAKE_TIMEOUT:.0f} s")
+        time.sleep(0.25)
+      resp = self.client.shutdown(reason, timeout=5.0)
+      cloudlog.warning("jetlink: jetson answered the shutdown request: %s", resp)
+    except Exception:
+      cloudlog.exception("jetlink: could not shut the jetson down")
+    finally:
+      helpers.finish_shutdown()
+
   # -- main loop ------------------------------------------------------------
 
   def backoff(self) -> float:
@@ -236,7 +310,20 @@ class Jetlinkd:
         helpers.set_engine_ready(None)
         self.ready = False
         self.close_link()
+      if self.dormant:
+        self.wake()
       return
+
+    reason = helpers.pending_shutdown()
+    if reason is not None:
+      self.shutdown_jetson(reason)
+      return
+
+    if self.dormant:
+      if self.has_work():
+        self.wake()
+      else:
+        return
 
     # Before the link and before the attach gate: the warp needs neither, and
     # it is the one thing modeld refuses to start the large model without. It
@@ -275,6 +362,8 @@ class Jetlinkd:
       self.ready = self.provision()
       self.failures = 0
       self.next_provision = 0.0
+      if self.ready and time.monotonic() - self.started >= DORMANT_HOLD:
+        self.go_dormant()
     except Exception as e:
       cloudlog.exception("jetlink: provisioning failed")
       accelerators.report_progress('failed', 1.0, 'see the log')
@@ -300,6 +389,7 @@ class Jetlinkd:
         self.close_link()
         self.next_attempt = time.monotonic() + RECONNECT_BACKOFF
     self.close_link()
+    helpers.set_dormant(False)
     if self.warp_thread is not None and self.warp_thread.is_alive():
       cloudlog.warning("jetlink: stopped with the warp still compiling; it will rebuild next time")
     cloudlog.warning("jetlink: stopped")

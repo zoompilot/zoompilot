@@ -14,6 +14,7 @@ watching it download works exactly as it does with a real chestnut.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -128,6 +129,77 @@ def link_configured() -> bool:
     return False
 
 
+# jetlinkd writes its pid here when it has released the gadget on purpose so
+# the Jetson can sleep (Jetlinkd.go_dormant). The Jetson is still there, only
+# unreachable until something presents the gadget again, so presence has to
+# come from this rather than from the UDC. A marker whose writer is dead is a
+# leftover from a kill, not a state, which is what the pid is for.
+DORMANT = Path("/dev/shm/jetlink-dormant")
+# hardwared's way of asking jetlinkd to power the Jetson off; see
+# JetlinkAccelerator.shutdown. jetlinkd unlinks it when it has dealt with it.
+SHUTDOWN_REQUEST = Path("/dev/shm/jetlink-shutdown")
+
+
+def set_dormant(on: bool) -> None:
+  try:
+    if on:
+      DORMANT.write_text(str(os.getpid()))
+    else:
+      DORMANT.unlink(missing_ok=True)
+  except OSError:
+    cloudlog.exception("jetlink: could not update the dormant marker")
+
+
+def dormant() -> bool:
+  """Has a live jetlinkd released the gadget on purpose?"""
+  try:
+    pid = int(DORMANT.read_text())
+  except (OSError, ValueError):
+    return False
+  try:
+    os.kill(pid, 0)
+  except ProcessLookupError:
+    return False
+  except PermissionError:
+    pass  # alive, just not ours to signal
+  return True
+
+
+def request_shutdown(reason: str) -> bool:
+  try:
+    SHUTDOWN_REQUEST.write_text(json.dumps({'reason': reason}))
+    return True
+  except OSError:
+    cloudlog.exception("jetlink: could not write the shutdown request")
+    return False
+
+
+def pending_shutdown() -> str | None:
+  """The reason in a shutdown request that has not been dealt with, if any."""
+  try:
+    return str(json.loads(SHUTDOWN_REQUEST.read_text()).get('reason', ''))
+  except (OSError, ValueError):
+    return None
+
+
+def finish_shutdown() -> None:
+  try:
+    SHUTDOWN_REQUEST.unlink(missing_ok=True)
+  except OSError:
+    cloudlog.exception("jetlink: could not remove the shutdown request")
+
+
+def await_shutdown(timeout: float) -> bool:
+  """Wait for jetlinkd to take the request. False if nobody did in time."""
+  deadline = time.monotonic() + timeout
+  while time.monotonic() < deadline:
+    if not SHUTDOWN_REQUEST.exists():
+      return True
+    time.sleep(0.25)
+  finish_shutdown()
+  return False
+
+
 # How long chestnutPresent stays true after the UDC last read "configured".
 # selfdrived soft-disables on chestnutPresent dropping while the big model is
 # active, and a USB3 link recovery the client rides out passes through
@@ -147,6 +219,8 @@ def gadget_present() -> bool:
   """
   global _last_configured
   if link_endpoint() is not None:
+    return True
+  if dormant():
     return True
   now = time.monotonic()
   if host_attached():

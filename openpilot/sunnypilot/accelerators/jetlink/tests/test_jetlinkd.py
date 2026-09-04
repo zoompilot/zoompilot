@@ -214,6 +214,144 @@ class TestStepOnFailure(unittest.TestCase):
     assert d.ready is True
 
 
+class TestParked(unittest.TestCase):
+  """Releasing the gadget once there is nothing to do, and taking it back."""
+
+  def setUp(self):
+    self.tmp = Path(tempfile.mkdtemp())
+    self.cache = FakeSpecCache()
+    self.cache.spec = FakeSpec()
+    self.model = self.tmp / 'big_driving_supercombo.onnx'
+    self.model.write_bytes(b'x' * 4096)
+    st = self.model.stat()
+    self.cache.src = (str(self.model), st.st_mtime_ns, st.st_size)
+    for target, new in (('spec_cache', self.cache), ('accelerators', mock.Mock())):
+      p = mock.patch.object(jetlinkd, target, new)
+      self.addCleanup(p.stop)
+      p.start()
+    for name, value in (('DORMANT', self.tmp / 'dormant'), ('SHUTDOWN_REQUEST', self.tmp / 'shutdown')):
+      p = mock.patch.object(jetlinkd.helpers, name, value)
+      self.addCleanup(p.stop)
+      p.start()
+    for name, value in (('enabled', True), ('host_attached', True), ('engine_ready_for', True),
+                        ('active_model_path', self.model)):
+      p = mock.patch.object(jetlinkd.helpers, name, return_value=value)
+      self.addCleanup(p.stop)
+      p.start()
+
+  def daemon(self, ready=True):
+    d = jetlinkd.Jetlinkd()
+    d.client = mock.Mock()
+    d.warp_built = True
+    for name in ('open_link', 'close_link'):
+      p = mock.patch.object(d, name, mock.Mock(return_value=True))
+      self.addCleanup(p.stop)
+      p.start()
+    p = mock.patch.object(d, 'provision', mock.Mock(return_value=ready))
+    self.addCleanup(p.stop)
+    p.start()
+    return d
+
+  def test_holds_the_gadget_until_the_hold_has_passed(self):
+    d = self.daemon()
+    d.step()
+    assert not d.dormant
+    assert d.close_link.call_count == 0
+
+  def test_releases_the_gadget_once_ready_and_parked_long_enough(self):
+    d = self.daemon()
+    d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
+    d.step()
+    assert d.dormant
+    assert d.close_link.call_count == 1
+    assert jetlinkd.helpers.dormant()
+    # and stays off the link while there is nothing to do
+    d.step()
+    assert d.open_link.call_count == 1  # only the first step presented it
+
+  def test_not_ready_means_not_dormant(self):
+    d = self.daemon(ready=False)
+    d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
+    d.step()
+    assert not d.dormant
+
+  def test_a_cleared_readiness_wakes_it(self):
+    d = self.daemon()
+    d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
+    d.step()
+    assert d.dormant
+    d.started = time.monotonic()  # so the re-provision below does not put it straight back
+    with mock.patch.object(jetlinkd.helpers, 'engine_ready_for', return_value=False):
+      d.step()
+    assert not d.dormant
+    assert not jetlinkd.helpers.dormant()
+    assert d.open_link.call_count == 2  # presented it again
+    assert d.provision.call_count == 2  # and asked the server again
+
+  def test_a_changed_model_wakes_it(self):
+    d = self.daemon()
+    d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
+    d.step()
+    d.started = time.monotonic()
+    self.model.write_bytes(b'y' * 8192)
+    d.step()
+    assert not d.dormant
+
+  def test_waking_for_work_that_is_done_goes_straight_back(self):
+    d = self.daemon()
+    d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
+    d.step()
+    with mock.patch.object(jetlinkd.helpers, 'engine_ready_for', return_value=False):
+      d.step()
+    assert d.dormant
+    assert d.open_link.call_count == 2
+    assert d.close_link.call_count == 2
+
+  def test_nothing_selected_is_not_work(self):
+    d = self.daemon()
+    d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
+    d.step()
+    with mock.patch.object(jetlinkd.helpers, 'active_model_path', return_value=None):
+      d.step()
+    assert d.dormant
+
+  def test_disabling_clears_the_marker(self):
+    d = self.daemon()
+    d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
+    d.step()
+    with mock.patch.object(jetlinkd.helpers, 'enabled', return_value=False):
+      d.step()
+    assert not d.dormant
+    assert not jetlinkd.helpers.dormant()
+
+  def test_a_shutdown_request_is_carried_to_the_jetson(self):
+    d = self.daemon()
+    d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
+    d.step()
+    assert d.dormant
+    jetlinkd.helpers.request_shutdown('car battery')
+    d.step()
+    assert not d.dormant
+    assert d.open_link.call_count == 2  # presented it again to wake it
+    d.client.shutdown.assert_called_once_with('car battery', timeout=5.0)
+    assert jetlinkd.helpers.pending_shutdown() is None
+
+  def test_a_shutdown_request_is_consumed_even_when_it_fails(self):
+    d = self.daemon()
+    d.client.shutdown.side_effect = RuntimeError('link died')
+    jetlinkd.helpers.request_shutdown('car battery')
+    d.step()
+    assert jetlinkd.helpers.pending_shutdown() is None
+
+  def test_a_shutdown_request_waits_for_the_jetson_to_wake(self):
+    d = self.daemon()
+    attached = iter([False, False, True])
+    with mock.patch.object(jetlinkd.helpers, 'host_attached', side_effect=lambda: next(attached)):
+      jetlinkd.helpers.request_shutdown('car battery')
+      d.step()
+    d.client.shutdown.assert_called_once()
+
+
 class TestTimedOut(unittest.TestCase):
   def test_without_the_package_it_assumes_the_worst(self):
     # No jetlink installed means no way to tell a timeout from a desync, and

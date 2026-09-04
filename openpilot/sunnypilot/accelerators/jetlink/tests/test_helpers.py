@@ -70,6 +70,54 @@ class TestGadgetAlert(unittest.TestCase):
     assert self.alert_with(True, None) is None
 
 
+class TestDormant(unittest.TestCase):
+  def setUp(self):
+    self.tmp = Path(tempfile.mkdtemp())
+    for name in ('DORMANT', 'SHUTDOWN_REQUEST'):
+      patcher = mock.patch.object(helpers, name, self.tmp / name.lower())
+      self.addCleanup(patcher.stop)
+      patcher.start()
+
+  def test_marker_from_a_live_process_counts(self):
+    helpers.set_dormant(True)
+    assert helpers.dormant()
+    helpers.set_dormant(False)
+    assert not helpers.dormant()
+
+  def test_marker_from_a_dead_process_is_a_leftover(self):
+    helpers.DORMANT.write_text('4194304')  # above pid_max
+    assert not helpers.dormant()
+
+  def test_garbage_is_not_dormant(self):
+    helpers.DORMANT.write_text('not a pid')
+    assert not helpers.dormant()
+
+  def test_dormant_counts_as_present_without_a_host(self):
+    with mock.patch.object(helpers, 'link_endpoint', return_value=None), \
+         mock.patch.object(helpers, 'host_attached', return_value=False):
+      helpers._last_configured = 0.0
+      assert not helpers.gadget_present()
+      helpers.set_dormant(True)
+      assert helpers.gadget_present()
+
+  def test_shutdown_request_round_trip(self):
+    assert helpers.pending_shutdown() is None
+    assert helpers.request_shutdown('car battery')
+    assert helpers.pending_shutdown() == 'car battery'
+    helpers.finish_shutdown()
+    assert helpers.pending_shutdown() is None
+
+  def test_await_shutdown_gives_up_and_cleans_up(self):
+    helpers.request_shutdown('car battery')
+    assert not helpers.await_shutdown(0.3)
+    assert helpers.pending_shutdown() is None
+
+  def test_await_shutdown_returns_when_taken(self):
+    helpers.request_shutdown('car battery')
+    helpers.finish_shutdown()
+    assert helpers.await_shutdown(0.3)
+
+
 class TestUnchunkedSuffix(unittest.TestCase):
   def test_suffix_is_distinct_from_openpilots(self):
     """openpilot's own '.unchunked' files are deleted by an atexit handler.
