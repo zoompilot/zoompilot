@@ -29,6 +29,10 @@ from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache
 CONNECT_TIMEOUT = 45.0
 CONNECT_DELAY = 0.5
 
+# How long hardwared waits for jetlinkd to shut the Jetson down before the comma
+# goes ahead without it. Wake from suspend is ~8 s to a server on the bench.
+SHUTDOWN_TIMEOUT = 25.0
+
 
 def _wait_for_host(deadline: float) -> bool:
   reported = False
@@ -187,3 +191,24 @@ class JetlinkAccelerator:
   def daemon(self) -> Daemon:
     return Daemon("jetlinkd", "openpilot.sunnypilot.accelerators.jetlink.jetlinkd",
                   lambda started, params, CP: helpers.enabled())
+
+  def shutdown(self, reason: str) -> None:
+    """Take the Jetson down with us. Runs in hardwared, so it cannot touch the
+    link itself: jetlinkd owns the gadget offroad, and a Jetson that is asleep
+    has to be woken by presenting it, which only the owner can do. Hand the
+    request over and wait; jetlinkd needs ~10 s for the wake and one round
+    trip, and manager will not kill it until after we return.
+
+    Skipped when no Jetson is known to be there, dormant counts as there. Not
+    skipped when jetlinkd is busy in a long provision: it will not see the
+    request in time, and the timeout is what covers that.
+    """
+    if not helpers.enabled() or not helpers.gadget_present():
+      return
+    cloudlog.warning("jetlink: asking the jetson to power off: %s", reason)
+    if not helpers.request_shutdown(reason):
+      return
+    if helpers.await_shutdown(SHUTDOWN_TIMEOUT):
+      cloudlog.warning("jetlink: shutdown request handed to the jetson")
+    else:
+      cloudlog.warning("jetlink: nobody took the shutdown request within %.0f s", SHUTDOWN_TIMEOUT)

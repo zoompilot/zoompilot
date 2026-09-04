@@ -100,3 +100,14 @@ class Accelerator(Protocol):
 
   def daemon(self) -> Daemon | None:
     """An offroad process this backend needs, or None."""
+
+  def shutdown(self, reason: str) -> None:
+    """The device is powering off for good, on its own battery policy.
+
+    hardwared calls this from the same place it decides to shut down, before
+    DoShutdown is set. A backend whose hardware is on its own supply turns
+    that off too; one that shares the device's supply has nothing to do, and
+    may leave the method out. Blocking is fine, the device is about to die
+    anyway, but manager kills the daemons a few seconds after it sees the
+    param, so anything that needs one of them has to finish inside this call.
+    """

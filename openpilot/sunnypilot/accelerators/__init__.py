@@ -117,3 +117,19 @@ def clear_progress() -> None:
     Params().remove(P_PROGRESS)
   except Exception:
     cloudlog.exception("accelerators: could not clear progress")
+
+
+def shutdown(reason: str = '') -> None:
+  """The device is about to power off. Every backend that cares gets told.
+
+  Optional on the protocol: comma's board dies with the device and has no
+  say. Nothing may escape, this runs on hardwared's way out.
+  """
+  for b in backends():
+    fn = getattr(b, 'shutdown', None)
+    if fn is None:
+      continue
+    try:
+      fn(reason)
+    except Exception:
+      cloudlog.exception("accelerators: %s.shutdown failed", b.name)

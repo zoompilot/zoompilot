@@ -204,3 +204,20 @@ class TestProgress(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+class TestShutdown(AcceleratorTest):
+  def test_every_backend_with_a_say_is_told_and_the_rest_are_skipped(self):
+    told = []
+
+    class WithShutdown(FakeAccelerator):
+      def shutdown(self, reason):
+        told.append((self.name, reason))
+
+    class Exploding(FakeAccelerator):
+      def shutdown(self, reason):
+        raise RuntimeError('no')
+
+    self.install(FakeAccelerator('mute'), Exploding('loud'), WithShutdown('jetlink'))
+    accelerators.shutdown('car battery')
+    assert told == [('jetlink', 'car battery')]
