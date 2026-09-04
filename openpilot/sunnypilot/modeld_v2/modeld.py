@@ -35,8 +35,8 @@ from openpilot.system import sentry
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value
-from openpilot.selfdrive.modeld.modeld import ChestnutState
 
+from openpilot.sunnypilot.accelerators.chestnut import ChestnutState
 from openpilot.sunnypilot.modeld_v2.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState, get_curvature_from_output
 from openpilot.sunnypilot.modeld_v2.constants import Plan
 from openpilot.sunnypilot.modeld_v2.meta_helper import load_meta_constants
