@@ -29,7 +29,24 @@ from openpilot.cereal.messaging import PubMaster
 from openpilot.cereal.services import SERVICE_LIST
 from openpilot.common.hardware.usb import CHESTNUT_USB_IDS
 from openpilot.common.swaglog import cloudlog
-from openpilot.selfdrive.modeld.helpers import chestnut_compiled, chestnut_present, chestnut_ready
+from openpilot.selfdrive.modeld.helpers import chestnut_compiled, chestnut_present
+
+try:
+  from openpilot.selfdrive.modeld.helpers import chestnut_ready
+except ImportError:
+  # comma added this in #38742 and reverted it the next day in #38760, taking
+  # chestnut_ready and its two constants out of modeld.helpers again. The wait
+  # is ours to keep either way - see prepare() - but the import is not: a
+  # NameError here would be swallowed by accelerators.backends() as "a fork
+  # that does not ship this backend", and a real chestnut would silently lose
+  # the large model with nothing in the log. So carry the check locally when
+  # upstream is not lending it.
+  CHESTNUT_POWERED_VOLTAGE = 5000
+  CHESTNUT_PCIE_READY = 0x78
+
+  def chestnut_ready(state) -> bool:
+    return (state.supplyVoltage >= CHESTNUT_POWERED_VOLTAGE and not state.supplyFault
+            and state.pcieLtssm == CHESTNUT_PCIE_READY)
 
 from openpilot.sunnypilot.accelerators.base import Daemon
 

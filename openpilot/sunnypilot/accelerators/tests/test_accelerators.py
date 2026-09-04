@@ -10,9 +10,11 @@ modeld, manager, hardwared and the UI all reach hardware through this module,
 so a backend that is absent, half-installed or simply broken must cost the
 large model and nothing else. Fakes rather than hardware, so this runs anywhere.
 """
+import importlib
 import sys
 import types
 import unittest
+from collections import namedtuple
 from unittest import mock
 
 from openpilot.sunnypilot import accelerators
@@ -202,9 +204,6 @@ class TestProgress(unittest.TestCase):
       accelerators.clear_progress()
 
 
-if __name__ == "__main__":
-  unittest.main()
-
 
 class TestShutdown(AcceleratorTest):
   def test_every_backend_with_a_say_is_told_and_the_rest_are_skipped(self):
@@ -221,3 +220,42 @@ class TestShutdown(AcceleratorTest):
     self.install(FakeAccelerator('mute'), Exploding('loud'), WithShutdown('jetlink'))
     accelerators.shutdown('car battery')
     assert told == [('jetlink', 'car battery')]
+
+
+class TestChestnutReadyFallback(unittest.TestCase):
+  """chestnut.py must survive modeld.helpers losing chestnut_ready.
+
+  comma added it in #38742 and reverted it the next day in #38760. A
+  module-scope import of a name upstream has taken away raises ImportError,
+  which backends() swallows as "a fork that does not ship this backend" - so a
+  real chestnut would quietly stop running the large model, with nothing in the
+  log to say why. The backend carries its own copy for exactly that window.
+  """
+
+  State = namedtuple('State', 'supplyVoltage supplyFault pcieLtssm')
+
+  def _reload_without_chestnut_ready(self):
+    from openpilot.selfdrive.modeld import helpers
+    from openpilot.sunnypilot.accelerators import chestnut
+
+    self.addCleanup(importlib.reload, chestnut)
+    saved = helpers.chestnut_ready
+    self.addCleanup(setattr, helpers, 'chestnut_ready', saved)
+    del helpers.chestnut_ready
+    return importlib.reload(chestnut)
+
+  def test_the_backend_still_loads(self):
+    mod = self._reload_without_chestnut_ready()
+    self.assertTrue(hasattr(mod, 'ChestnutAccelerator'))
+    self.assertEqual(mod.ChestnutAccelerator().name, 'chestnut')
+
+  def test_the_local_check_agrees_with_the_one_upstream_removed(self):
+    mod = self._reload_without_chestnut_ready()
+    good = self.State(supplyVoltage=5000, supplyFault=False, pcieLtssm=0x78)
+    self.assertTrue(mod.chestnut_ready(good))
+    for bad in (good._replace(supplyVoltage=4999), good._replace(supplyFault=True),
+                good._replace(pcieLtssm=0x00)):
+      self.assertFalse(mod.chestnut_ready(bad), bad)
+
+if __name__ == "__main__":
+  unittest.main()
