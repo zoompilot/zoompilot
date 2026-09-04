@@ -55,6 +55,7 @@ import threading
 import time
 
 import openpilot.cereal.messaging as messaging
+from openpilot.sunnypilot import accelerators
 from openpilot.common.params import Params
 from openpilot.common.realtime import drop_realtime, set_core_affinity
 from openpilot.common.swaglog import cloudlog
@@ -292,12 +293,14 @@ class JoiningModelState:
     self._joined_at = time.monotonic()
     self._set_active(True)
     self._set_loading(False)
+    accelerators.clear_progress()
     cloudlog.warning("jetlink: large model joined mid-drive, modelV2.big is now true")
 
   def _demote(self) -> None:
     big, self._active = self._active, self._small
     self._set_active(False)
     self._set_loading(True)
+    self._report('connect', 'lost the jetson, reconnecting')
     close = getattr(big, 'close', None)
     if close is not None:
       try:
@@ -325,6 +328,17 @@ class JoiningModelState:
 
   # -- background -------------------------------------------------------------
 
+  def _report(self, stage: str, msg: str) -> None:
+    """Tell the UI what the join is waiting on.
+
+    The models panel already renders this param, and offroad it carries
+    jetlinkd's provisioning. Onroad nothing was writing it, so a join showed
+    as "getting ready" and nothing else - a Jetson that is not plugged in
+    looked exactly like one whose engine is six seconds from loading. There
+    is no fraction to give here, and the panel knows not to invent one.
+    """
+    accelerators.report_progress(stage, 0.0, msg)
+
   def _join_loop(self) -> None:
     """Open the link and get the engine ready. No tinygrad in here."""
     _background_priority()
@@ -337,6 +351,7 @@ class JoiningModelState:
       self._rejoin.clear()
       if self._stop.wait(max(0.0, self._rejoin_at - time.monotonic())):
         return
+      self._report('connect', 'waiting for the jetson')
       try:
         client, spec = self._connect()
       except Exception as e:
@@ -350,6 +365,7 @@ class JoiningModelState:
       with self._lock:
         self._joined = (client, spec)
       cloudlog.warning("jetlink: link ready, waiting for a window to swap")
+      self._report('connect', 'ready, waiting for a safe moment')
       self._keep_alive()
 
   def _keep_alive(self) -> None:
@@ -407,6 +423,7 @@ class JoiningModelState:
   def close(self) -> None:
     self._stop.set()
     self._rejoin.set()
+    accelerators.clear_progress()
     with self._lock:
       joined, self._joined = self._joined, None
     if joined is not None:

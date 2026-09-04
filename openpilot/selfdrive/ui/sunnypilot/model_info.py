@@ -37,11 +37,15 @@ def big_model_state() -> str | None:
           ChestnutState.LOADING: 'loading'}.get(ui_state.chestnut_state)
 
 
-def big_model_progress() -> tuple[str, float] | None:
-  """(stage, 0..1) while an accelerator is being provisioned, else None.
+def big_model_progress() -> tuple[str, float, str] | None:
+  """(stage, 0..1, message) while an accelerator is working, else None.
 
   Reads to the user exactly like the on-device compilation big_model_state()
   reports. Lives next to it so every layout gets it, not only the one that asked.
+
+  The message is carried because a fraction is not always meaningful: a build
+  has one, but "waiting for the jetson" does not, and rendering that as
+  "connect 0%" tells the driver nothing about what is being waited for.
   """
   progress = getattr(ui_state, 'accelerator_progress', None)
   if not progress:
@@ -49,7 +53,7 @@ def big_model_progress() -> tuple[str, float] | None:
   stage = str(progress.get('stage', ''))
   if stage in ('', 'ready'):
     return None
-  return stage, float(progress.get('frac', 0.0))
+  return stage, float(progress.get('frac', 0.0)), str(progress.get('msg', ''))
 
 
 def carrying_model() -> tuple[str | None, str | None, str | None]:

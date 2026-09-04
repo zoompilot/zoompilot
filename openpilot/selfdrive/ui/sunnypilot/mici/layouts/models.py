@@ -90,10 +90,14 @@ def _model_info() -> tuple[str, str, str]:
   active_text = (carry_display or active_name).lower()
   provisioning = big_model_progress()
   if provisioning is not None:
-    stage, frac = provisioning
+    stage, frac, msg = provisioning
     if stage == 'failed':
       return active_text, tr("big model"), tr("unavailable")
-    return active_text, tr("big model"), f"{tr(stage)} {frac * 100:.0f}%"
+    # The message when there is one: "waiting for the jetson" is worth more to
+    # a driver than "connect 0%", and a stage with nothing to measure should
+    # not be given a percentage that only ever reads zero.
+    detail = tr(msg) if msg else tr(stage)
+    return active_text, tr("big model"), f"{detail} {frac * 100:.0f}%" if frac > 0 else detail
   if state == 'failed':
     return active_text, tr("big model"), tr("unavailable")
   if state == 'loading':

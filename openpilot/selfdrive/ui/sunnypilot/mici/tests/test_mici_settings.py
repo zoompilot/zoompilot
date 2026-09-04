@@ -524,6 +524,21 @@ class TestAcceleratorProgressRenders:
     _, _, info = self._info('download', 0.42)
     assert '42%' in info
 
+  def test_a_message_is_shown_instead_of_a_percentage_that_means_nothing(self, params):
+    # A join has nothing to measure: it is waiting for a Jetson to boot, or
+    # for a safe frame to swap on. Rendering that as "connect 0%" tells the
+    # driver nothing, and "getting ready" alone does not separate a Jetson
+    # that is unplugged from one six seconds from ready.
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    ui_state.accelerator_progress = {'stage': 'connect', 'frac': 0.0, 'msg': 'waiting for the jetson'}
+    try:
+      from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
+      _, _, info = _model_info()
+    finally:
+      ui_state.accelerator_progress = None
+    assert 'waiting for the jetson' in info
+    assert '%' not in info
+
   def test_failure_says_so_rather_than_showing_100_percent(self, params):
     _, _, info = self._info('failed', 1.0)
     assert '100%' not in info
