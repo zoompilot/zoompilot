@@ -439,7 +439,7 @@ table, and would not be cured by asking harder. An rlog would settle it.
 0x364 was occupied at only 4 of 34 stock breakaways (one close lead, 4.6 m, released at +0.455),
 too thin to size a second knob the plan already encodes.
 
-### Command slew limits
+### Command slew limits and the stock acceleration envelope
 
 The plan-following command is slew limited, asymmetrically on purpose. The windup limit
 (`ACCEL_WINDUP_LIMIT`, 4.0 m/s3) is what keeps the command from dumping the brake in one frame,
@@ -450,6 +450,46 @@ state-transition steps. Toyota uses 4.0 both ways. `accel_last` is tracked throu
 so taking control back when the driver lifts off ramps in instead of stepping, and the reported
 `actuators.accel` is what went on the wire (clip, hold values, slew and the override zero), not
 the plan.
+
+Above zero the command is additionally shaped to what stock MRCC does
+(`tools/mazda_long/accel_profile.py`, 158 stock routes, 1298 stock accelerating episodes against
+302 of ours). Two things separate the two systems, and neither is the plant: the car answers the
+command with a gain of 1.07 and about 0.6 s of lag whoever sends it.
+
+- **Build rate.** Stock raises a positive command by at most +12 raw per 50 Hz frame, 0.6 m/s3,
+  in 99.3% of rising frames at every speed above about 5 m/s; the only faster ramp is its 1.25
+  m/s3 pull-away from a stop. Our plan reached the same peaks with p90 rising jerk of 1.2 to 1.7
+  m/s3, and the driver reads that as aggressive throttle. `ACCEL_BUILD_V` over `ACCEL_BUILD_BP`
+  applies that shape to the positive part of the command: 1.25 m/s3 below 3 m/s (stock's own
+  pull-away ramp) and 0.8 m/s3 from 6 m/s up, a third quicker than stock on purpose. Stock's
+  slowness on a lead pulling away is mostly its dash walk and radar lag, which the plan does
+  not have, and 0.8 is the largest rate that still sits inside stock's rising-jerk
+  distribution (p99 0.65 to 0.93 by bin); every other openpilot port builds at 2 m/s3 or more.
+  It governs only the region above zero: brake release below zero keeps the 4.0 m/s3 windup,
+  because stock's own brake release has a p99 tail near 2 m/s3 and holding the brake longer
+  than the plan asks is the wrong failure.
+- **Lift-off.** The other half of the harshness is set-speed capture: the plan dropped from
+  +1.1 to +0.45 in half a second on the reporter's route and the car overshot. Stock lifts the
+  throttle at no more than 40 raw per 50 Hz frame, 2.0 m/s3, in 99.98% of falling positive
+  frames (p99.9 by bin 1.2 to 2.5 over a 0.2 s window). `ACCEL_LIFT_LIMIT` applies that rate
+  while the plan itself is still at or above zero, i.e. throttle modulation. A plan asking for
+  brake bypasses it and drops at the winddown limit, so braking is never delayed.
+- **Ceiling.** Stock's accelerating command (p99, no lead) peaks at 1.77 m/s2 around 4 m/s and
+  falls to 1.45 at 9, 1.05 at 14, 0.83 at 18 and 0.65 to 0.71 from 22 m/s up. Upstream's cruise
+  profile sits close to that curve, but the MPC and e2e candidates are only clipped at
+  `ACCEL_MAX` (2.0) and our wire reached 2.0 below 5 m/s and 1.06 at 15 to 20 m/s.
+  `ACCEL_CEILING_V` over `ACCEL_CEILING_BP` caps the wire at stock's envelope. It is a tuning
+  cap inside the panda's +2000 raw safety limit, not a replacement for it.
+
+Replaying all three over the logged plans of our 17 alpha-long routes moves the p90 rising jerk
+from 1.0 to 1.7 m/s3 onto the 0.8 line in every bin from 5 m/s up and trims the peaks by 0.05 to
+0.1 m/s2; the no-lead median peak is unchanged. The stop-and-go paths are untouched: the breakaway ramp and
+the latched release pulse keep their own ceilings, and the golden capture differs only in the
+engaged-and-accelerating phases.
+
+Honda Nidec caps accel by speed in its carcontroller the same way (`NIDEC_MAX_ACCEL_V`), Toyota
+rate limits the PCM command, and sunnypilot's Hyundai tune runs a jerk-limited integrator in
+the carcontroller; shaping at the wire keeps the shared planner byte-identical to upstream.
 
 ### The resume button
 
@@ -591,7 +631,10 @@ the dash lane indicators, so those two stay zeroed.
 | `ACCEL_BREAKAWAY_MAX` | 1.45 m/s2 | stock last-still-frame command max +1.425 (n=31) | corpus |
 | `ACCEL_BREAKAWAY_T` | 3.0 s | give-up bound on an unseen holder | design |
 | `ACCEL_BREAKAWAY_OVERSHOOT` | 0.75 m/s2 | 132 case +0.67 above plan; stock p25 +0.744 | 132, 12c, 34 stock episodes |
-| `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3 | reporter's route |
+| `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3; brake region only | reporter's route |
+| `ACCEL_BUILD_V` | 1.25 to 0.8 m/s3 over 3 to 6 m/s | stock +12 raw per 50 Hz frame (0.6) in 99.3% of rising frames, taken a third quicker; 1.25 pulling away | 158 stock routes |
+| `ACCEL_LIFT_LIMIT` | -2.0 m/s3 | stock throttle lift <= 40 raw per frame in 99.98% of falling positive frames | 158 stock routes |
+| `ACCEL_CEILING_V` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s2 at 0, 4, 9, 14, 18, 25 m/s | stock accelerating command p99 by speed, no lead | 158 stock routes |
 | `ACCEL_WINDDOWN_LIMIT` | -10.0 m/s3 | clips only p99.9+ steps | reporter's route |
 | `stopAccel` | -1.024 m/s2 | stock hold raw -1024 | corpus |
 | `longitudinalActuatorDelay` | 0.36 s | 0.3 s dead time + 0.3 s lag | corpus |
