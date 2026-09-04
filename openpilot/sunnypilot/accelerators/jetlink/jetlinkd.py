@@ -39,6 +39,8 @@ bind at ignition is the wake.
 """
 from __future__ import annotations
 
+import functools
+
 import signal
 import threading
 import time
@@ -89,7 +91,6 @@ class Jetlinkd:
     self.was_attached = False
     self.fetch_failed = False
     self.verified = False   # the server has confirmed the ready param this attach
-    self._identity: tuple | None = None   # (source, sha256, nbytes) of the hashed file
     self.warp_built = False  # tried the comma-side warp this run
     self.warp_thread: threading.Thread | None = None
     self.started = time.monotonic()
@@ -220,37 +221,34 @@ class Jetlinkd:
     accelerators.report_progress(stage, frac, msg)
 
   def provision(self) -> bool:
-    """Make the Jetson ready for the selected model. Host must be attached."""
-    model_path = helpers.active_model_path()
-    if model_path is None:
-      model_path = self.fetch_model()
-    if model_path is None:
-      # Nothing selected, or still downloading. Not an error.
+    """Make the Jetson ready for the selected model. Host must be attached.
+
+    The identity comes from the registry, not from the file. models.json
+    carries the git-lfs `oid`, which is the sha256, and `size`, which is the
+    byte count - exactly the pair ENGINE_REQ wants. This used to hash the local
+    ONNX to derive them, which meant the comma could not so much as ask the
+    Jetson what it already had without holding 766 MB itself, and re-derived a
+    number that was sitting in the registry the whole time.
+
+    The Jetson keeps its own copy of every ONNX and never prunes them, so once
+    a model has been provisioned the comma's copy is dead weight. Now it is
+    only fetched when the server actually asks for the bytes, which means a
+    model change with no network works as long as the Jetson has the engine.
+    """
+    # Imported here rather than at module scope: jetlinkd is constructed on
+    # devices whose jetlink package may be absent, and accelerators swallows
+    # that at discovery. Same reason backend._open_link does it.
+    from jetlink.client import EngineMissing
+
+    entry = helpers.selected_model()
+    sha256 = (entry or {}).get('oid')
+    nbytes = (entry or {}).get('size')
+    if not sha256 or not nbytes:
+      # Nothing selected, or a registry entry with no identity. Not an error.
       helpers.set_engine_ready(None)
       accelerators.clear_progress()
       return False
-
-    # Steady state must not touch the model file: hashing 766 MB takes longer
-    # than this loop's period, so doing it per poll would peg a core for as
-    # long as the car is parked. The identity is cached against the file it
-    # came from and nothing else - keying it on the engine being ready too
-    # would re-hash the file on every retry against a Jetson that is not
-    # serving. The shapes come back from the server, which is the only side
-    # that parses the ONNX: a stock device has no parser for every export.
-    st = model_path.stat()
-    source = (str(model_path), st.st_mtime_ns, st.st_size)
-    cached = spec_cache.load()
-    if cached is not None and spec_cache.source() == source:
-      sha256, nbytes = cached.sha256, cached.nbytes
-    elif self._identity is not None and self._identity[0] == source:
-      _, sha256, nbytes = self._identity
-    else:
-      from jetlink.spec import sha256_file
-      sha256, nbytes = sha256_file(str(model_path))
-      # Remembered here as well as in the spec param, because the param is
-      # only written once the server has answered, and a server that never
-      # answers is the case the retry loop exists for.
-      self._identity = (source, sha256, nbytes)
+    nbytes = int(nbytes)
 
     # The param says ready, but the Jetson's cache may have been pruned,
     # re-flashed or swapped since. Ask once per attach; after that the answer
@@ -258,15 +256,33 @@ class Jetlinkd:
     if self.verified and helpers.engine_ready_for(sha256):
       return True
 
+    # Only needed if the server turns out not to have this model. None is a
+    # legitimate state here, not a failure: see EngineMissing below.
+    model_path = helpers.active_model_path()
+
     cloudlog.warning("jetlink: provisioning %s (%d MB, sha %s)",
-                     model_path.name, nbytes >> 20, sha256[:16])
+                     entry.get('name', sha256[:16]), nbytes >> 20, sha256[:16])
     accelerators.report_progress('connect', 0.0, 'talking to the jetson')
 
     hello = self.client.hello(timeout=10.0)
     cloudlog.warning("jetlink: server %s trt %s", hello.get('device'), hello.get('trt_version'))
-    spec = self.client.ensure_engine(sha256, nbytes, onnx_path=model_path,
-                                     progress=self._report_with_eta,
-                                     build_timeout=1800.0, should_stop=lambda: self.stop)
+    # Asked without the file first, always. The server answers from the sha
+    # alone when it already has the model, which is every poll of a parked car,
+    # and only the answer "I need the bytes" is worth reading 766 MB for.
+    ask = functools.partial(self.client.ensure_engine, sha256, nbytes,
+                            progress=self._report_with_eta,
+                            build_timeout=1800.0, should_stop=lambda: self.stop)
+    try:
+      spec = ask(onnx_path=None)
+    except EngineMissing:
+      upload = self._verified_upload(model_path, sha256, nbytes)
+      if upload is None:
+        # Nothing to give. Fetch it and let the next poll try again rather than
+        # holding the link through a download that takes minutes.
+        if model_path is None and self.fetch_model() is not None:
+          return False
+        raise
+      spec = ask(onnx_path=upload)
 
     spec_cache.store(spec, model_path)
     helpers.set_engine_ready(spec.sha256)
@@ -275,6 +291,33 @@ class Jetlinkd:
     helpers.cleanup_unchunked(keep=model_path)
     cloudlog.warning("jetlink: engine ready for %s", spec.sha256[:16])
     return True
+
+  def _verified_upload(self, model_path, sha256: str, nbytes: int):
+    """The file to upload if the server asks for it, once it is proven to be it.
+
+    Taking the identity from the registry moves the trust from the file to
+    models.json, which is right for asking a question and wrong for answering
+    one: uploading under a sha the bytes do not have would leave the Jetson
+    with a plan whose name lies about its contents, and nothing downstream
+    would ever notice. So the hash happens here, on the one path where the
+    bytes actually go somewhere, rather than on every poll of a parked car.
+    """
+    if model_path is None:
+      return None
+    try:
+      if model_path.stat().st_size != nbytes:
+        cloudlog.error("jetlink: %s is %d bytes, the registry says %d; not uploading it",
+                       model_path.name, model_path.stat().st_size, nbytes)
+        return None
+      from jetlink.spec import sha256_file
+      have, _ = sha256_file(str(model_path))
+      if have != sha256:
+        cloudlog.error("jetlink: %s hashes to %s, the registry says %s; not uploading it",
+                       model_path.name, have[:16], sha256[:16])
+        return None
+    except OSError:
+      return None
+    return model_path
 
   # -- the parked car -------------------------------------------------------
 

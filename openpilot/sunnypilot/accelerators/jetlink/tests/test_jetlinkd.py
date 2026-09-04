@@ -59,7 +59,14 @@ def fake_jetlink_spec_module(counter: list):
     return 'deadbeef', 1 << 20
 
   mod.sha256_file = sha256_file
-  return {'jetlink': types.ModuleType('jetlink'), 'jetlink.spec': mod}
+
+  client = types.ModuleType('jetlink.client')
+
+  class EngineMissing(Exception):
+    pass
+
+  client.EngineMissing = EngineMissing
+  return {'jetlink': types.ModuleType('jetlink'), 'jetlink.spec': mod, 'jetlink.client': client}
 
 
 def serving_client(spec=None):
@@ -70,6 +77,17 @@ def serving_client(spec=None):
 
 
 class TestProvisionCost(unittest.TestCase):
+  """What provisioning is allowed to cost when nothing needs doing.
+
+  The identity comes from models.json - the git-lfs `oid` is the sha256 and
+  `size` is the byte count - so a parked car asks the Jetson what it already
+  has without reading, hashing or even having the ONNX. Deriving it from the
+  file instead meant the comma had to hold 766 MB to ask a question the
+  registry could answer, and re-hashed it whenever the file changed.
+  """
+
+  ENTRY = {'name': 'Fake', 'oid': 'deadbeef', 'size': 4096}
+
   def setUp(self):
     self.model = Path(tempfile.mkdtemp()) / 'big_driving_supercombo.onnx'
     self.model.write_bytes(b'x' * 4096)
@@ -80,7 +98,8 @@ class TestProvisionCost(unittest.TestCase):
       p = mock.patch.object(jetlinkd, target, new)
       self.addCleanup(p.stop)
       p.start()
-    for name, value in (('active_model_path', self.model), ('engine_ready_for', False)):
+    for name, value in (('active_model_path', self.model), ('engine_ready_for', False),
+                        ('selected_model', dict(self.ENTRY))):
       p = mock.patch.object(jetlinkd.helpers, name, return_value=value)
       self.addCleanup(p.stop)
       p.start()
@@ -88,30 +107,86 @@ class TestProvisionCost(unittest.TestCase):
     self.addCleanup(p.stop)
     p.start()
 
-  def test_the_model_is_hashed_once_however_often_provisioning_fails(self):
-    # The whole point: hashing is 766 MB-1.8 GB of flash reads, and an engine
-    # that never gets built must not make that the per-retry cost.
+  def test_the_identity_comes_from_the_registry_not_the_file(self):
     d = jetlinkd.Jetlinkd()
-    d.client = mock.Mock()
-    d.client.hello.side_effect = RuntimeError('nothing is serving')
-    for _ in range(3):
-      with self.assertRaises(RuntimeError):
-        d.provision()
-    assert self.hashed == [str(self.model)]
-    # The shapes come from the server, so there is nothing to cache until it
-    # answers; the identity is what must survive the retries, and it did.
-    assert self.cache.stores == 0
+    d.client = serving_client()
+    with mock.patch.object(jetlinkd.helpers, 'set_engine_ready'):
+      assert d.provision() is True
+    args = d.client.ensure_engine.call_args.args
+    assert args[0] == self.ENTRY['oid'] and args[1] == self.ENTRY['size']
 
-  def test_a_changed_model_is_hashed_again(self):
+  def test_a_server_that_already_has_it_never_reads_the_file(self):
+    # The steady state of a parked car: hashing 766 MB per retry used to be
+    # the cost of asking, and it is now not paid at all.
     d = jetlinkd.Jetlinkd()
-    d.client = mock.Mock()
-    d.client.hello.side_effect = RuntimeError('nothing is serving')
-    with self.assertRaises(RuntimeError):
+    d.client = serving_client()
+    d.client.ensure_engine.return_value = FakeSpec()
+    with mock.patch.object(jetlinkd.helpers, 'set_engine_ready'):
+      for _ in range(3):
+        d.verified = False
+        assert d.provision() is True
+    assert self.hashed == [], "hashed the model to ask a question the registry answers"
+
+  def test_it_asks_even_with_no_model_on_disk(self):
+    # The Jetson keeps its own copy of every ONNX and never prunes them, so a
+    # comma that has deleted its own can still use an engine already built.
+    d = jetlinkd.Jetlinkd()
+    d.client = serving_client()
+    with mock.patch.object(jetlinkd.helpers, 'active_model_path', return_value=None), \
+         mock.patch.object(jetlinkd.helpers, 'set_engine_ready'):
+      assert d.provision() is True
+    assert d.client.ensure_engine.call_args.kwargs['onnx_path'] is None
+
+  def test_a_server_that_wants_the_bytes_gets_them_fetched(self):
+    from jetlink.client import EngineMissing
+    d = jetlinkd.Jetlinkd()
+    d.client = serving_client()
+    d.client.ensure_engine.side_effect = EngineMissing('no engine')
+    with mock.patch.object(jetlinkd.helpers, 'active_model_path', return_value=None), \
+         mock.patch.object(d, 'fetch_model', return_value=self.model) as fetch:
+      # False, not an exception: the download takes minutes and the link is
+      # not held through it; the next poll tries again.
+      assert d.provision() is False
+    fetch.assert_called_once()
+
+  def _wants_the_bytes(self):
+    from jetlink.client import EngineMissing
+    d = jetlinkd.Jetlinkd()
+    d.client = serving_client()
+    d.client.ensure_engine.side_effect = EngineMissing('no engine')
+    return d, EngineMissing
+
+  def test_a_file_that_is_not_the_registry_model_is_never_uploaded(self):
+    # Trusting models.json for the identity is right for asking and wrong for
+    # answering: uploading under a sha the bytes do not have would leave the
+    # Jetson with a plan whose name lies about its contents.
+    d, EngineMissing = self._wants_the_bytes()
+    with mock.patch.object(jetlinkd.helpers, 'selected_model',
+                           return_value={**self.ENTRY, 'oid': 'not-what-the-file-hashes-to'}), \
+         mock.patch.object(jetlinkd.helpers, 'set_engine_ready'), \
+         self.assertRaises(EngineMissing):
       d.provision()
-    self.model.write_bytes(b'y' * 8192)
-    with self.assertRaises(RuntimeError):
+    assert all(c.kwargs['onnx_path'] is None for c in d.client.ensure_engine.call_args_list)
+
+  def test_a_file_of_the_wrong_size_is_never_uploaded(self):
+    d, EngineMissing = self._wants_the_bytes()
+    with mock.patch.object(jetlinkd.helpers, 'selected_model',
+                           return_value={**self.ENTRY, 'size': 999999}), \
+         mock.patch.object(jetlinkd.helpers, 'set_engine_ready'), \
+         self.assertRaises(EngineMissing):
       d.provision()
-    assert len(self.hashed) == 2
+    assert all(c.kwargs['onnx_path'] is None for c in d.client.ensure_engine.call_args_list)
+    assert self.hashed == [], "size is the cheap check and comes first"
+
+  def test_the_file_is_uploaded_once_it_is_proven_to_be_the_model(self):
+    d, _ = self._wants_the_bytes()
+    d.client.ensure_engine.side_effect = [d.client.ensure_engine.side_effect, FakeSpec()]
+    with mock.patch.object(jetlinkd.helpers, 'set_engine_ready'):
+      assert d.provision() is True
+    calls = d.client.ensure_engine.call_args_list
+    assert calls[0].kwargs['onnx_path'] is None, "asked without the file first"
+    assert calls[1].kwargs['onnx_path'] == self.model
+    assert self.hashed == [str(self.model)], "hashed once, on the path the bytes leave by"
 
   def test_a_ready_engine_short_circuits_without_touching_the_file(self):
     self.cache.store(FakeSpec(), self.model)
@@ -135,7 +210,6 @@ class TestProvisionCost(unittest.TestCase):
       assert d.verified
       assert d.provision() is True
       assert d.client.ensure_engine.call_count == 1, "verified once, then the param is trusted"
-    assert self.hashed == []
     ready.assert_called_with('deadbeef')
 
   def test_the_shapes_come_from_the_server_not_the_file(self):
@@ -145,7 +219,6 @@ class TestProvisionCost(unittest.TestCase):
       assert d.provision() is True
     d.client.ensure_engine.assert_called_once()
     kwargs = d.client.ensure_engine.call_args.kwargs
-    assert kwargs['onnx_path'] == self.model
     assert callable(kwargs['should_stop'])
     assert self.cache.stores == 1 and self.cache.spec.sha256 == 'deadbeef'
 
