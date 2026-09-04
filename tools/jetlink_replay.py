@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -215,6 +216,12 @@ def main() -> int:
     replay_process,
   )
   from openpilot.tools.lib.logreader import LogReader
+  # Import the warp cache here, before process_replay sets OPENPILOT_PREFIX.
+  # The prefix moves Paths.comma_home(), so a modeld that imports this module
+  # for the first time inside the replay looks for the warp in a directory
+  # jetlinkd never wrote to and stays on the small model. modeld is forked,
+  # so an import taken here is the one it inherits.
+  from openpilot.sunnypilot.accelerators.jetlink import warp_cache  # noqa: F401
 
   full = list(LogReader(str(rlog)))
   # The calibration and live-parameter snapshots process_replay wants are
@@ -244,8 +251,14 @@ def main() -> int:
   if not pinned:
     unpin()
 
-  out = replay_process(get_process_config('modeld'), lr, frs,
-                       fingerprint=fingerprint, custom_params=custom)
+  cfg = get_process_config('modeld')
+  # The joining state only swaps to the accelerator on a disengaged frame and
+  # assumes engaged until selfdriveState says otherwise. modeld itself never
+  # subscribes to it, so process_replay does not deliver it; feed it here or
+  # the whole replay runs on the small model waiting for a signal that never
+  # comes.
+  cfg = replace(cfg, pubs=[*cfg.pubs, 'selfdriveState'])
+  out = replay_process(cfg, lr, frs, fingerprint=fingerprint, custom_params=custom)
   return summarise(out)
 
 

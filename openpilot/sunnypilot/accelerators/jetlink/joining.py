@@ -43,9 +43,9 @@ Two rules the swap has to respect, both learned the hard way:
 """
 from __future__ import annotations
 
-import threading
-
 import os
+import threading
+import time
 
 import openpilot.cereal.messaging as messaging
 from openpilot.common.params import Params
@@ -100,6 +100,14 @@ class JoiningModelState:
     self._lock = threading.Lock()
     self._rejoin = threading.Event()
     self._rejoin.set()
+    # Earliest the join loop may try again. A demote used to set _rejoin alone,
+    # so the retry started on the very next frame and a fault that recurred
+    # on the first frame after every swap became a connect, build, warmup and
+    # demote every 700 ms for the whole drive, each swap costing modeld a
+    # 100 ms frame. That was the transport desync of 2026-09-03, since fixed
+    # in jetlink; the backoff is here so the next one is a slow leak and not
+    # modeldLagging.
+    self._rejoin_at = 0.0
 
     # Assume engaged until a message says otherwise, so a swap can never happen
     # on no information. selfdrived publishes at 100 Hz, so this is true within
@@ -222,6 +230,7 @@ class JoiningModelState:
         close()
       except Exception:
         cloudlog.exception("jetlink: closing the failed large model")
+    self._rejoin_at = time.monotonic() + REJOIN_DELAY
     self._rejoin.set()
 
   # -- background -------------------------------------------------------------
@@ -236,6 +245,8 @@ class JoiningModelState:
       if self._stop.is_set():
         return
       self._rejoin.clear()
+      if self._stop.wait(max(0.0, self._rejoin_at - time.monotonic())):
+        return
       try:
         client, spec = self._connect()
       except Exception as e:
