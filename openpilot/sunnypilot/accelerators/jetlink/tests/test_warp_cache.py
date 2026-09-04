@@ -4,16 +4,20 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-When the cached warp JIT is trusted, and when it is not.
+When the warp JIT is trusted, and when it is not.
 
 The compile itself needs a GPU and is not exercised here; what is, is every way
-the cache can be wrong. A stale pickle is the dangerous case: a TinyJit from
-another tinygrad either fails to load or loads into something that does not
-compute the warp, and modeld would carry that to the car. So the rule is that
-anything short of an exact build match is a miss, and a miss costs the large
-model rather than producing a wrong one.
+the file on disk can be wrong. Staleness moved out of this module when the warp
+became a scons target: the build depends on tinygrad and on the sources that
+decide what gets captured, so a warp that outlived a successful build is
+current by construction, and there is no key here to check any more.
+
+What is left is still the dangerous part. A TinyJit from another tinygrad, or
+one pickled before it captured, loads into something that does not compute the
+warp, and modeld would carry that to the car. Every one of those is a raise out
+of load_warp, which lands in the fallback to the small model.
 """
-import json
+import importlib
 import pickle
 import tempfile
 import unittest
@@ -44,43 +48,38 @@ class WarpCacheTest(unittest.TestCase):
     patcher = mock.patch.object(warp_cache, 'CACHE_DIR', Path(self.tmp.name))
     patcher.start()
     self.addCleanup(patcher.stop)
-    build = mock.patch.object(warp_cache, '_build_key', return_value='commit-a')
-    build.start()
-    self.addCleanup(build.stop)
 
-  def write(self, geom=GEOM, build='commit-a', body=b'pickle'):
+  def write(self, geom=GEOM, body=b'pickle'):
     pkl = warp_cache.warp_path(*geom)
     pkl.parent.mkdir(parents=True, exist_ok=True)
     pkl.write_bytes(body)
-    pkl.with_suffix('.json').write_text(json.dumps({'build': build}))
     return pkl
 
 
 class TestValidity(WarpCacheTest):
-  def test_a_warp_from_this_build_is_used(self):
+  def test_a_warp_that_is_there_is_used(self):
     self.write()
     self.assertTrue(warp_cache.is_cached(*GEOM))
 
   def test_nothing_cached_is_a_miss(self):
     self.assertFalse(warp_cache.is_cached(*GEOM))
 
-  def test_a_warp_from_another_build_is_a_miss(self):
-    """tinygrad is a submodule the commit pins, so another commit is another
-    tinygrad, and its pickled JIT cannot be trusted to be loadable."""
-    self.write(build='commit-b')
-    self.assertFalse(warp_cache.is_cached(*GEOM))
+  def test_a_bare_pickle_needs_no_sidecar(self):
+    """What scons writes, and all it writes. The build key and its json went
+    with the move to a scons target; asking for a sidecar here would reject
+    every warp the build produces."""
+    self.write()
+    self.assertFalse(warp_cache.warp_path(*GEOM).with_suffix('.json').exists())
+    self.assertTrue(warp_cache.is_cached(*GEOM))
 
-  def test_a_pickle_with_no_sidecar_is_a_miss(self):
-    """Half a write, or a file left by hand. Nothing says what made it."""
-    pkl = warp_cache.warp_path(*GEOM)
-    pkl.parent.mkdir(parents=True, exist_ok=True)
-    pkl.write_bytes(b'pickle')
-    self.assertFalse(warp_cache.is_cached(*GEOM))
-
-  def test_a_corrupt_sidecar_is_a_miss_not_a_raise(self):
-    pkl = self.write()
-    pkl.with_suffix('.json').write_text('{ not json')
-    self.assertFalse(warp_cache.is_cached(*GEOM))
+  def test_the_cache_is_in_the_tree_where_scons_can_write_it(self):
+    """Not under comma_home: on AGNOS that is a tmpfs overlay that loses the
+    pickle every boot, and OPENPILOT_PREFIX moves it out from under a replay."""
+    with mock.patch.dict('os.environ', {'OPENPILOT_PREFIX': 'replaytest'}):
+      importlib.reload(warp_cache)
+    self.addCleanup(importlib.reload, warp_cache)
+    self.assertEqual(warp_cache.CACHE_DIR.name, 'models')
+    self.assertEqual(warp_cache.CACHE_DIR.parent.name, 'jetlink')
 
   def test_another_camera_does_not_answer_for_this_one(self):
     """A device that changed camera, or a cache copied between devices. The
@@ -101,9 +100,12 @@ class TestLoad(WarpCacheTest):
     with self.assertRaises(RuntimeError):
       warp_cache.load_warp(*GEOM)
 
-  def test_a_stale_warp_raises_even_though_the_file_is_there(self):
-    self.write(build='commit-b')
-    with self.assertRaises(RuntimeError):
+  def test_a_pickle_that_will_not_load_raises(self):
+    """The incompatible-tinygrad case, which the build key used to catch before
+    scons owned staleness. Unpickling fails, modeld's big-model load catches
+    it, and the drive is small-model: the same place a stale-key miss landed."""
+    self.write(body=b'not a pickle at all')
+    with self.assertRaises(pickle.UnpicklingError):
       warp_cache.load_warp(*GEOM)
 
 
@@ -150,13 +152,13 @@ class TestEnsure(WarpCacheTest):
       self.assertTrue(warp_cache.ensure(*GEOM))
     self.assertTrue(fresh.is_file())
     self.assertFalse(stale.is_file())
-    self.assertFalse(stale.with_suffix('.json').is_file())
 
 
 class TestGeometry(WarpCacheTest):
   def test_mici_and_tici_want_different_warps(self):
-    """The same split SConscript makes, so jetlinkd builds what modeld asks
-    for. If these ever drift, load_warp misses and the drive is small-model."""
+    """The same split accelerators/SConscript makes, so the build produces what
+    modeld asks for. If these ever drift, load_warp misses and the drive is
+    small-model."""
     with mock.patch("openpilot.common.hardware.HARDWARE.get_device_type", return_value="mici"):
       mici = warp_cache.device_geometry()
     with mock.patch("openpilot.common.hardware.HARDWARE.get_device_type", return_value="tici"):
@@ -165,10 +167,6 @@ class TestGeometry(WarpCacheTest):
     # both warp to MEDMODEL_INPUT_SIZE, which is what the model input needs
     self.assertEqual(mici[2:], tici[2:])
     self.assertEqual(tici[2:], (512, 256))
-
-
-if __name__ == "__main__":
-  unittest.main()
 
 
 class TestCallConvention(unittest.TestCase):
@@ -204,3 +202,7 @@ class TestCallConvention(unittest.TestCase):
         stripped = line.strip()
         if ('warp_jit(' in stripped or 'self.warp(' in stripped) and 'call_warp' not in stripped:
           self.fail(f"{name} calls the warp JIT directly: {stripped}")
+
+
+if __name__ == "__main__":
+  unittest.main()

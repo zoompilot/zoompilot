@@ -376,5 +376,49 @@ class TestTimedOut(unittest.TestCase):
       assert jetlinkd._timed_out(LinkError('stream desynced')) is False
 
 
+
+class TestWarpFallback(TestParked):
+  """scons builds the warp now; build_warp only covers one that is missing.
+
+  It inherits TestParked's fixture for the patched helpers and the mocked
+  accelerators module, and just turns warp_built back off.
+  """
+
+  def warp_daemon(self):
+    d = self.daemon()
+    d.warp_built = False
+    jetlinkd.accelerators.report_progress.reset_mock()
+    return d
+
+  def test_a_warp_the_build_made_is_left_alone(self):
+    # Reporting before checking put a "compiling the camera warp" through the
+    # UI on every start for a warp that was already on disk.
+    d = self.warp_daemon()
+    with mock.patch.object(jetlinkd.warp_cache, 'is_cached', return_value=True), \
+         mock.patch.object(jetlinkd.warp_cache, 'ensure') as ensure:
+      d.build_warp()
+    ensure.assert_not_called()
+    assert jetlinkd.accelerators.report_progress.call_count == 0
+    assert d.warp_thread is None
+
+  def test_a_missing_warp_is_still_built(self):
+    d = self.warp_daemon()
+    with mock.patch.object(jetlinkd.warp_cache, 'is_cached', return_value=False), \
+         mock.patch.object(jetlinkd.warp_cache, 'ensure', return_value=True) as ensure:
+      d.build_warp()
+      assert d.warp_thread is not None
+      d.warp_thread.join(30)
+    assert not d.warp_thread.is_alive()
+    ensure.assert_called_once()
+    assert jetlinkd.accelerators.report_progress.call_args.args[0] == 'warp'
+
+  def test_it_is_attempted_once_per_run(self):
+    d = self.warp_daemon()
+    with mock.patch.object(jetlinkd.warp_cache, 'is_cached', return_value=True) as cached:
+      d.build_warp()
+      d.build_warp()
+    cached.assert_called_once()
+
+
 if __name__ == '__main__':
   unittest.main()
