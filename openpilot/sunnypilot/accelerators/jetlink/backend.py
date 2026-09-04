@@ -156,6 +156,10 @@ class JetlinkAccelerator:
     if not warp_cache.is_cached(*warp_cache.device_geometry()):
       cloudlog.warning("jetlink: no warp compiled yet, staying on the small model")
       return False
+    # The last hook that still runs before modeld goes SCHED_FIFO on core 7,
+    # and the GPU's init spawns a thread that would inherit that. See
+    # warp_cache.init_device.
+    warp_cache.init_device()
     return True
 
   def make_model_state(self, cam_w: int, cam_h: int, small=None):

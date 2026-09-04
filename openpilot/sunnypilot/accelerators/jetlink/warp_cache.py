@@ -76,6 +76,30 @@ def call_warp(warp, tfm, big_tfm, frame, big_frame):
   return warp(tfm=tfm, big_tfm=big_tfm, frame=frame, big_frame=big_frame)
 
 
+def init_device() -> None:
+  """Bring the GPU up now, on the caller's thread.
+
+  tinygrad initialises the device on its first kernel run, not at import and
+  not at load_warp - measured, it is the first call to the warp that does it -
+  and that init spawns a libusb event thread. modeld runs
+  config_realtime_process(7, 54) a few lines after prepare() returns, and a
+  thread created after that inherits SCHED_FIFO 54 and the core-7 pin, where an
+  equal-priority thread that wakes takes the core until it blocks. That is how
+  this fork lost 5% of its frames once already; see
+  joining._background_priority, which exists for the threads we do create.
+
+  The device comes up either way, moments later on the loader thread. Doing it
+  here is the whole difference between that libusb thread being SCHED_OTHER on
+  every core and SCHED_FIFO 54 on modeld's. Failure is not worth refusing the
+  accelerator over: the device will simply come up late, as it does today.
+  """
+  try:
+    from tinygrad.tensor import Tensor
+    Tensor([0.0]).realize()
+  except Exception:
+    cloudlog.exception("jetlink: could not bring the gpu up before modeld goes realtime")
+
+
 def device_geometry() -> tuple[int, int, int, int]:
   """(cam_w, cam_h, model_w, model_h) for this device.
 
