@@ -75,6 +75,22 @@ class HevcFrameReader:
     return self.frames[min(max(idx, 0), len(self.frames) - 1)]
 
 
+def disengaged(m):
+  """selfdriveState with enabled=False, everything else untouched.
+
+  The joining state only swaps to the accelerator while the car is
+  disengaged, which is right on the road and wrong here: a segment recorded
+  while engaged would replay entirely on the small model, and the run would
+  say so only at the end. The replay never controls anything, so the flag
+  carries no meaning beyond letting the swap happen.
+  """
+  if m.which() != 'selfdriveState' or not m.selfdriveState.enabled:
+    return m
+  b = m.as_builder()
+  b.selfdriveState.enabled = False
+  return b.as_reader()
+
+
 def trim_to_frames(msgs: list, n: int) -> list:
   """Keep only as much of the segment as we decoded frames for.
 
@@ -148,11 +164,36 @@ def unpin() -> None:
   realtime.set_core_affinity = lambda cores: None
 
 
-def summarise(msgs) -> int:
+def dump(model, path: str) -> None:
+  """Per-frame outputs, for comparing two runs over the same frames.
+
+  The summary below says whether a run worked; it cannot say whether the
+  accelerator's outputs are as smooth as the small model's on the same road,
+  which is the question a steering oscillation raises. Saving the fields the
+  planner and the UI consume lets that comparison happen offline.
+  """
+  def col(f):
+    return np.array([f(m.modelV2) for m in model], dtype=np.float32)
+  np.savez(path,
+           frame_id=col(lambda v: v.frameId), big=col(lambda v: float(getattr(v, 'big', False))),
+           exec_ms=col(lambda v: v.modelExecutionTime * 1e3),
+           desired_curvature=col(lambda v: v.action.desiredCurvature),
+           desired_accel=col(lambda v: v.action.desiredAcceleration),
+           lane_y0=np.array([[ll.y[0] for ll in m.modelV2.laneLines] for m in model], dtype=np.float32),
+           lane_prob=np.array([list(m.modelV2.laneLineProbs) for m in model], dtype=np.float32),
+           edge_y0=np.array([[re.y[0] for re in m.modelV2.roadEdges] for m in model], dtype=np.float32),
+           pos_y=np.array([list(m.modelV2.position.y) for m in model], dtype=np.float32),
+           pos_x=np.array([list(m.modelV2.position.x) for m in model], dtype=np.float32))
+  print(f"  per-frame outputs written to {path}")
+
+
+def summarise(msgs, dump_path: str | None = None) -> int:
   model = [m for m in msgs if m.which() == 'modelV2']
   if not model:
     print("FAIL: modeld produced no modelV2")
     return 1
+  if dump_path:
+    dump(model, dump_path)
 
   big = [bool(getattr(m.modelV2, 'big', False)) for m in model]
   exec_ms = np.array([m.modelV2.modelExecutionTime for m in model]) * 1e3
@@ -203,6 +244,7 @@ def main() -> int:
   p = argparse.ArgumentParser()
   p.add_argument('--segment', required=True, help='a directory under /data/media/0/realdata')
   p.add_argument('--frames', type=int, default=60)
+  p.add_argument('--dump', help='write per-frame model outputs to this .npz')
   args = p.parse_args()
 
   seg = Path(args.segment)
@@ -229,7 +271,7 @@ def main() -> int:
   # only then cut it down to the frames we decoded.
   custom = get_custom_params_from_lr(full)
   custom.update(jetlink_params())
-  lr = trim_to_frames(full, args.frames)
+  lr = [disengaged(m) for m in trim_to_frames(full, args.frames)]
   # Cutting the log can drop the carParams that process_replay would otherwise
   # fingerprint from, so name the car outright instead.
   fingerprint = next((m.carParams.carFingerprint for m in full if m.which() == 'carParams'), None)
@@ -259,7 +301,7 @@ def main() -> int:
   # comes.
   cfg = replace(cfg, pubs=[*cfg.pubs, 'selfdriveState'])
   out = replay_process(cfg, lr, frs, fingerprint=fingerprint, custom_params=custom)
-  return summarise(out)
+  return summarise(out, args.dump)
 
 
 if __name__ == '__main__':
