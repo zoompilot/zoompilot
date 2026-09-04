@@ -23,7 +23,7 @@ from unittest import mock
 
 from openpilot.common.basedir import BASEDIR
 
-from openpilot.sunnypilot.accelerators.jetlink.joining import JoiningModelState
+from openpilot.sunnypilot.accelerators.jetlink.joining import STABLE_SECONDS, JoiningModelState
 
 
 class FakeModel:
@@ -62,6 +62,7 @@ class JoiningTest(unittest.TestCase):
     self.params = {}
     fake_params = mock.MagicMock()
     fake_params.put_bool.side_effect = lambda k, v: self.params.__setitem__(k, v)
+    fake_params.remove.side_effect = lambda k: self.params.pop(k, None)
     patcher = mock.patch('openpilot.sunnypilot.accelerators.jetlink.joining.Params',
                          return_value=fake_params)
     patcher.start()
@@ -100,14 +101,32 @@ class JoiningTest(unittest.TestCase):
     self.assertFalse(s.chestnut)
     self.assertIsNone(s.client)
 
-  def test_does_not_swap_while_engaged(self):
+  def test_does_not_swap_while_engaged_and_moving(self):
     s = self._state()
     self.assertTrue(self.joined.wait(5.0))
-    s._engaged = True
+    s._engaged, s._standstill = True, False
     for _ in range(3):
       self.assertEqual(self._run(s), {'from': 'small'})
     self.assertFalse(s.chestnut)
     self.assertFalse(self.big.warmed)
+
+  def test_swaps_at_a_standstill_while_engaged(self):
+    # The drive that gave nothing else: engaged on the ramp, off at the exit.
+    # Stopped, the plan is steering nothing, so the step lands on nothing and
+    # the Jetson gets used instead of sitting ready for an hour.
+    s = self._state()
+    self.assertTrue(self.joined.wait(5.0))
+    s._engaged, s._standstill = True, True
+    self.assertEqual(self._run(s), {'from': 'big'})
+    self.assertTrue(s.chestnut)
+
+  def test_a_standstill_the_car_stopped_reporting_is_not_a_window(self):
+    # sm.alive goes false when carState stops arriving. A stale "stopped" must
+    # not open a window on a car that is actually moving.
+    s = self._state()
+    self.assertTrue(self.joined.wait(5.0))
+    s._engaged, s._standstill = True, False
+    self.assertEqual(self._run(s), {'from': 'small'})
 
   def test_swaps_on_a_disengaged_frame(self):
     s = self._state()
@@ -155,15 +174,21 @@ class JoiningTest(unittest.TestCase):
     s._engaged = False
     self.assertEqual(self._run(s), {'from': 'big'})
 
-  def test_loading_alert_ends_after_the_timeout_but_the_join_does_not(self):
+  def test_loading_has_no_deadline(self):
+    # It used to end at 60 s because it was a NO_ENTRY in selfdrived. It is not
+    # any more (selfdrived only gates on it while nothing publishes modelV2),
+    # so a Jetson that takes a whole drive to arrive stays "getting ready" and
+    # the join keeps going. The 60 s edge used to read as "Big Model Ready" to
+    # selfdrived and "unavailable" to the UI, both false.
     self.connect_error = RuntimeError("jetson still booting")
     s = self._state()
     self._run(s)
-    self.assertTrue(self.params.get("ChestnutLoading"))
     with mock.patch('openpilot.sunnypilot.accelerators.jetlink.joining.time.monotonic',
-                    return_value=time.monotonic() + 61.0):
+                    return_value=time.monotonic() + 600.0):
       self._run(s)
-    self.assertFalse(self.params.get("ChestnutLoading"))
+    self.assertIs(self.params.get("ChestnutLoading"), True)
+    self.assertTrue(s.loading)
+    self.assertNotIn("ChestnutActive", self.params)
     # A join that succeeds later still swaps.
     self.connect_error = None
     s._rejoin.set()
@@ -174,6 +199,98 @@ class JoiningTest(unittest.TestCase):
         break
       time.sleep(0.05)
     self.assertTrue(s.chestnut)
+    self.assertFalse(s.loading)
+
+  def test_owns_the_params_modeld_would_write(self):
+    # From the constructor, before modeld's main thread gets the object back:
+    # loading is true and active is neither true nor false. modeld reads
+    # `loading` and leaves both alone. True/false at the swap, false/true at a
+    # demote, so selfdrived's "Big Model Ready" edge is the swap and its "Big
+    # Model Failed" soft disable is the demote, as they are for a chestnut.
+    self.params['ChestnutActive'] = True   # stale, from whatever ran before
+    s = self._state()
+    self.assertIs(self.params.get('ChestnutLoading'), True)
+    self.assertNotIn('ChestnutActive', self.params)
+    self.assertTrue(s.loading)
+
+    self.assertTrue(self.joined.wait(5.0))
+    s._engaged = False
+    self._run(s)
+    self.assertIs(self.params.get('ChestnutActive'), True)
+    self.assertIs(self.params.get('ChestnutLoading'), False)
+    self.assertFalse(s.loading)
+
+    self.big.raises = RuntimeError("link gone")
+    self._run(s)
+    self.assertIs(self.params.get('ChestnutActive'), False)
+    self.assertIs(self.params.get('ChestnutLoading'), True)
+    self.assertTrue(s.loading)
+
+  def test_build_failure_backs_off(self):
+    self._build = mock.Mock(side_effect=RuntimeError("no warp"))
+    s = JoiningModelState(1928, 1208, self.small, self._connect, self._build)
+    self.addCleanup(s.close)
+    self.assertTrue(self.joined.wait(5.0))
+    s._engaged = False
+    self.assertEqual(self._run(s), {'from': 'small'})
+    # Not straight back onto the link: the next attempt waits REJOIN_DELAY.
+    self.assertGreater(s._rejoin_at, time.monotonic() + 1.0)
+    self.assertTrue(s.loading)
+    self.assertNotIn('ChestnutActive', self.params)
+
+  def test_a_link_that_dies_before_the_swap_is_reopened(self):
+    # A link waits in _joined until the frame loop finds a window, which on a
+    # drive with no stop and no disengage is the whole drive. If the Jetson
+    # reboots in there, finding out at the swap costs a frame and a demote.
+    clients = []
+
+    def connect():
+      c = mock.MagicMock(name='client')
+      clients.append(c)
+      self.connect_calls += 1
+      self.joined.set()
+      return (c, 'spec')
+
+    self._connect = connect
+    with mock.patch('openpilot.sunnypilot.accelerators.jetlink.joining.KEEPALIVE_PERIOD', 0.05), \
+         mock.patch('openpilot.sunnypilot.accelerators.jetlink.joining.REJOIN_DELAY', 0.05):
+      s = self._state()
+      self.assertTrue(self.joined.wait(5.0))
+      # Never a window, so nothing consumes it; the ping is what notices.
+      s._engaged, s._standstill = True, False
+      clients[0].ping.side_effect = RuntimeError("jetson rebooted")
+      for _ in range(100):
+        if len(clients) > 1:
+          break
+        time.sleep(0.05)
+      self.assertGreater(len(clients), 1, "a dead pending link was never reopened")
+      clients[0].close.assert_called()
+      # And the fresh one is what the window eventually gets.
+      s._standstill = True
+      for _ in range(40):
+        if self._run(s) == {'from': 'big'}:
+          break
+        time.sleep(0.05)
+      self.assertTrue(s.chestnut)
+
+  def test_failures_back_off_and_a_stable_join_starts_over(self):
+    # A link that dies on its first frame every time used to cost a swap, a
+    # demote, a soft disable and a chime every REJOIN_DELAY for the drive.
+    s = self._state()
+    s._joined_at = 0.0
+    delays = []
+    for _ in range(5):
+      t = time.monotonic()
+      s._back_off()
+      delays.append(round(s._rejoin_at - t))
+    self.assertEqual(delays, [5, 10, 20, 40, 60])
+
+    # A join that held is not that link, and must not inherit its delay: a
+    # Jetson that reboots once an hour should be picked up in REJOIN_DELAY.
+    s._joined_at = time.monotonic() - (STABLE_SECONDS + 1)
+    t = time.monotonic()
+    s._back_off()
+    self.assertEqual(round(s._rejoin_at - t), 5)
 
   def test_small_model_failure_is_modelds(self):
     s = self._state()

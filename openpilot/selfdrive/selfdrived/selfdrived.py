@@ -83,6 +83,7 @@ class SelfdriveD(CruiseHelper):
     self.excessive_actuation_check = ExcessiveActuationCheck()
     self.excessive_actuation = self.params.get("Offroad_ExcessiveActuation") is not None
     self.big_model_loading = False
+    self.big_model_blocking = False
     self.big_model_active = False
     self.big_model_failed = False
     self.big_model_ready_t = 0.
@@ -200,7 +201,11 @@ class SelfdriveD(CruiseHelper):
       self.big_model_ready_t = time.monotonic()
       self.events_sp.add(custom.OnroadEventSP.EventName.bigModelReady)
     self.big_model_loading = loading
-    if self.big_model_loading:
+    # A load that holds modelV2 back keeps the driver out. One that joins onto
+    # a model already publishing (an accelerator on its own power, which can
+    # take a whole drive to arrive) does not; see sunnypilot/accelerators/.
+    self.big_model_blocking = loading and not self.sm.alive['modelV2']
+    if self.big_model_blocking:
       self.events.add(EventName.bigModelLoading)
 
     big_active = self.params.get("ChestnutActive")
@@ -432,7 +437,7 @@ class SelfdriveD(CruiseHelper):
     has_disable_events = self.events.contains(ET.NO_ENTRY) and (self.events.contains(ET.SOFT_DISABLE) or self.events.contains(ET.IMMEDIATE_DISABLE))
     no_system_errors = (not has_disable_events) or (len(self.events) == num_events)
     warmup_sec = 5.
-    big_model_settling = self.big_model_loading or time.monotonic() < self.big_model_ready_t + warmup_sec
+    big_model_settling = self.big_model_blocking or time.monotonic() < self.big_model_ready_t + warmup_sec
     if not self.sm.all_checks() and no_system_errors and not big_model_settling:  # the load holds modelV2 and friends back on purpose
       if not self.sm.all_alive():
         self.events.add(EventName.commIssue)

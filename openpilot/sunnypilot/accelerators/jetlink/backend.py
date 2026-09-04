@@ -13,6 +13,7 @@ spec_cache, not here.
 """
 from __future__ import annotations
 
+import threading
 import time
 
 from openpilot.common.swaglog import cloudlog
@@ -28,6 +29,9 @@ from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache
 # it enumerates rather than on our next poll.
 CONNECT_TIMEOUT = 45.0
 CONNECT_DELAY = 0.5
+# How long the load may wait for the early gadget bind. Sub-second when the
+# endpoints are free; jetlinkd may still be letting go of them.
+PRESENT_TIMEOUT = 5.0
 
 # How long hardwared waits for jetlinkd to shut the Jetson down before the comma
 # goes ahead without it. Wake from suspend is ~8 s to a server on the bench.
@@ -46,15 +50,66 @@ def _wait_for_host(deadline: float) -> bool:
   return False
 
 
-def _connect_patiently():
-  """Open the link, tolerating a busy gadget or a Jetson that is still booting."""
+def _present_early(ready: dict) -> None:
+  """Open and bind the gadget now, from a thread that is not modeld's.
+
+  Not on the caller's thread: this runs from modeld's loader thread, which
+  inherited SCHED_FIFO 54 pinned to core 7 from main, and the FunctionFS
+  reader thread the open creates would inherit that in turn and preempt the
+  frame loop for the drive (see joining._background_priority). A helper that
+  drops realtime first is what the reader inherits from instead. Bounded, so a
+  hung open cannot hold modeld's load; a helper that finishes after we stopped
+  waiting closes what it opened rather than leaving the gadget held by nobody.
+  """
+  from openpilot.sunnypilot.accelerators.jetlink.joining import _background_priority
+  lock = threading.Lock()
+
+  deadline = time.monotonic() + PRESENT_TIMEOUT
+
+  def present():
+    _background_priority()
+    # Retried, not attempted once. The one moment this runs is the moment
+    # manager has just stopped jetlinkd to start modeld, and jetlinkd may not
+    # have let go of ep0 yet: a single try loses the early bind in exactly the
+    # case it exists for, and fails in milliseconds rather than using the
+    # window. The caller stops waiting at the same deadline either way.
+    client = None
+    while client is None:
+      try:
+        client = helpers.connect()
+      except Exception as e:
+        if time.monotonic() >= deadline:
+          cloudlog.warning("jetlink: could not present the gadget early (%s), the join will", e)
+          return
+        time.sleep(0.2)
+    with lock:
+      if ready.get('abandoned'):
+        client.close()
+      else:
+        ready['client'] = client
+
+  t = threading.Thread(target=present, name='jetlink-present', daemon=True)
+  t.start()
+  t.join(max(0.0, deadline - time.monotonic()) + 0.5)
+  with lock:
+    if t.is_alive():
+      ready['abandoned'] = True
+      cloudlog.warning("jetlink: presenting the gadget took over %.0f s, the join will", PRESENT_TIMEOUT)
+
+
+def _connect_patiently(client=None):
+  """Open the link, tolerating a busy gadget or a Jetson that is still booting.
+
+  A `client` already holding the gadget (presented early, see make_model_state)
+  skips the open and goes straight to waiting for the host."""
   deadline = time.monotonic() + CONNECT_TIMEOUT
   last = None
   while True:
-    try:
-      client = helpers.connect()
-    except Exception as e:
-      client, last = None, e
+    if client is None:
+      try:
+        client = helpers.connect()
+      except Exception as e:
+        client, last = None, e
     if client is not None:
       if helpers.host_attached():
         return client
@@ -119,6 +174,16 @@ class JetlinkAccelerator:
     ready: dict = {}
 
     def prepare():
+      # The gadget first, so the Jetson enumerates and the server opens us
+      # while the warp loads. Left to the join thread, the bind landed ~3 s
+      # later than this on every ignition of the 2026-09-04 drives: that thread
+      # starts as the small model runs its first frame, 1.3 s of tinygrad
+      # holding the GIL, and the connect trails it. It also puts the bind, and
+      # the USB enumeration it triggers, before any frame is in flight; one
+      # ignition that day had a 655 ms small-model frame during the bind and
+      # 17 s of modeldLagging for it. Failure here costs nothing: the join
+      # thread opens the link itself if there is nothing to take over.
+      _present_early(ready)
       cached = spec_cache.load()
       if cached is not None:
         img_h, img_w = cached.input_shapes['img'][2:]
@@ -135,9 +200,14 @@ class JetlinkAccelerator:
       warp = ready.get('warp') if ready.get('geometry') == (img_w * 2, img_h * 2) else None
       return JetlinkModelState(cam_w, cam_h, client, spec, small, warp=warp)
 
-    return JoiningModelState(cam_w, cam_h, small, self._open_link, build, prepare)
+    def connect():
+      # The early client is good for one attempt: after that the join thread
+      # opens its own, as it does for every rejoin.
+      return self._open_link(ready.pop('client', None))
 
-  def _open_link(self):
+    return JoiningModelState(cam_w, cam_h, small, connect, build, prepare)
+
+  def _open_link(self, client=None):
     """Get a client and a spec. Link IO only, so it is safe off modeld's thread.
 
     Everything that touches tinygrad stays in `build`, on modeld's own thread:
@@ -148,12 +218,14 @@ class JetlinkAccelerator:
 
     cached = spec_cache.load()
     if cached is None:
+      if client is not None:
+        client.close()
       raise RuntimeError("no cached jetlink model spec; jetlinkd has not provisioned")
 
     # Two things can keep us waiting, and both resolve on their own: manager
     # stops jetlinkd and starts modeld in the same pass without waiting, so the
     # endpoints may still be held; and the Jetson may still be booting.
-    client = _connect_patiently()
+    client = _connect_patiently(client)
     try:
       hello = client.hello(timeout=10.0)
       cloudlog.warning("jetlink: %s trt %s, engine %s, loaded %s",

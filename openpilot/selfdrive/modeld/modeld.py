@@ -222,13 +222,16 @@ def main(demo=False):
       model = big_model
     if model is None:
       params.put_bool("ChestnutModelError", True)
-    params.put_bool("ChestnutActive", model is not None)
+    # A state still bringing its accelerator up owns ChestnutActive from here:
+    # true at the swap, false if it drops. See sunnypilot/accelerators/.
+    if not getattr(model, 'loading', False):
+      params.put_bool("ChestnutActive", model is not None)
     if model is not None:
       params.remove("ChestnutModelError")
 
   if model is None:
     model = small_model
-  params.put_bool("ChestnutLoading", False)
+  params.put_bool("ChestnutLoading", bool(getattr(model, 'loading', False)))
   assert model is not None
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
 

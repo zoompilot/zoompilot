@@ -32,14 +32,21 @@ Two rules the swap has to respect, both learned the hard way:
   tensors, and doing that concurrently with the small model running frames on
   the same device is not something tinygrad promises to survive. It costs a
   frame at the swap, which modeld already counts and tolerates.
-- **Never swap while engaged.** The two models disagree about the world by
-  ~195 m of planned path, and stepping between them is a step in the lateral
-  and longitudinal targets. It also covers the swap's own cost: the warmup
-  frame goes over the link and can block up to the client's FRAME_TIMEOUT, and
-  a stall that long is enough dropped frames to raise modeldLagging, which is
-  a soft disable. Doing it disengaged makes that a non-event. Waiting costs
-  nothing either: if the driver never disengages, the drive was already going
-  to be small-model.
+- **Never swap while the plan is steering the car.** The two models disagree
+  about the world by ~195 m of planned path, and stepping between them is a
+  step in the lateral and longitudinal targets. It also covers the swap's own
+  cost: the warmup frame goes over the link and can block up to the client's
+  FRAME_TIMEOUT, and a stall that long is enough dropped frames to raise
+  modeldLagging, which is a soft disable.
+
+  Disengaged is the obvious window. Standstill is the other one, and it is the
+  one that makes this usable: a driver who engages on the ramp and lifts off at
+  their exit gives us no disengaged frame for the whole drive, and "the Jetson
+  was ready the whole time and never got used" is the complaint that shape of
+  drive produces. At a standstill the plan is not turning a wheel or asking for
+  acceleration, so the step lands on nothing. A drive that is neither - engaged
+  from the driveway to the destination without ever stopping - still runs
+  small, on purpose.
 """
 from __future__ import annotations
 
@@ -56,13 +63,17 @@ from openpilot.common.swaglog import cloudlog
 # model dies mid-drive. Long enough not to thrash a Jetson that is still
 # booting, short enough to catch one that finished a moment later.
 REJOIN_DELAY = 5.0
+# Doubled per consecutive failure up to this, and reset by a join that lasted
+# STABLE_SECONDS. A Jetson that reboots mid-drive is still picked up within a
+# minute of being back; a link that dies on its first frame every time stops
+# costing a swap, a demote and an alert every few seconds.
+REJOIN_DELAY_MAX = 60.0
+STABLE_SECONDS = 60.0
 ENGAGEMENT_POLL_MS = 100
-# How long "Big Model Loading" may keep the driver out. It is a NO_ENTRY in
-# selfdrived, and while this state proxies the small model there is nothing
-# else to gate it on, so without a bound a Jetson that never comes up is a
-# drive that can never engage. modeld's own BIG_MODEL_TIMEOUT is the same 60 s
-# a chestnut gets. The join itself keeps going after this; only the alert ends.
-LOADING_TIMEOUT = 60.0
+# How often a link that is ready but has nowhere to land gets checked, and how
+# long its check may take. Both are off the frame loop.
+KEEPALIVE_PERIOD = 10.0
+PING_TIMEOUT = 2.0
 
 
 def _background_priority() -> None:
@@ -128,20 +139,40 @@ class JoiningModelState:
     # in jetlink; the backoff is here so the next one is a slow leak and not
     # modeldLagging.
     self._rejoin_at = 0.0
+    self._failures = 0
+    self._joined_at = 0.0
 
-    # Assume engaged until a message says otherwise, so a swap can never happen
-    # on no information. selfdrived publishes at 100 Hz, so this is true within
-    # a frame or two of modeld starting.
+    # Assume engaged and moving until a message says otherwise, so a swap can
+    # never happen on no information. selfdrived and the car both publish at
+    # 100 Hz, so this is true within a frame or two of modeld starting.
     self._engaged = True
+    self._standstill = False
     self._stop = threading.Event()
 
-    # The UI reads ChestnutLoading to tell "not up yet" from "failed". modeld
-    # clears it as soon as make_model_state returns, which for us is before the
-    # Jetson has joined, so we own it from here: true while proxying, false once
-    # the large model is running, true again if it drops and we go back for it.
+    # The two params modeld normally writes once the load is over are ours for
+    # the life of the drive, because for us the load is never over: the Jetson
+    # can join, leave and join again. modeld reads `loading` and leaves both
+    # alone while it is true.
+    #
+    # ChestnutLoading is true while this proxies and false while the large
+    # model runs. selfdrived rings "Big Model Ready" on its falling edge, so
+    # that lands on the swap and nowhere else, and it only holds the driver out
+    # while nothing is publishing modelV2, which for us is never. It used to
+    # be bounded at 60 s because it was a NO_ENTRY: a Jetson that took longer
+    # than that was a drive that could not engage, and the timeout read as
+    # "ready" to selfdrived and "unavailable" to the UI, both false, while
+    # this thread was still joining.
+    #
+    # ChestnutActive is absent while proxying (a big model that is neither
+    # active nor failed: selfdrived and the UI both take None as "still
+    # coming"), true at the swap, false at a demote. False is what a chestnut
+    # writes when it dies mid-drive and gets the same soft disable: the two
+    # models plan ~195 m apart and the driver should know the plan just
+    # changed under them. Re-engaging on the small model is allowed at once.
     self._params = Params()
-    self._loading = False
-    self._loading_until = time.monotonic() + LOADING_TIMEOUT
+    self._loading: bool | None = None
+    self._params.remove("ChestnutActive")
+    self._set_loading(True)
 
     self._threads = [threading.Thread(target=self._join_loop, daemon=True),
                      threading.Thread(target=self._watch_engagement, daemon=True)]
@@ -155,6 +186,12 @@ class JoiningModelState:
     # modelV2.big. False while proxying, which is what the small model would
     # have reported anyway, and the signal the docs tell you to trust.
     return getattr(self._active, 'chestnut', False)
+
+  @property
+  def loading(self) -> bool:
+    # Still bringing the accelerator up. modeld reads this once, after the
+    # load, to know it must not write ChestnutLoading and ChestnutActive itself.
+    return self._active is self._small
 
   @property
   def vision_input_names(self):
@@ -181,9 +218,6 @@ class JoiningModelState:
   # -- the frame path ---------------------------------------------------------
 
   def run(self, bufs, transforms, inputs, after_enqueue=None):
-    # Before the first modelV2 goes out, so the UI never sees a published frame
-    # with big=false while it still thinks the load finished.
-    self._set_loading(self._active is self._small and time.monotonic() < self._loading_until)
     self._maybe_swap()
     active = self._active
     try:
@@ -217,8 +251,18 @@ class JoiningModelState:
       self._loading = loading
       self._params.put_bool("ChestnutLoading", loading)
 
+  def _set_active(self, active: bool) -> None:
+    # Before loading goes false at the swap, so that when selfdrived sees the
+    # ready edge the active flag it reads in the same tick is already true.
+    self._params.put_bool("ChestnutActive", active)
+
+  @property
+  def _window_open(self) -> bool:
+    # See the module docstring: disengaged, or engaged but stopped.
+    return not self._engaged or self._standstill
+
   def _maybe_swap(self) -> None:
-    if self._joined is None or self._engaged:
+    if self._joined is None or not self._window_open:
       return
     with self._lock:
       joined, self._joined = self._joined, None
@@ -240,15 +284,19 @@ class JoiningModelState:
         client.close()
       except Exception:
         pass
-      self._rejoin.set()
+      # Backed off like a demote: a build that fails the same way every time
+      # would otherwise be a connect and a build per second for the drive.
+      self._back_off()
       return
     self._active = big
+    self._joined_at = time.monotonic()
+    self._set_active(True)
     self._set_loading(False)
     cloudlog.warning("jetlink: large model joined mid-drive, modelV2.big is now true")
 
   def _demote(self) -> None:
     big, self._active = self._active, self._small
-    self._loading_until = time.monotonic() + LOADING_TIMEOUT
+    self._set_active(False)
     self._set_loading(True)
     close = getattr(big, 'close', None)
     if close is not None:
@@ -256,8 +304,24 @@ class JoiningModelState:
         close()
       except Exception:
         cloudlog.exception("jetlink: closing the failed large model")
-    self._rejoin_at = time.monotonic() + REJOIN_DELAY
+    self._back_off()
+
+  def _back_off(self) -> None:
+    """Push the next attempt out, and further each time one fails on its heels.
+
+    A link that dies the same way every time it comes up is the shape that
+    costs the most: each cycle is a swap frame, a demote frame, a soft disable
+    and a "Big Model Ready" chime, and at a flat delay it repeats for the whole
+    drive. A join that held for STABLE_SECONDS was not that, and starts the
+    next one from the bottom again.
+    """
+    stable = self._joined_at and time.monotonic() - self._joined_at > STABLE_SECONDS
+    self._failures = 1 if stable else self._failures + 1
+    self._joined_at = 0.0
+    delay = min(REJOIN_DELAY * 2 ** (self._failures - 1), REJOIN_DELAY_MAX)
+    self._rejoin_at = time.monotonic() + delay
     self._rejoin.set()
+    cloudlog.warning("jetlink: next attempt in %.0f s (failure %d)", delay, self._failures)
 
   # -- background -------------------------------------------------------------
 
@@ -285,15 +349,60 @@ class JoiningModelState:
         continue
       with self._lock:
         self._joined = (client, spec)
-      cloudlog.warning("jetlink: link ready, waiting for a disengaged frame to swap")
+      cloudlog.warning("jetlink: link ready, waiting for a window to swap")
+      self._keep_alive()
+
+  def _keep_alive(self) -> None:
+    """Keep a link that has nowhere to land honest until it can be used.
+
+    A ready link waits for the frame loop to find a swap window, and on a drive
+    where the driver never stops and never lifts off that is the whole drive.
+    A Jetson that reboots inside that window leaves a dead client parked in
+    _joined, and the swap is where we would find out: a build on a dead link,
+    a demote, and the backoff, all on modeld's thread. Ping it here instead and
+    start the rejoin now, so what the window finally opens onto is a link that
+    answered a moment ago.
+
+    The client is taken out of _joined for the ping and put back after, so the
+    frame loop either sees a whole one or sees none. It never blocks on the
+    lock waiting for a ping to finish, because _maybe_swap does not take the
+    lock at all when _joined is None.
+    """
+    while not self._stop.wait(KEEPALIVE_PERIOD):
+      with self._lock:
+        joined, self._joined = self._joined, None
+      if joined is None:
+        return  # swapped in on a frame, or closed under us
+      try:
+        joined[0].ping(timeout=PING_TIMEOUT)
+      except Exception as e:
+        cloudlog.warning("jetlink: the link died before it could be used (%s), reopening", e)
+        try:
+          joined[0].close()
+        except Exception:
+          pass
+        self._rejoin_at = time.monotonic() + REJOIN_DELAY
+        self._rejoin.set()
+        return
+      with self._lock:
+        if self._stop.is_set():
+          # close() ran while we held it, and found nothing to close.
+          joined[0].close()
+          return
+        self._joined = joined
 
   def _watch_engagement(self) -> None:
     _background_priority()
-    sm = messaging.SubMaster(['selfdriveState'])
+    sm = messaging.SubMaster(['selfdriveState', 'carState'])
     while not self._stop.is_set():
       sm.update(ENGAGEMENT_POLL_MS)
       if sm.updated['selfdriveState']:
         self._engaged = sm['selfdriveState'].enabled
+      if sm.updated['carState']:
+        # Only believed while the car is actually talking to us. A carState
+        # that stopped arriving must not read as "stopped" and open a window
+        # that is not there.
+        self._standstill = sm.alive['carState'] and sm['carState'].standstill
 
   def close(self) -> None:
     self._stop.set()
