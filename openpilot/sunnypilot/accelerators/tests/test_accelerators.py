@@ -12,9 +12,11 @@ large model and nothing else. Fakes rather than hardware, so this runs anywhere.
 """
 import importlib
 import sys
+import tempfile
 import types
 import unittest
 from collections import namedtuple
+from pathlib import Path
 from unittest import mock
 
 from openpilot.sunnypilot import accelerators
@@ -256,6 +258,75 @@ class TestChestnutReadyFallback(unittest.TestCase):
     for bad in (good._replace(supplyVoltage=4999), good._replace(supplyFault=True),
                 good._replace(pcieLtssm=0x00)):
       self.assertFalse(mod.chestnut_ready(bad), bad)
+
+
+class TestWarpCache(unittest.TestCase):
+  """The warp is a build product now (accelerators/SConscript), not something
+  jetlinkd compiles against a staleness key of its own."""
+
+  GEOMETRY = (1928, 1208, 512, 256)
+
+  def test_the_cache_lives_in_the_tree(self):
+    # scons has to be able to write it; the updater deletes it exactly as it
+    # deletes upstream's pkls and the build that follows puts it back. It used
+    # to sit under Paths.comma_home(), which on AGNOS is a tmpfs overlay that
+    # loses it every boot, and which OPENPILOT_PREFIX moves out from under a
+    # replay.
+    from openpilot.common.basedir import BASEDIR
+    from openpilot.sunnypilot.accelerators.jetlink import warp_cache
+    self.assertEqual(warp_cache.CACHE_DIR.name, 'models')
+    self.assertTrue(warp_cache.CACHE_DIR.is_relative_to(Path(BASEDIR).resolve()))
+
+  def test_a_pickle_with_no_sidecar_counts_as_cached(self):
+    # The sidecar and its build key are gone; scons owns staleness. A warp the
+    # build wrote and never annotated is the normal case now.
+    from openpilot.sunnypilot.accelerators.jetlink import warp_cache
+    with tempfile.TemporaryDirectory() as d:
+      with mock.patch.object(warp_cache, 'CACHE_DIR', Path(d)):
+        self.assertFalse(warp_cache.is_cached(*self.GEOMETRY))
+        warp_cache.warp_path(*self.GEOMETRY).touch()
+        self.assertTrue(warp_cache.is_cached(*self.GEOMETRY))
+
+  def test_the_geometry_the_device_asks_for_names_the_file(self):
+    from openpilot.sunnypilot.accelerators.jetlink import warp_cache
+    cam_w, cam_h, model_w, model_h = warp_cache.device_geometry()
+    self.assertEqual(warp_cache.warp_path(cam_w, cam_h, model_w, model_h).name,
+                     f'warp_{cam_w}x{cam_h}_{model_w}x{model_h}_tinygrad.pkl')
+
+
+class TestJetlinkdWarpFallback(unittest.TestCase):
+  """jetlinkd only builds a warp that is missing outright."""
+
+  def _daemon(self):
+    from openpilot.sunnypilot.accelerators.jetlink import jetlinkd
+    d = jetlinkd.Jetlinkd.__new__(jetlinkd.Jetlinkd)   # no __init__: it wants Params
+    d.warp_built, d.warp_thread = False, None
+    return jetlinkd, d
+
+  def test_a_warp_the_build_made_is_left_alone(self):
+    # Reporting progress before checking put a "compiling the camera warp"
+    # through the UI on every start for a warp that was already there.
+    jetlinkd, d = self._daemon()
+    with mock.patch.object(jetlinkd.warp_cache, 'is_cached', return_value=True), \
+         mock.patch.object(jetlinkd.warp_cache, 'ensure') as ensure, \
+         mock.patch.object(jetlinkd.accelerators, 'report_progress') as report:
+      d.build_warp()
+    report.assert_not_called()
+    ensure.assert_not_called()
+    self.assertIsNone(d.warp_thread)
+
+  def test_a_missing_warp_is_still_built(self):
+    jetlinkd, d = self._daemon()
+    with mock.patch.object(jetlinkd.warp_cache, 'is_cached', return_value=False), \
+         mock.patch.object(jetlinkd.warp_cache, 'ensure', return_value=True) as ensure, \
+         mock.patch.object(jetlinkd.accelerators, 'report_progress') as report, \
+         mock.patch.object(jetlinkd.accelerators, 'clear_progress'):
+      d.build_warp()
+      self.assertIsNotNone(d.warp_thread)
+      d.warp_thread.join(30)
+    self.assertFalse(d.warp_thread.is_alive())
+    ensure.assert_called_once()
+    self.assertEqual(report.call_args.args[0], 'warp')
 
 if __name__ == "__main__":
   unittest.main()

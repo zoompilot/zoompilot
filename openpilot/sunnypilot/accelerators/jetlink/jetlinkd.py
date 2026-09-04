@@ -151,13 +151,18 @@ class Jetlinkd:
     return path
 
   def build_warp(self) -> None:
-    """Compile the comma-side warp, once per run, while we are parked.
+    """Make sure a comma-side warp exists. Normally there is nothing to do.
+
+    scons builds it (accelerators/SConscript), which runs from the launcher
+    before manager starts, so on any device that ran a build this returns at
+    the is_cached check. What is left for this to cover is a prebuilt install
+    whose image was made without the target - there is no other way to get a
+    warp there, and without one modeld will not start the large model at all.
 
     Not part of provision(): the warp depends only on this device's camera and
     the small model's input size, not on which large model is selected or on
-    the Jetson answering. A Jetson that never provisions still leaves a warp
-    ready for the next one, and a warp that cannot be built costs the large
-    model, not the drive - modeld falls back exactly as it does for any other
+    the Jetson answering. A warp that cannot be built costs the large model,
+    not the drive - modeld falls back exactly as it does for any other
     big-model load failure.
 
     On a thread, because the compile is ~9 s of GPU work with nothing in it
@@ -166,16 +171,22 @@ class Jetlinkd:
     was still open when the kill landed - observed twice in one evening, 7.5 s
     and 5 s - which is exactly the mid-transfer kill the module docstring says
     to avoid. Abandoning the compile is safe: it touches no link, and it writes
-    the pickle and its metadata through temporaries, so a killed build leaves
-    nothing half-written for the next run to find.
+    the pickle through a temporary, so a killed build leaves nothing
+    half-written for the next run to find.
     """
     if self.warp_built:
       return
     self.warp_built = True
+    geometry = warp_cache.device_geometry()
+    if warp_cache.is_cached(*geometry):
+      return
+    # Only past here is there a real compile to report. Reporting first meant a
+    # "compiling the camera warp" that flashed through the UI on every start
+    # for a warp the build had already made.
     accelerators.report_progress('warp', 0.0, 'compiling the camera warp')
 
     def build() -> None:
-      if warp_cache.ensure(*warp_cache.device_geometry()):
+      if warp_cache.ensure(*geometry):
         accelerators.clear_progress()
 
     self.warp_thread = threading.Thread(target=build, daemon=True, name='jetlink_warp')
@@ -328,7 +339,9 @@ class Jetlinkd:
     # Before the link and before the attach gate: the warp needs neither, and
     # it is the one thing modeld refuses to start the large model without. It
     # used to sit below `if not attached: return`, so a Jetson that was slow to
-    # enumerate delayed the compile as well, and the compile is the long pole.
+    # enumerate delayed the compile as well. Cheap now that the build normally
+    # got there first, but the ordering still matters on the install that has
+    # to fall back.
     self.build_warp()
 
     if time.monotonic() < self.next_attempt:

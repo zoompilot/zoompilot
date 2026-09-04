@@ -1,0 +1,84 @@
+# The comma-side warp JIT, as a build product.
+#
+# jetlink runs `warp` on the comma and `run_policy` on the Jetson, so the comma
+# needs a standalone warp JIT that upstream no longer ships: #38684 fused warp
+# and policy into one graph with no seam to borrow. It has to be compiled
+# somewhere, and the two candidates are both bad at runtime - modeld would pay
+# it on the loader thread inside BIG_MODEL_TIMEOUT on every ignition, and
+# jetlinkd (which is where it lived) only runs offroad and can lose the ~9 s
+# compile to an ignition that lands first. That is a whole drive on the small
+# model for the sake of a build step.
+#
+# So build it here, the way upstream builds dm_warp_*.pkl a few lines away in
+# modeld/SConscript. launch_chffrplus.sh runs build.py before manager starts,
+# so an update that moves tinygrad has a fresh warp before ignition can matter,
+# and scons' dependency tracking replaces the staleness key warp_cache used to
+# carry. jetlinkd still builds one that is missing entirely; see warp_cache.
+import glob
+import importlib.util
+import os
+
+from SCons.Script import Action
+
+Import('env', 'arch')
+
+lenv = env.Clone()
+basedir = env.Dir("#").abspath
+
+
+def jetlink_installed() -> bool:
+  """Is the jetlink package here? Only then is a warp worth building.
+
+  setup.sh runs from launch_chffrplus.sh before build.py and symlinks the
+  package to #jetlink, so on a device this is already true by the time scons
+  looks. The repo candidates are the same ones setup.sh searches, for a
+  checkout where the launcher has not run.
+  """
+  candidates = [os.path.join(basedir, 'jetlink'), os.path.join(basedir, 'jetlink_repo'), '/data/jetlink_repo']
+  return any(os.path.isdir(c) for c in candidates)
+
+
+# Only for the comma's own GPU. The pickle is a capture against Device.DEFAULT
+# and nothing but modeld on the device ever loads one; a PC build would spend
+# the time producing a warp for a device with no camera attached to it.
+# jetlinkd's fallback still covers a PC that genuinely wants one.
+if arch == 'comma_arm64' and jetlink_installed():
+  from openpilot.common.hardware import HARDWARE
+  from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
+  from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE
+
+  camera = _os_fisheye if HARDWARE.get_device_type() == "mici" else _ar_ox_fisheye
+  cam_w, cam_h = camera.width, camera.height
+  model_w, model_h = MEDMODEL_INPUT_SIZE
+
+  jetlink_dir = Dir("#openpilot/sunnypilot/accelerators/jetlink").abspath
+
+  # The target's name comes from warp_cache, so what the build writes and what
+  # modeld looks for cannot drift apart. By file, not by package: importing
+  # openpilot.sunnypilot.accelerators runs its __init__, which imports Params,
+  # which does ctypes.CDLL(libparams_c) at import - a library scons has not
+  # built yet when it is reading this. warp_cache itself pulls in nothing
+  # heavier than cloudlog.
+  _spec = importlib.util.spec_from_file_location('jetlink_warp_cache', f"{jetlink_dir}/warp_cache.py")
+  warp_cache = importlib.util.module_from_spec(_spec)
+  _spec.loader.exec_module(warp_cache)
+  pkl = str(warp_cache.warp_path(cam_w, cam_h, model_w, model_h))
+  tinygrad_files = ["#" + x for x in glob.glob(env.Dir("#tinygrad_repo").relpath + "/**",
+                                               recursive=True, root_dir=basedir)
+                    if 'pycache' not in x and os.path.isfile(os.path.join(basedir, x))]
+  script_files = [
+    File(f"{jetlink_dir}/compile_warp.py"),
+    File(f"{jetlink_dir}/warp_cache.py"),                    # make_warp's caller, and the capture itself
+    File("#openpilot/selfdrive/modeld/compile_modeld.py"),   # make_warp
+    File("#openpilot/system/camerad/cameras/nv12_info.py"),  # the frame layout the graph indexes
+  ]
+
+  # No tinygrad flags on purpose, unlike the dm_warp target next door. jetlinkd
+  # compiled this with a bare environment and that is the artifact measured on
+  # the car (parity 0.99997+, 31 ms mean); adding DEV/IMAGE/FLOAT16 here would
+  # change the generated kernels and put that behind a fresh bench run. Moving
+  # the build is this change; changing what it builds is a separate one.
+  cmd = (f'python3 {jetlink_dir}/compile_warp.py '
+         f'--camera-resolution {cam_w}x{cam_h} --model-size {model_w}x{model_h} '
+         f'--output {pkl}')
+  lenv.Command(pkl, tinygrad_files + script_files, Action(cmd, "  [JETLINK WARP] $TARGET"))

@@ -4,7 +4,7 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-The comma-side warp JIT, compiled offroad and cached.
+The comma-side warp JIT: what builds it, and what loads it.
 
 jetlink splits the pipeline between `warp` and `run_policy`: the warp stays on
 the comma because its input is a 2 MB camera buffer already in GPU memory and
@@ -20,36 +20,39 @@ closure the fused JIT wraps - it just has to be JIT-compiled somewhere.
 
 Not in modeld. That compile lands on the loader thread inside modeld's 60 s
 BIG_MODEL_TIMEOUT, on a device whose only GPU the main thread is using, every
-single ignition. So jetlinkd does it while the car is parked and pickles the
-result, which is the same shape as upstream's own `compile_dm_warp.py`: a
-standalone warp JIT, built once, loaded by the process that needs it.
+single ignition.
 
-The cache is keyed on what the pickle actually depends on: the tinygrad the
-capture was made by, and the sources that decide what was captured. See
-_build_key for why that replaced the openpilot commit, and load_warp for what
-is checked before a cached pickle is allowed near the car.
+So it is a scons target, exactly as upstream's own dm_warp_*.pkl is: see
+accelerators/SConscript, which runs compile_warp.py. launch_chffrplus.sh
+builds before manager starts, so an update that moves tinygrad has a rebuilt
+warp before ignition can matter. It used to be built at runtime by jetlinkd
+against a hand-rolled staleness key, which was scons' dependency tracking
+reimplemented inside a daemon that only runs offroad and could lose a 9 s
+compile to an ignition that landed first - one drive on the small model for
+the sake of a build step.
+
+jetlinkd still builds one that is missing outright (see `ensure`), which
+covers a prebuilt image made without the target. Staleness is not its problem
+any more, and load_warp is what stands between a bad pickle and the car.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import pickle
-import subprocess
 from pathlib import Path
 
-from openpilot.common.hardware import PC
-from openpilot.common.hardware.hw import Paths
 from openpilot.common.swaglog import cloudlog
 
-# Not Paths.comma_home() on the device. That is /home/comma/.comma, and on
-# AGNOS /home is an overlay whose upper layer lives in /rwtmp, a tmpfs: the
-# pickle written there is gone at the next boot. With the car and the comma
-# powered together, jetlinkd then loses the ~9 s compile race to ignition every
-# single cold boot and modeld logs "no warp compiled yet". Found on the
-# 2026-09-04 drive, where a manual offroad/onroad cycle was the only way to
-# the large model. /data is the persistent partition; it is where Paths puts
-# everything else that has to survive a reboot.
-CACHE_DIR = Path(Paths.comma_home()) / 'jetlink' if PC else Path('/data/jetlink')
+# In the source tree, where scons can write it and next to upstream's own
+# dm_warp_*.pkl. The repo-wide *.pkl ignore already covers it.
+#
+# It used to be Paths.comma_home()/jetlink, which on AGNOS resolves under /home,
+# an overlay whose upper layer is /rwtmp, a tmpfs: the pickle was gone at the
+# next boot, and with the car and the comma powered together jetlinkd then lost
+# the ~9 s compile race to ignition on every cold boot. That was the "no warp
+# compiled yet" of the 2026-09-04 drive. The updater's reset --hard + clean
+# deletes this directory, exactly as it deletes upstream's pkls, and the build
+# that runs after an update puts it back before manager starts.
+CACHE_DIR = Path(__file__).resolve().with_name('models')
 
 
 # What TinyJit records for the keyword call below: enumerate(args) is empty and
@@ -90,7 +93,12 @@ def device_geometry() -> tuple[int, int, int, int]:
 
 
 def ensure(cam_w: int, cam_h: int, model_w: int, model_h: int) -> bool:
-  """Build the warp if it is not cached. Offroad only. Never raises.
+  """Build the warp if there is none at all. Offroad only. Never raises.
+
+  The build normally produced this (accelerators/SConscript), so on a device
+  that ran one this returns True without doing anything. It earns its keep on a
+  prebuilt install whose image was built without the target, where there is no
+  other way to get one.
 
   False means modeld will fall back to the small model, which is survivable and
   the reason this does not take the daemon down with it.
@@ -106,74 +114,28 @@ def ensure(cam_w: int, cam_h: int, model_w: int, model_h: int) -> bool:
   return True
 
 
-# What the pickle actually depends on, besides tinygrad: the graph that was
-# captured, and the NV12 layout it was built around.
-_WARP_SOURCES = (
-  'openpilot/selfdrive/modeld/compile_modeld.py',    # make_warp, make_frame_prepare
-  'openpilot/system/camerad/cameras/nv12_info.py',   # the frame layout the graph indexes
-  'openpilot/sunnypilot/accelerators/jetlink/warp_cache.py',  # call_warp, and the compile itself
-)
-
-
-def _tinygrad_pin() -> str:
-  """The tinygrad the pickle was made by, read as the submodule's pinned oid."""
-  from openpilot.common.basedir import BASEDIR
-  return subprocess.check_output(['git', 'rev-parse', 'HEAD:tinygrad_repo'],
-                                 cwd=BASEDIR, encoding='utf8', timeout=10).strip()
-
-
-def _build_key() -> str:
-  """What the pickled JIT is only valid against.
-
-  This was the openpilot commit, on the grounds that a pickled TinyJit only
-  loads under the tinygrad that made it and the commit pins that submodule.
-  True, but far too broad: every update to anything invalidated a warp that was
-  still perfectly good, and rebuilding takes ~9 s that only jetlinkd can spend
-  and only while parked. An update landing shortly before ignition then costs
-  the large model for that drive. Measured that exact loss twice in one
-  evening, once with 6 s between jetlinkd starting and the car going onroad,
-  once with 5 s.
-
-  So key on what the pickle actually depends on instead: the tinygrad the
-  capture was made by, and the sources that decide what was captured. That is
-  strictly narrower than the commit - every one of these changing implies the
-  commit changed - so it cannot accept anything the old key would have
-  rejected, and it stops rejecting warps for a UI or car-port change.
-
-  Anything that fails here raises, is_cached turns that into a miss, and the
-  warp is rebuilt. A wrong warp reaching the car is the one outcome that is
-  not survivable, so every uncertainty resolves to a rebuild.
-  """
-  from openpilot.common.basedir import BASEDIR
-  h = hashlib.sha256()
-  h.update(_tinygrad_pin().encode())
-  for rel in _WARP_SOURCES:
-    h.update(rel.encode())
-    h.update(hashlib.sha256((Path(BASEDIR) / rel).read_bytes()).digest())
-  return h.hexdigest()
-
-
 def warp_path(cam_w: int, cam_h: int, model_w: int, model_h: int) -> Path:
   return CACHE_DIR / f'warp_{cam_w}x{cam_h}_{model_w}x{model_h}_tinygrad.pkl'
 
 
-def _meta_path(pkl: Path) -> Path:
-  return pkl.with_suffix('.json')
-
-
 def is_cached(cam_w: int, cam_h: int, model_w: int, model_h: int) -> bool:
-  pkl = warp_path(cam_w, cam_h, model_w, model_h)
-  if not pkl.is_file():
-    return False
-  try:
-    with open(_meta_path(pkl)) as f:
-      return json.load(f).get('build') == _build_key()
-  except Exception:
-    return False
+  """Is there a warp for this geometry?
+
+  Presence, and nothing more. Staleness is scons' job now: the target depends
+  on tinygrad and on the sources that decide what gets captured, so anything
+  that would invalidate the pickle rebuilds it during the build, and a stale
+  one cannot outlive a build that succeeded. The one thing presence cannot
+  catch - a pickle written by an incompatible tinygrad - raises in load_warp,
+  which is where it has to be caught anyway.
+  """
+  return warp_path(cam_w, cam_h, model_w, model_h).is_file()
 
 
-def compile_warp(cam_w: int, cam_h: int, model_w: int, model_h: int) -> Path:
+def compile_warp(cam_w: int, cam_h: int, model_w: int, model_h: int, out: Path | None = None) -> Path:
   """Build the warp JIT and pickle it. Offroad only: this holds the GPU.
+
+  `out` is for scons, which names its own target; jetlinkd's fallback lets it
+  default to warp_path so both writers land on the same file.
 
   Runs the JIT three times before pickling. TinyJit captures on the second call,
   so a pickle taken any earlier is an empty jit that silently does nothing; the
@@ -205,18 +167,14 @@ def compile_warp(cam_w: int, cam_h: int, model_w: int, model_h: int) -> Path:
     call_warp(warp_jit, tfm, big_tfm, frame, big_frame).realize()
   Device.default.synchronize()
 
-  pkl = warp_path(cam_w, cam_h, model_w, model_h)
+  pkl = warp_path(cam_w, cam_h, model_w, model_h) if out is None else Path(out)
   pkl.parent.mkdir(parents=True, exist_ok=True)
-  # Write both through temporaries: modeld reads these while we write them, and
-  # a half-written pickle is a failed big-model load rather than a rebuild.
+  # Through a temporary: modeld reads this while jetlinkd's fallback writes it,
+  # and a half-written pickle is a failed big-model load rather than a rebuild.
   tmp = pkl.with_suffix('.pkl.tmp')
   with open(tmp, 'wb') as f:
     pickle.dump(warp_jit, f)
   tmp.replace(pkl)
-  meta_tmp = _meta_path(pkl).with_suffix('.json.tmp')
-  with open(meta_tmp, 'w') as f:
-    json.dump({'build': _build_key(), 'camera': [cam_w, cam_h], 'model': [model_w, model_h]}, f)
-  meta_tmp.replace(_meta_path(pkl))
   cloudlog.warning("jetlink: compiled the warp for %dx%d -> %dx%d", cam_w, cam_h, model_w, model_h)
   return pkl
 
@@ -229,7 +187,8 @@ def load_warp(cam_w: int, cam_h: int, model_w: int, model_h: int):
   reach the car.
   """
   if not is_cached(cam_w, cam_h, model_w, model_h):
-    raise RuntimeError(f"no warp cached for {cam_w}x{cam_h} -> {model_w}x{model_h}; jetlinkd builds it offroad")
+    raise RuntimeError(f"no warp built for {cam_w}x{cam_h} -> {model_w}x{model_h}; "
+                       + "the build makes it, jetlinkd rebuilds one that is missing")
   with open(warp_path(cam_w, cam_h, model_w, model_h), 'rb') as f:
     warp = pickle.load(f)
 
@@ -276,8 +235,11 @@ def warm(warp, cam_w: int, cam_h: int) -> None:
 
 
 def prune(keep: set[Path]) -> None:
-  """Drop warps from an older build, or for a camera this device does not have."""
+  """Drop warps for a geometry this device does not have.
+
+  Only jetlinkd's fallback calls this. scons owns the files it built and
+  removing one behind its back would just make it build again.
+  """
   for p in CACHE_DIR.glob('warp_*_tinygrad.pkl'):
     if p not in keep:
       p.unlink(missing_ok=True)
-      _meta_path(p).unlink(missing_ok=True)

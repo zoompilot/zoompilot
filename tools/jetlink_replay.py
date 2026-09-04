@@ -258,12 +258,6 @@ def main() -> int:
     replay_process,
   )
   from openpilot.tools.lib.logreader import LogReader
-  # Import the warp cache here, before process_replay sets OPENPILOT_PREFIX.
-  # The prefix moves Paths.comma_home(), so a modeld that imports this module
-  # for the first time inside the replay looks for the warp in a directory
-  # jetlinkd never wrote to and stays on the small model. modeld is forked,
-  # so an import taken here is the one it inherits.
-  from openpilot.sunnypilot.accelerators.jetlink import warp_cache  # noqa: F401
 
   full = list(LogReader(str(rlog)))
   # The calibration and live-parameter snapshots process_replay wants are
