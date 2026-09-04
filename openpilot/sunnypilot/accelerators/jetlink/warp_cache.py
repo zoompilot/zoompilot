@@ -37,10 +37,19 @@ import pickle
 import subprocess
 from pathlib import Path
 
+from openpilot.common.hardware import PC
 from openpilot.common.hardware.hw import Paths
 from openpilot.common.swaglog import cloudlog
 
-CACHE_DIR = Path(Paths.comma_home()) / 'jetlink'
+# Not Paths.comma_home() on the device. That is /home/comma/.comma, and on
+# AGNOS /home is an overlay whose upper layer lives in /rwtmp, a tmpfs: the
+# pickle written there is gone at the next boot. With the car and the comma
+# powered together, jetlinkd then loses the ~9 s compile race to ignition every
+# single cold boot and modeld logs "no warp compiled yet". Found on the
+# 2026-09-04 drive, where a manual offroad/onroad cycle was the only way to
+# the large model. /data is the persistent partition; it is where Paths puts
+# everything else that has to survive a reboot.
+CACHE_DIR = Path(Paths.comma_home()) / 'jetlink' if PC else Path('/data/jetlink')
 
 
 # What TinyJit records for the keyword call below: enumerate(args) is empty and
@@ -237,6 +246,33 @@ def load_warp(cam_w: int, cam_h: int, model_w: int, model_h: int):
   if names != WARP_INPUT_NAMES:
     raise RuntimeError(f"cached warp expects {names}, call_warp passes {WARP_INPUT_NAMES}")
   return warp
+
+
+def warm(warp, cam_w: int, cam_h: int) -> None:
+  """Run a loaded warp JIT until it is cheap to call.
+
+  Unpickling is not the expensive part of bringing the warp up. Measured on a
+  comma: load_warp 0.3 s, the *first* call 1.9 s (the captured kernels are
+  loaded into the GPU driver then), the second 5 ms. Whoever pays that must not
+  be modeld's frame loop: the swap in JoiningModelState used to, which skipped
+  ~26 camera frames and read as 16 s of modeldLagging after every join. Two
+  calls, like compile_warp, against frames of the right size and identity
+  transforms; nothing about the result is kept.
+  """
+  import numpy as np
+  from tinygrad.device import Device
+  from tinygrad.tensor import Tensor
+
+  from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
+
+  size = get_nv12_info(cam_w, cam_h)[3]
+  frames = [np.zeros(size, dtype=np.uint8) for _ in range(2)]
+  blobs = [Tensor.from_blob(f.ctypes.data, (size,), dtype='uint8', device=Device.DEFAULT) for f in frames]
+  eye = [np.eye(3, dtype=np.float32) for _ in range(2)]
+  tfm, big_tfm = (Tensor(e, device='NPY').realize() for e in eye)
+  for _ in range(2):
+    call_warp(warp, tfm, big_tfm, blobs[0], blobs[1]).realize()
+  Device.default.synchronize()
 
 
 def prune(keep: set[Path]) -> None:
