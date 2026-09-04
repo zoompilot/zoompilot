@@ -16,13 +16,21 @@
   ],
   "models": [
     {
+      "name": "Cinque Terre",
+      "date": "2026-09-04",
+      "commit": "68b5f8e486",
+      "oid": "e8d821733be15ebe9e27498bc27ad8bbbd741980ece37d77f377294010b8ff28",
+      "size": 765950064,
+      "built_seconds": 102,
+      "default": true
+    },
+    {
       "name": "BMRLNAPv6",
       "date": "2026-09-01",
       "commit": "9d683c0651",
       "oid": "f3669cb7c8a9a8a13fcd6a8575958dd09a9ec76d9c9072ccdc76fad7cfa3a28d",
       "size": 765955335,
-      "built_seconds": 163,
-      "default": true
+      "built_seconds": 163
     },
     {
       "name": "TGC v2",
