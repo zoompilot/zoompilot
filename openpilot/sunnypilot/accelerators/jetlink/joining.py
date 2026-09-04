@@ -57,6 +57,12 @@ from openpilot.common.swaglog import cloudlog
 # booting, short enough to catch one that finished a moment later.
 REJOIN_DELAY = 5.0
 ENGAGEMENT_POLL_MS = 100
+# How long "Big Model Loading" may keep the driver out. It is a NO_ENTRY in
+# selfdrived, and while this state proxies the small model there is nothing
+# else to gate it on, so without a bound a Jetson that never comes up is a
+# drive that can never engage. modeld's own BIG_MODEL_TIMEOUT is the same 60 s
+# a chestnut gets. The join itself keeps going after this; only the alert ends.
+LOADING_TIMEOUT = 60.0
 
 
 def _background_priority() -> None:
@@ -78,21 +84,35 @@ def _background_priority() -> None:
     everything = set(range(os.cpu_count() or 1))
     if everything - online:
       set_core_affinity(sorted(everything))
-  except OSError:
-    # PC, or a kernel that will not widen us. SCHED_OTHER alone is the part
-    # that matters: the frame loop preempts us wherever we end up.
+  except (OSError, AttributeError):
+    # PC, or a kernel that will not widen us (macOS has no affinity call at
+    # all). SCHED_OTHER alone is the part that matters: the frame loop
+    # preempts us wherever we end up.
     pass
 
 
 class JoiningModelState:
   """Duck-types selfdrive.modeld.modeld.ModelState, with a second one inside."""
 
-  def __init__(self, cam_w: int, cam_h: int, small, connect, build):
+  def __init__(self, cam_w: int, cam_h: int, small, connect, build, prepare=None):
     self._small = small
     self._active = small
     self._cam = (cam_w, cam_h)
     self._connect = connect
     self._build = build
+
+    # Whatever the swap would otherwise have to do on the frame loop, done now
+    # instead. modeld constructs this from its loader thread and waits for it
+    # on the main thread, so the GPU is idle and no frame can be dropped;
+    # measured on the car, doing it at the swap cost a 1.5 s frame. Failing
+    # here is survivable: build() then does the work at the swap, slowly.
+    if prepare is not None:
+      try:
+        t0 = time.monotonic()
+        prepare()
+        cloudlog.warning("jetlink: prepared the large model ahead of the swap in %.2f s", time.monotonic() - t0)
+      except Exception:
+        cloudlog.exception("jetlink: could not prepare the large model ahead of the swap")
 
     # Handed over by the joining thread, consumed by whichever modeld frame
     # first finds it safe to swap. Only ever assigned under the lock.
@@ -121,6 +141,7 @@ class JoiningModelState:
     # the large model is running, true again if it drops and we go back for it.
     self._params = Params()
     self._loading = False
+    self._loading_until = time.monotonic() + LOADING_TIMEOUT
 
     self._threads = [threading.Thread(target=self._join_loop, daemon=True),
                      threading.Thread(target=self._watch_engagement, daemon=True)]
@@ -162,7 +183,7 @@ class JoiningModelState:
   def run(self, bufs, transforms, inputs, after_enqueue=None):
     # Before the first modelV2 goes out, so the UI never sees a published frame
     # with big=false while it still thinks the load finished.
-    self._set_loading(self._active is self._small)
+    self._set_loading(self._active is self._small and time.monotonic() < self._loading_until)
     self._maybe_swap()
     active = self._active
     try:
@@ -205,10 +226,14 @@ class JoiningModelState:
       return
     client, spec = joined
     try:
-      # Everything tinygrad touches happens here, on modeld's own thread.
+      # Everything tinygrad touches happens here, on modeld's own thread. No
+      # warmup: with the warp prepared in __init__ the first real frame is the
+      # cheapest warm-up there is (its reset costs the server ~30 ms), where a
+      # warmup frame over the link was two more dropped frames for nothing.
+      t0 = time.monotonic()
       big = self._build(client, spec)
       big.lat_delay = self._small.lat_delay
-      big.warmup()
+      cloudlog.warning("jetlink: built the large model state in %.0f ms", (time.monotonic() - t0) * 1000)
     except Exception:
       cloudlog.exception("jetlink: could not bring up the large model, staying small")
       try:
@@ -223,6 +248,7 @@ class JoiningModelState:
 
   def _demote(self) -> None:
     big, self._active = self._active, self._small
+    self._loading_until = time.monotonic() + LOADING_TIMEOUT
     self._set_loading(True)
     close = getattr(big, 'close', None)
     if close is not None:

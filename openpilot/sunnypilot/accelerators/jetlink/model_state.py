@@ -26,6 +26,7 @@ fused JIT wraps.
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
 
 import numpy as np
@@ -42,6 +43,7 @@ from openpilot.sunnypilot.accelerators.jetlink import warp_cache
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
+SLOW_FRAME = 0.08  # seconds; past this a frame is worth a log line
 
 
 class JetlinkModelState(ModelStateBase):
@@ -49,7 +51,7 @@ class JetlinkModelState(ModelStateBase):
 
   prev_desire: np.ndarray  # for tracking the rising edge of the pulse
 
-  def __init__(self, cam_w: int, cam_h: int, client, spec, small=None):
+  def __init__(self, cam_w: int, cam_h: int, client, spec, small=None, warp=None):
     ModelStateBase.__init__(self)
     self.client = client
     self.spec = spec
@@ -68,8 +70,11 @@ class JetlinkModelState(ModelStateBase):
     # ones: frames_to_tensor halves both axes turning (model_h*3//2, model_w)
     # YUV into (6, model_h//2, model_w//2). So img (1, 12, 128, 256) is a warp
     # of 512x256, which is MEDMODEL_INPUT_SIZE, which is what jetlinkd built.
+    # A caller that already loaded and warmed the warp for this geometry hands
+    # it in, so that constructing this on modeld's frame thread costs a frame
+    # and not two seconds (see warp_cache.warm). The load here is the slow path.
     img_h, img_w = spec.input_shapes['img'][2:]
-    self.warp = warp_cache.load_warp(cam_w, cam_h, img_w * 2, img_h * 2)
+    self.warp = warp if warp is not None else warp_cache.load_warp(cam_w, cam_h, img_w * 2, img_h * 2)
 
     # modeld still hands us its small ModelState, now only to check that the
     # geometry the warp was built for is the geometry the large model wants.
@@ -135,17 +140,22 @@ class JetlinkModelState(ModelStateBase):
     self.npy['tfm'][:, :] = transforms['img'][:, :]
     self.npy['big_tfm'][:, :] = transforms['big_img'][:, :]
 
+    t0 = time.perf_counter()
     warped = warp_cache.call_warp(self.warp, **self.warp_inputs,
                                   frame=self.full_frames['img'], big_frame=self.full_frames['big_img'])
+    t1 = time.perf_counter()
+    # .data() rather than .numpy(): same mean cost (~2.5 ms, this is a
+    # write-combined GPU mapping read and unavoidable), but it drops a
+    # per-frame allocation and, measured on the car, a 52 ms outlier that
+    # .numpy() produces. On a 50 ms budget the tail is what matters. The
+    # memoryview goes straight to the wire with no numpy round trip.
+    data = warped.data()
+    t2 = time.perf_counter()
 
     self._frame_id += 1
-    # .data() rather than .numpy(): same mean cost (~4.4 ms, this is a
-    # write-combined GPU mapping read at ~90 MB/s and unavoidable), but it
-    # drops a per-frame allocation and, measured on the car, a 52 ms outlier
-    # that .numpy() produces. On a 50 ms budget the tail is what matters.
-    # The memoryview goes straight to the wire with no numpy round trip.
-    seq = self.client.infer_begin(warped.data(), self.packed, self._frame_id,
+    seq = self.client.infer_begin(data, self.packed, self._frame_id,
                                   reset=self._need_reset, want_state=after_enqueue is not None)
+    t3 = time.perf_counter()
     self._need_reset = False
     # Publish health while the Jetson works, exactly where modeld puts it.
     if after_enqueue is not None:
@@ -154,6 +164,14 @@ class JetlinkModelState(ModelStateBase):
     # frame, which modeld counts; only a stall past the client's FRAME_TIMEOUT
     # raises, and that lands in modeld's fallback to the small model.
     model_output = self.client.infer_end(seq)
+    t4 = time.perf_counter()
+    # The split of a slow frame, and of the first few after a swap. A frame
+    # past the budget is a dropped camera frame and three in a row are
+    # modeldLagging, and "send" (the gadget write blocking until the host
+    # reads) against "reply" (the Jetson's turnaround) says which end it was.
+    if self._frame_id <= 3 or t4 - t0 > SLOW_FRAME:
+      cloudlog.warning("jetlink: frame %d warp %.1f data %.1f send %.1f reply %.1f ms", self._frame_id,
+                       (t1 - t0) * 1e3, (t2 - t1) * 1e3, (t3 - t2) * 1e3, (t4 - t3) * 1e3)
 
     # The non-finite guard that upstream's ModelState.run does here runs on the
     # server instead (session.on_infer), which reports Status.NOT_FINITE; the

@@ -103,12 +103,35 @@ class JetlinkAccelerator:
     # Returns straight away with the small model in the driving seat. See
     # joining.py for why modeld must not be made to wait for a Jetson.
     from openpilot.sunnypilot.accelerators.jetlink.joining import JoiningModelState
+    from openpilot.sunnypilot.accelerators.jetlink import warp_cache
+
+    # The warp, loaded and warmed here rather than at the swap. This runs on
+    # modeld's loader thread while its main thread is blocked in loader.join,
+    # which is the one moment the GPU is idle and there are no frames to
+    # drop; the swap itself lands on the frame loop. Sized from the cached
+    # spec, which is what the link will hand back, so the swap can use it
+    # without a load. Should the server answer with another geometry, build
+    # falls back to loading the right warp there, slow but correct.
+    ready: dict = {}
+
+    def prepare():
+      cached = spec_cache.load()
+      if cached is not None:
+        img_h, img_w = cached.input_shapes['img'][2:]
+        geometry = (img_w * 2, img_h * 2)
+      else:
+        geometry = warp_cache.device_geometry()[2:]
+      warp = warp_cache.load_warp(cam_w, cam_h, *geometry)
+      warp_cache.warm(warp, cam_w, cam_h)
+      ready.update(warp=warp, geometry=geometry)
 
     def build(client, spec):
       from openpilot.sunnypilot.accelerators.jetlink.model_state import JetlinkModelState
-      return JetlinkModelState(cam_w, cam_h, client, spec, small)
+      img_h, img_w = spec.input_shapes['img'][2:]
+      warp = ready.get('warp') if ready.get('geometry') == (img_w * 2, img_h * 2) else None
+      return JetlinkModelState(cam_w, cam_h, client, spec, small, warp=warp)
 
-    return JoiningModelState(cam_w, cam_h, small, self._open_link, build)
+    return JoiningModelState(cam_w, cam_h, small, self._open_link, build, prepare)
 
   def _open_link(self):
     """Get a client and a spec. Link IO only, so it is safe off modeld's thread.

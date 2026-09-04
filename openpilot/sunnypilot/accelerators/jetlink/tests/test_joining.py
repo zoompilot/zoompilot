@@ -16,6 +16,7 @@ still belongs to modeld.
 """
 import re
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -115,9 +116,9 @@ class JoiningTest(unittest.TestCase):
     self.assertEqual(self._run(s), {'from': 'big'})
     self.assertTrue(s.chestnut)
     self.assertIs(s.client, self.big.client)
-    # Warmed on modeld's thread, not the joining one, and handed the delay
-    # modeld has been writing all along.
-    self.assertTrue(self.big.warmed)
+    # No warmup at the swap: the warp was prepared in __init__ and a frame
+    # over the link here was two dropped camera frames on the car.
+    self.assertFalse(self.big.warmed)
 
   def test_large_model_failure_demotes_and_keeps_the_frame(self):
     s = self._state()
@@ -133,6 +134,46 @@ class JoiningTest(unittest.TestCase):
     self.assertTrue(self.big.closed)
     # And it tries again rather than staying small for the rest of the drive.
     self.assertTrue(s._rejoin.is_set() or self.connect_calls > 1)
+
+  def test_prepare_runs_in_the_constructor_and_its_failure_is_survived(self):
+    order = []
+    self.connect_calls = 0
+
+    def prepare():
+      order.append('prepare')
+      raise RuntimeError("no warp today")
+
+    s = JoiningModelState(1928, 1208, self.small, self._connect, self._build, prepare)
+    self.addCleanup(s.close)
+    # Ran, and ran before anything else: modeld's main thread is blocked for
+    # exactly as long as the constructor takes, so this is the only place the
+    # GPU work can go without costing a frame.
+    self.assertEqual(order, ['prepare'])
+    self.assertEqual(self._run(s), {'from': 'small'})
+    # Still joins; the swap will just pay for the warp itself.
+    self.assertTrue(self.joined.wait(5.0))
+    s._engaged = False
+    self.assertEqual(self._run(s), {'from': 'big'})
+
+  def test_loading_alert_ends_after_the_timeout_but_the_join_does_not(self):
+    self.connect_error = RuntimeError("jetson still booting")
+    s = self._state()
+    self._run(s)
+    self.assertTrue(self.params.get("ChestnutLoading"))
+    with mock.patch('openpilot.sunnypilot.accelerators.jetlink.joining.time.monotonic',
+                    return_value=time.monotonic() + 61.0):
+      self._run(s)
+    self.assertFalse(self.params.get("ChestnutLoading"))
+    # A join that succeeds later still swaps.
+    self.connect_error = None
+    s._rejoin.set()
+    self.assertTrue(self.joined.wait(10.0))
+    s._engaged = False
+    for _ in range(20):
+      if self._run(s) == {'from': 'big'}:
+        break
+      time.sleep(0.05)
+    self.assertTrue(s.chestnut)
 
   def test_small_model_failure_is_modelds(self):
     s = self._state()
