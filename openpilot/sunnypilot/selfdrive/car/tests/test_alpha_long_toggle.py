@@ -5,8 +5,8 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from opendbc.car import structs
-from openpilot.sunnypilot.selfdrive.car.alpha_long_toggle import AlphaLongToggleMonitor, HANDBACK_TIMEOUT_FRAMES
-from openpilot.sunnypilot.system.offroad_request import STANDSTILL_V
+from openpilot.sunnypilot.selfdrive.car.alpha_long_toggle import AlphaLongToggleMonitor, HANDBACK_TIMEOUT_FRAMES, \
+  STANDSTILL_V, STANDSTILL_T, StandstillGate
 
 MOVING_V = 12.0
 
@@ -22,14 +22,12 @@ class FakeParams:
     self.bools[key] = value
 
 
-def _monitor(toggle: bool, brand="mazda", op_long=True, alpha_avail=True, offroad_requested=False, cycle_attempted=False,
-             parked=True):
+def _monitor(toggle: bool, brand="mazda", op_long=True, alpha_avail=True, cycle_attempted=False, parked=True):
   cp = structs.CarParams()
   cp.brand = brand
   cp.openpilotLongitudinalControl = op_long
   cp.alphaLongitudinalAvailable = alpha_avail
-  params = FakeParams(AlphaLongitudinalEnabled=toggle, OffroadModeRequested=offroad_requested,
-                      AlphaLongCycleAttempted=cycle_attempted)
+  params = FakeParams(AlphaLongitudinalEnabled=toggle, AlphaLongCycleAttempted=cycle_attempted)
   m = AlphaLongToggleMonitor(cp, params)
   m.update_params()
   if parked:
@@ -169,22 +167,6 @@ class TestEngagedDefersFinish:
     _step(m, enabled=False)
     assert params.get_bool("OnroadCycleRequested")
 
-  def test_non_mazda_offroad_grant_waits_for_disengage(self):
-    m, params = _monitor(toggle=True, brand="toyota", op_long=True, offroad_requested=True)
-    _step(m, enabled=True)
-    assert not params.get_bool("OffroadMode")
-    _step(m, enabled=False)
-    assert params.get_bool("OffroadMode")
-
-  def test_mazda_offroad_grant_waits_for_disengage(self):
-    m, params = _monitor(toggle=True, op_long=True, offroad_requested=True)
-    _step(m)
-    cc_sp = _step(m, acc_faulted=True, enabled=True)
-    assert cc_sp.stockEcuHandBack
-    assert not params.get_bool("OffroadMode")
-    _step(m, acc_faulted=True, enabled=False)
-    assert params.get_bool("OffroadMode")
-
 
 class TestOneCyclePerIgnition:
   def test_cycle_marks_the_ignition(self):
@@ -215,59 +197,10 @@ class TestOneCyclePerIgnition:
     _step(m, acc_faulted=True)
     assert params.get_bool("OnroadCycleRequested")
 
-  def test_offroad_request_still_granted_after_a_cycle(self):
-    m, params = _monitor(toggle=True, op_long=False, offroad_requested=True, cycle_attempted=True)
-    _step(m)
-    assert params.get_bool("OffroadMode")
-    assert not params.get_bool("OnroadCycleRequested")
-
-
-class TestOffroadRequest:
-  def test_mazda_op_long_hands_back_before_granting(self):
-    m, params = _monitor(toggle=True, op_long=True, offroad_requested=True)
-    for _ in range(50):
-      cc_sp = _step(m)
-      assert cc_sp.stockEcuHandBack
-      assert not params.get_bool("OffroadMode")
-    _step(m, acc_faulted=True)
-    assert params.get_bool("OffroadMode")
-    assert not params.get_bool("OffroadModeRequested")
-    assert not params.get_bool("OnroadCycleRequested")
-
-  def test_handback_timeout_still_grants(self):
-    m, params = _monitor(toggle=True, op_long=True, offroad_requested=True)
-    for _ in range(HANDBACK_TIMEOUT_FRAMES):
-      _step(m)
-    assert params.get_bool("OffroadMode")
-
-  def test_non_mazda_grants_immediately(self):
-    m, params = _monitor(toggle=True, brand="toyota", op_long=True, offroad_requested=True)
-    cc_sp = _step(m)
-    assert not cc_sp.stockEcuHandBack
-    assert params.get_bool("OffroadMode")
-
-  def test_stock_long_grants_immediately(self):
-    m, params = _monitor(toggle=False, op_long=False, offroad_requested=True)
-    cc_sp = _step(m)
-    assert not cc_sp.stockEcuHandBack
-    assert params.get_bool("OffroadMode")
-
-  def test_offroad_wins_over_pending_toggle_cycle(self):
-    # toggle-off and force-offroad both pending: go offroad, skip the cycle
-    m, params = _monitor(toggle=False, op_long=True, offroad_requested=True)
-    _step(m, acc_faulted=True)
-    assert params.get_bool("OffroadMode")
-    assert not params.get_bool("OnroadCycleRequested")
-
-  def test_grant_works_when_alpha_unavailable(self):
-    m, params = _monitor(toggle=False, op_long=False, alpha_avail=False, offroad_requested=True)
-    _step(m)
-    assert params.get_bool("OffroadMode")
-
 
 class TestStandstillGate:
-  # Neither finish may end the session under a moving car: the UIs only refuse the toggle
-  # and the offroad button while engaged, and on file both were pressed at up to 19 m/s
+  # The cycle may not end the session under a moving car: the UI only refuses the toggle
+  # while engaged, and on file it was flipped at up to 19 m/s
 
   def _stop(self, m, **kw):
     for _ in range(m.standstill.frames_needed - 1):
@@ -285,24 +218,14 @@ class TestStandstillGate:
     self._stop(m, acc_faulted=True)
     assert params.get_bool("OnroadCycleRequested")
 
-  def test_offroad_grant_waits_for_standstill(self):
-    m, params = _monitor(toggle=True, op_long=True, offroad_requested=True, parked=False)
-    for _ in range(100):
-      cc_sp = _step(m, acc_faulted=True, v_ego=MOVING_V)
-      assert cc_sp.stockEcuHandBack
-      assert not params.get_bool("OffroadMode")
-    self._stop(m, acc_faulted=True)
-    assert params.get_bool("OffroadMode")
-    assert not params.get_bool("OffroadModeRequested")
-
   def test_handback_timeout_still_waits_for_standstill(self):
-    m, params = _monitor(toggle=True, op_long=True, offroad_requested=True, parked=False)
+    m, params = _monitor(toggle=False, op_long=True, parked=False)
     for _ in range(HANDBACK_TIMEOUT_FRAMES + 100):
       cc_sp = _step(m, v_ego=MOVING_V)
       assert cc_sp.stockEcuHandBack
-    assert not params.get_bool("OffroadMode")
+    assert not params.get_bool("OnroadCycleRequested")
     self._stop(m)
-    assert params.get_bool("OffroadMode")
+    assert params.get_bool("OnroadCycleRequested")
 
   def test_enable_direction_waits_for_standstill(self):
     m, params = _monitor(toggle=True, op_long=False, parked=False)
@@ -311,14 +234,6 @@ class TestStandstillGate:
     assert not params.get_bool("OnroadCycleRequested")
     self._stop(m)
     assert params.get_bool("OnroadCycleRequested")
-
-  def test_non_mazda_offroad_grant_waits_for_standstill(self):
-    m, params = _monitor(toggle=True, brand="toyota", op_long=True, offroad_requested=True, parked=False)
-    for _ in range(100):
-      _step(m, v_ego=MOVING_V)
-    assert not params.get_bool("OffroadMode")
-    self._stop(m)
-    assert params.get_bool("OffroadMode")
 
   def test_creep_below_threshold_counts_as_stopped(self):
     m, params = _monitor(toggle=True, op_long=False, parked=False)
@@ -337,10 +252,13 @@ class TestStandstillGate:
 
   def test_engaged_at_standstill_still_holds(self):
     # op-long holding the car at a light: stopped but engaged, so nothing fires until disengaged
-    m, params = _monitor(toggle=True, op_long=True, offroad_requested=True, parked=False)
+    m, params = _monitor(toggle=False, op_long=True, parked=False)
     _step(m, v_ego=MOVING_V)
     for _ in range(m.standstill.frames_needed + 10):
       _step(m, acc_faulted=True, enabled=True, v_ego=0.0)
-    assert not params.get_bool("OffroadMode")
+    assert not params.get_bool("OnroadCycleRequested")
     _step(m, acc_faulted=True, enabled=False, v_ego=0.0)
-    assert params.get_bool("OffroadMode")
+    assert params.get_bool("OnroadCycleRequested")
+
+  def test_gate_needs_at_least_one_frame(self):
+    assert StandstillGate(1 / (2 * STANDSTILL_T)).frames_needed == 1

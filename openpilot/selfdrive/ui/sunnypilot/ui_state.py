@@ -13,7 +13,6 @@ from openpilot.sunnypilot import accelerators
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
-from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
 
@@ -276,7 +275,7 @@ class DeviceSP:
 
     # blocked runs every frame, so write only when actually sleeping
     if _ui_state.boot_offroad_mode == 1 and not on and not self._blocked_by_screensaver:
-      request_offroad_mode(_ui_state.params, True)
+      _ui_state.params.put_bool("OffroadMode", True)
 
   def dismiss_screensaver(self, _ui_state) -> None:
     if gui_app.get_active_widget() == _ui_state.screensaver:

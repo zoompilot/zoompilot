@@ -17,7 +17,7 @@ from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import (
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, get_mads_limited_brands
+from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, get_mads_limited_brands, offroad_brand
 from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AUTO_LANE_CHANGE_TIMER, AutoLaneChangeMode
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import LEVEL_OFF, read_level
 from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import load_versions, resolved_tune_version
@@ -85,7 +85,13 @@ class SteeringLayoutMici(NavScroller):
     self._mads_unified = BigParamControlSP(tr("unified engagement"), "MadsUnifiedEngagementMode",
                                            depends_on=lambda: self._mads_toggle._checked and not self._mads_limited)
     self._mads_steering = BigMultiParamToggleSP(tr("steering on brake"), "MadsSteeringMode", MADS_STEERING_MODE_LABELS)
-    self._mads_view = self._mads_settings_btn.link_sub_panel([self._mads_toggle, self._mads_main_cruise, self._mads_unified, self._mads_steering])
+    # Mazda trims with the physical TJA button: it becomes the only lateral switch, so main
+    # cruise and unified engagement stop touching MADS. Fingerprint cannot tell, so ask.
+    self._mads_tja = BigParamControlSP(tr("tja button"), "MazdaTjaButton",
+                                       depends_on=lambda: self._mads_toggle._checked and ui_state.is_offroad())
+    self._mads_tja.set_visible(self._is_mazda)
+    self._mads_view = self._mads_settings_btn.link_sub_panel([self._mads_toggle, self._mads_main_cruise, self._mads_unified,
+                                                              self._mads_steering, self._mads_tja])
 
     # AutoLaneChangeTimer stores a mode from -1 through 5, not a boolean.
     self._lc_timer = BigMultiParamToggleSP(tr("auto lane change"), "AutoLaneChangeTimer",
@@ -200,7 +206,10 @@ class SteeringLayoutMici(NavScroller):
       unified = _on_off(ui_state.params.get_bool("MadsUnifiedEngagementMode"))
       steer_idx = ui_state.params.get("MadsSteeringMode", return_default=True) or 0
       steer_mode = MADS_STEERING_MODE_LABELS[min(steer_idx, len(MADS_STEERING_MODE_LABELS) - 1)]
-      self._mads_settings_btn.set_badges([(tr("enabled"), "on"), (tr("main-cruise"), cruise), (tr("unified"), unified), (steer_mode, "on")])
+      badges = [(tr("enabled"), "on"), (tr("main-cruise"), cruise), (tr("unified"), unified), (steer_mode, "on")]
+      if self._is_mazda():
+        badges.append((tr("tja"), _on_off(ui_state.params.get_bool("MazdaTjaButton"))))
+      self._mads_settings_btn.set_badges(badges)
 
     blinker_on = ui_state.params.get_bool("BlinkerPauseLateralControl")
     if not blinker_on:
@@ -252,6 +261,10 @@ class SteeringLayoutMici(NavScroller):
 
     # The platform lockout cannot be expressed as a control dependency.
     self._mads_steering.set_enabled(not is_mads_limited and ui_state.params.get_bool("Mads"))
+
+  @staticmethod
+  def _is_mazda() -> bool:
+    return offroad_brand(ui_state.params, ui_state.CP, ui_state.is_offroad()) == "mazda"
 
   @staticmethod
   def _bsm_applies(alc_val: int) -> bool:

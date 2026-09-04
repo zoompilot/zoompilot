@@ -64,6 +64,7 @@ def sp_stats(end_event):
     'MadsMainCruiseAllowed',
     'MadsSteeringMode',
     'MadsUnifiedEngagementMode',
+    'MazdaTjaButton',
     'ModelManager_ActiveBundle',
     'ModelManager_ActiveBundleChestnut',
     'ModelManager_Favs',

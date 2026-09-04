@@ -29,7 +29,6 @@ from websocket import (ABNF, WebSocket, WebSocketException, WebSocketTimeoutExce
 
 import openpilot.cereal.messaging as messaging
 from openpilot.sunnypilot.models.model_name import DEFAULT_MODEL, DEFAULT_BIG_MODEL
-from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
 from openpilot.sunnypilot.selfdrive.car.sync_sunnylink_params import update_car_list_param
 from openpilot.sunnypilot.sunnylink.api import SunnylinkApi
 from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnylink_ready, get_param_as_byte, save_param_from_base64_encoded_string
@@ -56,31 +55,7 @@ BLOCKED_PARAMS = {
   "HasAcceptedTermsSP",
   "OnroadCycleRequested",      # Prevent remote cycle trigger
   "AlphaLongitudinalEnabled",  # Flips longitudinal mode via an onroad cycle; local UI only
-  "OffroadModeRequested",      # Force-offroad mid-drive; local UI only (remote OffroadMode routes through it below)
   "ParamsVersion",         # Device-managed version counter
-}
-
-
-def _decode_remote_bool(value: str, compression: bool) -> bool:
-  raw = base64.b64decode(value)
-  if compression:
-    raw = gzip.decompress(raw)
-  return raw.decode("utf-8").strip().lower() in ("true", "1", "yes")
-
-
-def _remote_offroad_mode(value: str, compression: bool) -> None:
-  # The device page's Force Offroad toggle. hardwared and pandad act on OffroadMode the
-  # moment it is set (no-output safety, relay open, session over), so a raw remote write
-  # could drop a moving car offroad and skip the stock-ECU hand-back. Route it the way the
-  # local UI does: leaving offroad clears the param directly, entering goes through
-  # OffroadModeRequested, which hardwared grants at once when there is no onroad session
-  # and card otherwise finishes after the hand-back, disengaged and at a standstill.
-  request_offroad_mode(params, _decode_remote_bool(value, compression))
-
-
-# Remote writes that are not stored as-is but handed to the local request path
-REDIRECTED_PARAMS = {
-  "OffroadMode": _remote_offroad_mode,
 }
 
 
@@ -268,11 +243,7 @@ def saveParams(params_to_update: dict[str, str], compression: bool = False) -> N
       continue
 
     try:
-      redirect = REDIRECTED_PARAMS.get(key)
-      if redirect is not None:
-        redirect(value, compression)
-      else:
-        save_param_from_base64_encoded_string(key, value, compression)
+      save_param_from_base64_encoded_string(key, value, compression)
     except Exception as e:
       cloudlog.error(f"sunnylinkd.saveParams.exception {e}")
 

@@ -10,7 +10,8 @@ from openpilot.cereal import log, custom
 from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
 from openpilot.common.params import Params
-from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON
+from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON, \
+  mads_button_owns_lateral
 from openpilot.sunnypilot.mads.state import StateMachine, GEARS_ALLOW_PAUSED_SILENT
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -57,6 +58,13 @@ class ModularAssistiveDrivingSystem:
     if self.CP.brand in MADS_NO_ACC_MAIN_BUTTON:
       self.no_main_cruise = True
 
+    # A declared button is the only lateral switch: engage regardless of ACC main, and keep
+    # ACC main from enabling or disabling. Mirrors the panda-side safety param.
+    self.button_owns_lateral = mads_button_owns_lateral(self.CP, self.CP_SP)
+    if self.button_owns_lateral:
+      self.allow_always = True
+      self.no_main_cruise = True
+
     # read params on init
     self.enabled_toggle = self.params.get_bool("Mads")
     self.main_enabled_toggle = self.params.get_bool("MadsMainCruiseAllowed")
@@ -86,6 +94,10 @@ class ModularAssistiveDrivingSystem:
   def block_unified_engagement_mode(self) -> bool:
     # UEM disabled
     if not self.unified_engagement_mode:
+      return True
+
+    # Longitudinal engagement must not re-enable lateral behind the button's back.
+    if self.button_owns_lateral:
       return True
 
     if self.enabled:
@@ -169,7 +181,7 @@ class ModularAssistiveDrivingSystem:
         self.events.remove(EventName.pcmEnable)
         self.events.remove(EventName.buttonEnable)
     else:
-      if self.main_enabled_toggle:
+      if self.main_enabled_toggle and not self.no_main_cruise:
         if CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available:
           self.events_sp.add(EventNameSP.lkasEnable)
 

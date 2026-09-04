@@ -9,10 +9,28 @@ from openpilot.common.params import Params
 from opendbc.car import structs
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP, HyundaiSafetyFlagsSP
+from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlagsSP
 
 
 MADS_NO_ACC_MAIN_BUTTON = ("rivian", "tesla")
+
+
+def mads_button_owns_lateral(CP: structs.CarParams, CP_SP: structs.CarParamsSP) -> bool:
+  """The driver declared a MADS button that is the only lateral switch: ACC main neither
+  engages nor disengages, and unified engagement does not couple to it."""
+  return CP.brand == "mazda" and bool(CP_SP.flags & MazdaFlagsSP.TJA_BUTTON)
+
+
+def offroad_brand(params: Params, CP, offroad: bool) -> str:
+  """Brand for settings gating: the manual platform selection while offroad, CarParams otherwise."""
+  brand = ""
+  if offroad:
+    bundle = params.get("CarPlatformBundle")
+    brand = bundle.get("brand", "") if isinstance(bundle, dict) else ""
+  if not brand and CP is not None:
+    brand = CP.brand
+  return brand
 
 
 class MadsSteeringModeOnBrake:
