@@ -45,7 +45,11 @@ from __future__ import annotations
 
 import threading
 
+import os
+
 import openpilot.cereal.messaging as messaging
+from openpilot.common.params import Params
+from openpilot.common.realtime import drop_realtime, set_core_affinity
 from openpilot.common.swaglog import cloudlog
 
 # How long to wait before trying the link again after a join fails or the large
@@ -53,6 +57,31 @@ from openpilot.common.swaglog import cloudlog
 # booting, short enough to catch one that finished a moment later.
 REJOIN_DELAY = 5.0
 ENGAGEMENT_POLL_MS = 100
+
+
+def _background_priority() -> None:
+  """Get this thread off modeld's realtime core before it does anything.
+
+  modeld runs config_realtime_process(7, 54), and a thread started after that
+  inherits both the SCHED_FIFO priority and the single-core affinity from the
+  thread that created it. Measured on the car with these two threads left as
+  they came out of threading.Thread: modelV2 exec p50 27.9 ms, which is normal,
+  against p95 90.8 and max 159.9, and 5% frame drops - enough for
+  modeldLagging, which soft-disables. Under SCHED_FIFO an equal-priority thread
+  that wakes takes the core until it blocks again, so a 10 Hz poll is enough to
+  do that. Neither of these threads is realtime: one waits on a socket, the
+  other on a USB link.
+  """
+  drop_realtime()
+  try:
+    online = os.sched_getaffinity(0)
+    everything = set(range(os.cpu_count() or 1))
+    if everything - online:
+      set_core_affinity(sorted(everything))
+  except OSError:
+    # PC, or a kernel that will not widen us. SCHED_OTHER alone is the part
+    # that matters: the frame loop preempts us wherever we end up.
+    pass
 
 
 class JoiningModelState:
@@ -77,6 +106,13 @@ class JoiningModelState:
     # a frame or two of modeld starting.
     self._engaged = True
     self._stop = threading.Event()
+
+    # The UI reads ChestnutLoading to tell "not up yet" from "failed". modeld
+    # clears it as soon as make_model_state returns, which for us is before the
+    # Jetson has joined, so we own it from here: true while proxying, false once
+    # the large model is running, true again if it drops and we go back for it.
+    self._params = Params()
+    self._loading = False
 
     self._threads = [threading.Thread(target=self._join_loop, daemon=True),
                      threading.Thread(target=self._watch_engagement, daemon=True)]
@@ -116,6 +152,9 @@ class JoiningModelState:
   # -- the frame path ---------------------------------------------------------
 
   def run(self, bufs, transforms, inputs, after_enqueue=None):
+    # Before the first modelV2 goes out, so the UI never sees a published frame
+    # with big=false while it still thinks the load finished.
+    self._set_loading(self._active is self._small)
     self._maybe_swap()
     active = self._active
     try:
@@ -144,6 +183,11 @@ class JoiningModelState:
     and costs the whole drive.
     """
 
+  def _set_loading(self, loading: bool) -> None:
+    if loading != self._loading:
+      self._loading = loading
+      self._params.put_bool("ChestnutLoading", loading)
+
   def _maybe_swap(self) -> None:
     if self._joined is None or self._engaged:
       return
@@ -166,10 +210,12 @@ class JoiningModelState:
       self._rejoin.set()
       return
     self._active = big
+    self._set_loading(False)
     cloudlog.warning("jetlink: large model joined mid-drive, modelV2.big is now true")
 
   def _demote(self) -> None:
     big, self._active = self._active, self._small
+    self._set_loading(True)
     close = getattr(big, 'close', None)
     if close is not None:
       try:
@@ -182,9 +228,13 @@ class JoiningModelState:
 
   def _join_loop(self) -> None:
     """Open the link and get the engine ready. No tinygrad in here."""
+    _background_priority()
     while not self._stop.is_set():
-      if not self._rejoin.wait(timeout=1.0):
-        continue
+      # No timeout: once joined there is nothing to poll for, and close() sets
+      # this to wake us. An idle wake per second is not free on modeld's core.
+      self._rejoin.wait()
+      if self._stop.is_set():
+        return
       self._rejoin.clear()
       try:
         client, spec = self._connect()
@@ -201,6 +251,7 @@ class JoiningModelState:
       cloudlog.warning("jetlink: link ready, waiting for a disengaged frame to swap")
 
   def _watch_engagement(self) -> None:
+    _background_priority()
     sm = messaging.SubMaster(['selfdriveState'])
     while not self._stop.is_set():
       sm.update(ENGAGEMENT_POLL_MS)

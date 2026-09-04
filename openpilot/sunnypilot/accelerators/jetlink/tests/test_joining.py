@@ -58,6 +58,14 @@ class JoiningTest(unittest.TestCase):
     patcher.start()
     self.addCleanup(patcher.stop)
 
+    self.params = {}
+    fake_params = mock.MagicMock()
+    fake_params.put_bool.side_effect = lambda k, v: self.params.__setitem__(k, v)
+    patcher = mock.patch('openpilot.sunnypilot.accelerators.jetlink.joining.Params',
+                         return_value=fake_params)
+    patcher.start()
+    self.addCleanup(patcher.stop)
+
     self.small = FakeModel('small')
     self.big = FakeModel('big', chestnut=True, client=object())
     self.joined = threading.Event()
@@ -138,6 +146,24 @@ class JoiningTest(unittest.TestCase):
     s._engaged = False
     self._run(s)
     self.assertEqual(self.big.lat_delay, 0.25)
+
+
+  def test_reports_loading_until_it_joins(self):
+    # The UI reads this to tell "not up yet" from "failed". modelV2.big is
+    # false for the whole join, and without this the UI calls that a failure
+    # and latches on it.
+    s = self._state()
+    self._run(s)
+    self.assertIs(self.params.get('ChestnutLoading'), True)
+
+    self.assertTrue(self.joined.wait(5.0))
+    s._engaged = False
+    self._run(s)
+    self.assertIs(self.params.get('ChestnutLoading'), False)
+
+    self.big.raises = RuntimeError("link gone")
+    self._run(s)
+    self.assertIs(self.params.get('ChestnutLoading'), True)
 
 
 class ContractTest(unittest.TestCase):

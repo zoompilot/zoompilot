@@ -227,18 +227,23 @@ class UIState(UIStateSP):
       return
 
     model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
+    running_big = model_seen and self.sm.alive["modelV2"] and self.sm["modelV2"].big
     if not self.chestnut_present:
       self.chestnut_state = ChestnutState.DISCONNECTED
     elif not self.chestnut_compiled:
       self.chestnut_state = ChestnutState.UNCOMPILED
-    elif self.chestnut_state == ChestnutState.FAILED or not detected or (model_seen and (not self.sm.alive["modelV2"] or not self.sm["modelV2"].big)):
-      self.chestnut_state = ChestnutState.FAILED
-    elif self.chestnut_loading or not model_seen:
-      self.chestnut_state = ChestnutState.LOADING
-    elif self.chestnut_active is False:
-      self.chestnut_state = ChestnutState.FAILED
-    else:
+    elif running_big:
       self.chestnut_state = ChestnutState.ACTIVE
+    elif self.chestnut_loading or not model_seen:
+      # Loading is asked before failed, and it clears a previous failure. An
+      # accelerator that is not on the comma's own power cannot always have its
+      # model up by the first frame, so it loads onto a running small model and
+      # says so here; modelV2.big stays false for the whole join and must not
+      # read as a failure. It also has to be able to lose the accelerator and
+      # get it back, which a latching failure would not allow.
+      self.chestnut_state = ChestnutState.LOADING
+    else:
+      self.chestnut_state = ChestnutState.FAILED
 
   def update_params(self) -> None:
     # For slower operations
