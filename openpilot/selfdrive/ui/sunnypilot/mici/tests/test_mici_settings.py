@@ -554,6 +554,62 @@ class TestAcceleratorProgressRenders:
       ui_state.accelerator_progress = None
 
 
+class TestAcceleratorIconState:
+  """The home screen and sidebar draw ui_state.chestnut_state. For a backend
+  the comma is the USB gadget for, the state has to come from deviceState and
+  the progress param, not from a USB id the comma will never enumerate."""
+
+  class FakeSM:
+    def __init__(self, present):
+      self.present = present
+      self.recv_frame = {"modelV2": 0}
+      self.alive = {"modelV2": False}
+
+    def __getitem__(self, name):
+      assert name == "deviceState"
+      return type("DS", (), {"chestnutPresent": self.present})()
+
+  def _state(self, present, compiled, progress):
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    saved = ui_state.sm, ui_state.started, ui_state.chestnut_compiled, ui_state.accelerator_progress
+    ui_state.sm, ui_state.started = self.FakeSM(present), False
+    ui_state.chestnut_compiled, ui_state.accelerator_progress = compiled, progress
+    try:
+      ui_state._update_chestnut_state()
+      return ui_state.chestnut_state
+    finally:
+      ui_state.sm, ui_state.started, ui_state.chestnut_compiled, ui_state.accelerator_progress = saved
+
+  def test_offroad_states(self, params):
+    from openpilot.selfdrive.ui.ui_state import ChestnutState
+    assert self._state(False, False, None) == ChestnutState.DISCONNECTED
+    assert self._state(True, True, None) == ChestnutState.READY
+    assert self._state(True, False, None) == ChestnutState.UNCOMPILED
+    assert self._state(True, False, {'stage': 'build', 'frac': 0.3}) == ChestnutState.LOADING
+    assert self._state(True, False, {'stage': 'failed', 'frac': 1.0}) == ChestnutState.FAILED
+
+  def test_a_present_accelerator_is_not_an_unknown_usb_device(self, params):
+    import time
+    from unittest import mock
+    from openpilot.selfdrive.ui import ui_state as module
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    saved = ui_state.usb_connected, ui_state.usb_connected_ts, ui_state.usb_unknown, ui_state.chestnut_present
+    try:
+      ui_state.usb_connected, ui_state.usb_connected_ts = True, time.monotonic() - 11.0
+      ui_state.usb_unknown, ui_state.chestnut_present = False, True
+      with mock.patch.object(module, 'read_int', return_value=1), \
+           mock.patch.object(module, 'get_usb_state', return_value=[]):
+        ui_state.update_params()
+      assert ui_state.usb_unknown is False
+      ui_state.usb_connected_ts, ui_state.chestnut_present = time.monotonic() - 11.0, False
+      with mock.patch.object(module, 'read_int', return_value=1), \
+           mock.patch.object(module, 'get_usb_state', return_value=[]):
+        ui_state.update_params()
+      assert ui_state.usb_unknown is True
+    finally:
+      ui_state.usb_connected, ui_state.usb_connected_ts, ui_state.usb_unknown, ui_state.chestnut_present = saved
+
+
 class TestAcceleratorLinkToggle:
   """The models panel's auto / on / off control over the accelerator link.
 

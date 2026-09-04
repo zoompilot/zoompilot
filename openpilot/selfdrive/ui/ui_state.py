@@ -222,8 +222,17 @@ class UIState(UIStateSP):
     detected = self.sm["deviceState"].chestnutPresent
     if not self.started:
       self.chestnut_present = detected
-      self.chestnut_state = (ChestnutState.READY if detected and self.chestnut_compiled else
-                             ChestnutState.UNCOMPILED if detected else ChestnutState.DISCONNECTED)
+      if not detected:
+        self.chestnut_state = ChestnutState.DISCONNECTED
+      elif self.chestnut_compiled:
+        self.chestnut_state = ChestnutState.READY
+      else:
+        # An accelerator that is being provisioned (a model downloading, an
+        # engine building for minutes) is loading, not broken. Only a
+        # provisioning that gave up reads as a failure.
+        stage = str((self.accelerator_progress or {}).get('stage', ''))
+        self.chestnut_state = (ChestnutState.FAILED if stage == 'failed' else
+                               ChestnutState.LOADING if stage else ChestnutState.UNCOMPILED)
       return
 
     model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
@@ -272,7 +281,12 @@ class UIState(UIStateSP):
         self.usb_connected_ts = now
         self.usb_unknown = False
       elif self.usb_connected_ts is not None and now - self.usb_connected_ts > 10.:
-        self.usb_unknown = not any(is_chestnut_usb_id(d["vendorId"], d["productId"], True) for d in get_usb_state())
+        # "Unknown" means a cable with nothing we recognise behind it. The id
+        # check only sees devices the comma enumerated as a USB host; an
+        # accelerator the comma is the gadget for is never in that list, so
+        # ask deviceState too, which every backend answers.
+        self.usb_unknown = not (self.chestnut_present or
+                                any(is_chestnut_usb_id(d["vendorId"], d["productId"], True) for d in get_usb_state()))
         self.usb_connected_ts = None
     elif self.usb_connected:
       if self.usb_disconnected_ts is None:
