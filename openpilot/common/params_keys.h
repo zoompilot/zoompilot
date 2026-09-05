@@ -305,4 +305,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
     // Ensures steer-to-zero Mazda torque defaults are seeded once.
     {"MazdaTorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},
+    // Tune version last seeded for the steer-to-zero Mazda EPS; a bump re-seeds everyone once.
+    {"MazdaTorqueTuneSeeded", {PERSISTENT | BACKUP, FLOAT}},
 };

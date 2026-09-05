@@ -33,17 +33,21 @@ def _seed_mazda_torque_defaults(CP: structs.CarParams, params: Params | None = N
   """One-time: default the torque-control stack ON for steer-to-zero Mazdas (the 2022+ CX-5 EPS).
 
   Gated on the EPS flag, not the model, so the CX-9 sharing this EPS and EPS swaps are covered.
-  The three toggles are seeded once behind a marker so the user can turn them off later. The v2
-  tune is seeded whenever the param is unset, independent of the marker, so an explicit user
-  choice is kept and TorqueControlTune's declared default stays 0.0 for every other brand.
+  Both seeds sit behind markers, because manager_init materializes every declared default at
+  boot: TorqueControlTune is already 0.0 on disk by the time card runs, so "unset" never
+  survives to here. The three toggles are seeded once behind MazdaTorqueDefaultsApplied. The
+  tune is seeded once per value of MAZDA_STEER_TO_ZERO_TORQUE_TUNE, recorded in
+  MazdaTorqueTuneSeeded, so a later bump moves everyone again while a choice made after the
+  seed is kept. TorqueControlTune's declared default stays 0.0 for every other brand.
   """
   if params is None:
     params = Params()
 
   if CP.brand != "mazda" or not (CP.flags & MazdaFlags.STEER_TO_ZERO_EPS):
     return
-  if params.get("TorqueControlTune") is None:
+  if params.get("MazdaTorqueTuneSeeded") != MAZDA_STEER_TO_ZERO_TORQUE_TUNE:
     params.put("TorqueControlTune", MAZDA_STEER_TO_ZERO_TORQUE_TUNE, block=True)  # controlsd reads it at startup
+    params.put("MazdaTorqueTuneSeeded", MAZDA_STEER_TO_ZERO_TORQUE_TUNE, block=True)
     cloudlog.warning("Seeded steer-to-zero Mazda TorqueControlTune=%s", MAZDA_STEER_TO_ZERO_TORQUE_TUNE)
   if params.get_bool("MazdaTorqueDefaultsApplied"):
     return
@@ -54,6 +58,22 @@ def _seed_mazda_torque_defaults(CP: structs.CarParams, params: Params | None = N
   params.put_bool("MazdaTorqueDefaultsApplied", True)
   cloudlog.warning("Seeded steer-to-zero Mazda torque-control defaults (EnforceTorqueControl, self-tune, speed-dependent)")
 
+
+def seed_car_defaults_offroad(params: Params) -> None:
+  """manager_init hook: apply the per-car seeds from the last drive's CarParams, so a device
+  that updated offroad shows and runs the seeded defaults without waiting for card to
+  fingerprint. A device that has never driven is seeded by card on its first drive."""
+  CP_bytes = params.get("CarParamsPersistent")
+  if CP_bytes is None:
+    return
+  try:
+    from openpilot.cereal import messaging  # lazy: keep manager_init's import cost down
+    from opendbc.car.structs import car
+    CP = messaging.log_from_bytes(CP_bytes, car.CarParams)
+  except Exception:
+    cloudlog.exception("seed_car_defaults_offroad: could not parse CarParamsPersistent")
+    return
+  _seed_mazda_torque_defaults(CP, params)
 
 def _enforce_torque_lateral_control(CP: structs.CarParams, params: Params | None = None, enabled: bool = False) -> bool:
   if params is None:
