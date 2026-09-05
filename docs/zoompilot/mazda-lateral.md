@@ -193,10 +193,18 @@ every rolling manoeuvre into noise. On the 2022 EPS `steerFaultTemporary` is
 `steer_undelivered_alert`, which arms only when the latch has held for a further
 `STEER_UNDELIVERED_ALERT_FRAMES` (80 frames, one second all-in) and the car is at or above
 `STEER_UNDELIVERED_ALERT_MIN_SPEED` (12 mph) and the EPS is not flagging the block as its own
-low-speed standby (`LKAS_TRACK_STATE`, below). selfdrived turns it into "Steering Assist
-Temporarily Unavailable" (silent while the driver is on the wheel, escalating to a soft disable
-hands-off, which under MADS drops lateral after 3 s), the drivable version of the camera's
-ERR_BIT_1 permanent fault. It clears with the latch when the block ends.
+low-speed standby (`LKAS_TRACK_STATE`, below). Upstream turns `steerFaultTemporary` into
+"Steering Assist Temporarily Unavailable" as a warning while the driver is on the wheel and a
+soft disable hands-off: "TAKE CONTROL IMMEDIATELY", the loud chime, and under MADS the loss of
+lateral 3 s later. On this EPS the sunnypilot car-specific hook (`car_specific.py`) swaps the
+event for its `steerTempUnavailableSilent` form before the state machine sees it, so the driver
+gets the small banner and one prompt chime and keeps whatever control state they were in. The
+latch has already zeroed the command, so a soft disable would protect nothing the latch does not;
+on the launches that armed it the block released within 0.7 s, well inside the 3 s soft-disable
+timer, so all the escalation ever did was shout. The trade is that with ACC engaged the car
+keeps its longitudinal through a road-speed steering dropout on the strength of the banner; on
+the corpus that case is the three real blocks below, two of them followed by the camera's own
+permanent fault. The banner clears with the latch when the block ends.
 
 Below manoeuvring speed nothing is reported: an EPS applying nothing there is normal (77% of all
 LKAS_BLOCK duty sits under 2 m/s, and 91.5% of the standstill and creep block under 1 m/s), the
@@ -215,18 +223,35 @@ overall, 22% at 1.5 to 2 m/s2 and 57% at 2 to 3 m/s2. Routes 0000014f (segs 14, 
 before the block released at 6.3 to 6.5 m/s, with the driver on the gas and not one rejected
 0x243 frame. The earlier "release band max 5.39 m/s" was a 38-episode subset.
 
-What separates the two kinds of block is the EPS's own `LKAS_TRACK_STATE`. It is set for the
-whole of a block that began at standstill (the low-speed standby; `TRACK_STATE = 1` implies
-`LKAS_BLOCK = 1` over 16k frames with no exception) and clear for a block that began at speed,
-which is an EPS that dropped LKAS mid-delivery: route 148's fault block (began at 4.6 m/s,
-`TRACK_STATE = 0` throughout), route 139's (set on its first frame only), the permanent fault on
-00000013 seg 0 and an EPS dropout at 17 m/s on 00000102 seg 0. Replaying the alert over 3980
-segments gives 51 firings: 48 launches, every one with `TRACK_STATE` set for the entire block,
-and those 3 blocks that began at speed, every one with it clear. The alert therefore also
-requires `TRACK_STATE` clear, read at arming like the speed. The latch itself is unchanged: the
-command is still zeroed through a launch block, only the banner is withheld. The five
-launch-classified episodes with `TRACK_STATE` clear are all the EPS initialising at ignition,
-before any request was sent, so they cannot latch.
+The EPS's own `LKAS_TRACK_STATE` separates most of them. It is set through a block that began
+at standstill (the low-speed standby; `TRACK_STATE = 1` implies `LKAS_BLOCK = 1` over 16k frames
+with no exception) and clear for a block that began at speed, which is an EPS that dropped LKAS
+mid-delivery: route 148's fault block (began at 4.6 m/s, `TRACK_STATE = 0` throughout), route
+139's (set on its first frame only), the permanent fault on 00000013 seg 0 and an EPS dropout at
+17 m/s on 00000102 seg 0. The alert therefore requires `TRACK_STATE` clear, read at arming like
+the speed. The latch itself is unchanged: the command is still zeroed through a launch block,
+only the banner is withheld.
+
+`TRACK_STATE` is not enough on its own, and the first replay that said it was (51 firings over
+3980 segments, 48 launches all with the bit set throughout) was wrong. Replaying the shipped
+state machine itself over every captured drive (`tools/mazda_long/replay_undelivered_alert.py`,
+4005 CX-5 2022 segments, 64 h, the mirror checked frame for frame against `carstate.py`) gives
+12 armings with the `TRACK_STATE` gate: the 3 real blocks above and 9 more that are not. Those
+nine all began at 0.0 to 0.1 m/s and lasted 13 to 44 s while the car crawled at up to 5.5 to
+7.2 m/s, a standby the EPS carried from a stop through slow traffic, and in each the bit
+cleared with the block still on. None has a rejected 0x243 frame or a camera fault anywhere near
+it. What separates them from the three real blocks without exception is where the block began:
+the real ones at 4.6, 17.3 and 20.3 m/s, the standbys at a stop. Of the 1915 `LKAS_BLOCK`
+episodes in the corpus, 1660 begin below 0.5 m/s (a stop, read through wheel-speed
+quantisation), 57 between 0.5 and 3 m/s (none of which ever latched) and every latched block
+that began above 3 m/s and reached the alert was a fault. The alert therefore also requires the
+block to have begun at or above `STEER_UNDELIVERED_ALERT_ORIGIN_SPEED` (1 m/s), the speed read
+on the block's first frame and held until it releases. With it, the corpus arms 3 times in 64 h,
+each one a real dropout, and the same 3 whether the hold is 1, 2 or 3 s or the `TRACK_STATE`
+gate is kept or dropped (it is kept). Longer holds or higher speed gates alone do not get there:
+3 s still lets one crawl through and 20 mph loses route 148. The cost is a block that began at a
+stop and then really did die mid-drive, which stays a silent latch until the camera's ERR_BIT_1
+reports it.
 
 Above that speed a total block is already abnormal, so the hold only has to clear the transients:
 over the corpus, non-delivery runs above 10 mph reach 30 frames (0.35 s) on every route that never
@@ -305,6 +330,7 @@ drive ambiguous and left the panda and software latches able to drift after a pr
 | `STEER_UNDELIVERED_FRAMES` | 20 (200 ms) | benign zero-delivery runs max 2 frames, blocked runs 183 | 96k unblocked frames |
 | `STEER_UNDELIVERED_ALERT_FRAMES` | 80 (0.8 s on top of the latch) | benign runs above 10 mph max 30 frames, faults 315 | corpus |
 | `STEER_UNDELIVERED_ALERT_MIN_SPEED` | 12 mph (5.36 m/s) | block release median 3.13, p90 4.97, max 5.39 m/s (38 episodes); fault began at 5.9 | 00000148 |
+| `STEER_UNDELIVERED_ALERT_ORIGIN_SPEED` | 1.0 m/s | 1660 of 1915 blocks begin below 0.5 m/s; every latched block that began above and armed was a fault, slowest 4.6 | corpus, replay_undelivered_alert.py |
 | `steerActuatorDelay` | 0.14 s (2022 EPS) / 0.1 s | lagd 0.338 total on a CX-5 2022 | corpus |
 | `steerRatio` (CX-5 2022) | 18.1 | paramsd learner, 2.9M samples | corpus |
 | `LKAS_LIMITS.DISABLE_SPEED` / `ENABLE_SPEED` | 45 / 52 kph | pre-2022 EPS lockout hysteresis | upstream |

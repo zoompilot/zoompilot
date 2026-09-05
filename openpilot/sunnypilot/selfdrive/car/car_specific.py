@@ -9,6 +9,7 @@ from openpilot.cereal import log, custom
 from opendbc.car import structs
 
 from opendbc.car.chrysler.values import RAM_DT
+from opendbc.car.mazda.values import MazdaFlags
 from openpilot.selfdrive.selfdrived.events import Events
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
@@ -47,5 +48,14 @@ class CarSpecificEventsSP:
         if CS.cruiseState.standstill and not CS.brakePressed and self.CP_SP.enableGasInterceptor:
           if events.has(EventName.resumeRequired):
             events.remove(EventName.resumeRequired)
+
+    elif self.CP.brand == 'mazda':
+      if self.CP.flags & MazdaFlags.STEER_TO_ZERO_EPS and events.has(EventName.steerTempUnavailable):
+        # steerFaultTemporary on this EPS is the non-delivery latch reporting a sustained
+        # road-speed block. The latch has already zeroed the command, so there is nothing
+        # for a soft disable to protect; it only costs MADS its lateral after 3 s and
+        # shouts at the driver. Keep the banner, drop the escalation.
+        events.remove(EventName.steerTempUnavailable)
+        events.add(EventName.steerTempUnavailableSilent)
 
     return events_sp
