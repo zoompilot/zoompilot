@@ -91,8 +91,50 @@ class JoiningTest(unittest.TestCase):
     self.addCleanup(s.close)
     return s
 
+  def _wait_joined(self, s, timeout=5.0):
+    # connect() returning is not publication: wait for the owner to hand off.
+    deadline = time.monotonic() + timeout
+    while s._joined is None and time.monotonic() < deadline:
+      time.sleep(0.001)
+    self.assertIsNotNone(s._joined)
+
   def _run(self, s):
+    s._engagement_updated = time.monotonic()
     return s.run({}, {}, {})
+
+  def test_stalled_watcher_cannot_leave_a_swap_window_open(self):
+    s = self._state()
+    s._engaged, s._standstill = False, True
+    s._engagement_updated = time.monotonic() - 1.0
+    self.assertFalse(s._window_open)
+
+  def test_missing_or_invalid_messages_close_both_swap_windows(self):
+    from types import SimpleNamespace
+    sm = mock.MagicMock()
+    states = {'selfdriveState': SimpleNamespace(enabled=False), 'carState': SimpleNamespace(standstill=True),
+              'carControl': SimpleNamespace(latActive=False, longActive=False)}
+    sm.__getitem__.side_effect = states.__getitem__
+    s = self._state()
+    for failed in states:
+      for check in ('seen', 'alive', 'valid'):
+        sm.seen = dict.fromkeys(states, True)
+        sm.alive = sm.seen.copy()
+        sm.valid = sm.seen.copy()
+        s._update_engagement(sm)
+        self.assertTrue(s._window_open)
+        getattr(sm, check)[failed] = False
+        # No updated flag: liveness expiry must still close the window.
+        s._update_engagement(sm)
+        self.assertFalse(s._window_open)
+    sm.seen = dict.fromkeys(states, True)
+    sm.alive = sm.seen.copy()
+    sm.valid = sm.seen.copy()
+    states['carState'].standstill = False
+    for active in ('latActive', 'longActive'):
+      states['carControl'].latActive = active == 'latActive'
+      states['carControl'].longActive = active == 'longActive'
+      s._update_engagement(sm)
+      self.assertFalse(s._window_open)
 
   def test_runs_the_small_model_immediately(self):
     s = self._state()
@@ -103,34 +145,32 @@ class JoiningTest(unittest.TestCase):
 
   def test_does_not_swap_while_engaged_and_moving(self):
     s = self._state()
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged, s._standstill = True, False
     for _ in range(3):
       self.assertEqual(self._run(s), {'from': 'small'})
     self.assertFalse(s.chestnut)
     self.assertFalse(self.big.warmed)
 
-  def test_swaps_at_a_standstill_while_engaged(self):
-    # The drive that gave nothing else: engaged on the ramp, off at the exit.
-    # Stopped, the plan is steering nothing, so the step lands on nothing and
-    # the Jetson gets used instead of sitting ready for an hour.
+  def test_does_not_swap_at_a_standstill_while_engaged(self):
+    # Even stopped, longitudinal control can hold the brake or request motion.
     s = self._state()
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged, s._standstill = True, True
-    self.assertEqual(self._run(s), {'from': 'big'})
-    self.assertTrue(s.chestnut)
+    self.assertEqual(self._run(s), {'from': 'small'})
+    self.assertFalse(s.chestnut)
 
   def test_a_standstill_the_car_stopped_reporting_is_not_a_window(self):
     # sm.alive goes false when carState stops arriving. A stale "stopped" must
     # not open a window on a car that is actually moving.
     s = self._state()
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged, s._standstill = True, False
     self.assertEqual(self._run(s), {'from': 'small'})
 
   def test_swaps_on_a_disengaged_frame(self):
     s = self._state()
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged = False
     self.assertEqual(self._run(s), {'from': 'big'})
     self.assertTrue(s.chestnut)
@@ -141,7 +181,7 @@ class JoiningTest(unittest.TestCase):
 
   def test_large_model_failure_demotes_and_keeps_the_frame(self):
     s = self._state()
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged = False
     self._run(s)
     self.assertTrue(s.chestnut)
@@ -150,22 +190,53 @@ class JoiningTest(unittest.TestCase):
     # modeld still gets an output for this frame, from the small model.
     self.assertEqual(self._run(s), {'from': 'small'})
     self.assertFalse(s.chestnut)
+    for _ in range(100):
+      if self.big.closed:
+        break
+      time.sleep(0.01)
     self.assertTrue(self.big.closed)
     # And it tries again rather than staying small for the rest of the drive.
-    self.assertTrue(s._rejoin.is_set() or self.connect_calls > 1)
+    self.assertTrue(s._rejoin_at > time.monotonic() or self.connect_calls > 1)
 
   def test_failed_first_inference_never_announces_ready(self):
     s = self._state()
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged = False
     self.big.raises = RuntimeError('first inference failed')
     self.assertEqual(self._run(s), {'from': 'small'})
     self.assertIs(self.params.get('ChestnutLoading'), True)
     self.assertNotIn('ChestnutActive', self.params)
 
+  def test_fallback_resets_history_without_waiting_for_teardown(self):
+    entered, release = threading.Event(), threading.Event()
+    reset = mock.Mock()
+
+    def close():
+      entered.set()
+      release.wait(2)
+
+    self.big.close = close
+    s = JoiningModelState(1928, 1208, self.small, self._connect, self._build, reset_small=reset)
+    self.addCleanup(s.close)
+    self.addCleanup(release.set)
+    self._wait_joined(s)
+    s._engaged = False
+    self._run(s)
+    self.big.raises = RuntimeError('failed')
+    run = self.small.run
+
+    def small_run(*args):
+      reset.assert_called_once()
+      return run(*args)
+
+    self.small.run = small_run
+    self.assertEqual(self._run(s), {'from': 'small'})
+    self.assertTrue(entered.wait(1))
+    self.assertFalse(release.is_set())
+
   def test_ready_is_written_only_after_inference_returns(self):
     s = self._state()
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged = False
     run = self.big.run
 
@@ -179,7 +250,7 @@ class JoiningTest(unittest.TestCase):
     self.assertIs(self.params.get('ChestnutActive'), True)
     self.assertIs(self.params.get('ChestnutLoading'), False)
 
-  def test_prepare_runs_in_the_constructor_and_its_failure_is_survived(self):
+  def test_prepare_failure_uses_startup_fallback_not_a_slow_swap(self):
     order = []
     self.connect_calls = 0
 
@@ -187,17 +258,14 @@ class JoiningTest(unittest.TestCase):
       order.append('prepare')
       raise RuntimeError("no warp today")
 
-    s = JoiningModelState(1928, 1208, self.small, self._connect, self._build, prepare)
-    self.addCleanup(s.close)
+    with self.assertRaisesRegex(RuntimeError, 'no warp today'):
+      JoiningModelState(1928, 1208, self.small, self._connect, self._build, prepare)
     # Ran, and ran before anything else: modeld's main thread is blocked for
     # exactly as long as the constructor takes, so this is the only place the
     # GPU work can go without costing a frame.
     self.assertEqual(order, ['prepare'])
-    self.assertEqual(self._run(s), {'from': 'small'})
-    # Still joins; the swap will just pay for the warp itself.
-    self.assertTrue(self.joined.wait(5.0))
-    s._engaged = False
-    self.assertEqual(self._run(s), {'from': 'big'})
+    self.assertEqual(self.connect_calls, 0)
+    self.assertFalse(self.big.warmed)
 
   def test_loading_has_no_deadline(self):
     # It used to end at 60 s because it was a NO_ENTRY in selfdrived. It is not
@@ -217,7 +285,7 @@ class JoiningTest(unittest.TestCase):
     # A join that succeeds later still swaps.
     self.connect_error = None
     s._rejoin.set()
-    self.assertTrue(self.joined.wait(10.0))
+    self._wait_joined(s, 10.0)
     s._engaged = False
     for _ in range(20):
       if self._run(s) == {'from': 'big'}:
@@ -238,7 +306,7 @@ class JoiningTest(unittest.TestCase):
     self.assertNotIn('ChestnutActive', self.params)
     self.assertTrue(s.loading)
 
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged = False
     self._run(s)
     self.assertIs(self.params.get('ChestnutActive'), True)
@@ -255,7 +323,7 @@ class JoiningTest(unittest.TestCase):
     self._build = mock.Mock(side_effect=RuntimeError("no warp"))
     s = JoiningModelState(1928, 1208, self.small, self._connect, self._build)
     self.addCleanup(s.close)
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged = False
     self.assertEqual(self._run(s), {'from': 'small'})
     # Not straight back onto the link: the next attempt waits REJOIN_DELAY.
@@ -280,7 +348,7 @@ class JoiningTest(unittest.TestCase):
     with mock.patch('openpilot.sunnypilot.accelerators.jetlink.joining.KEEPALIVE_PERIOD', 0.05), \
          mock.patch('openpilot.sunnypilot.accelerators.jetlink.joining.REJOIN_DELAY', 0.05):
       s = self._state()
-      self.assertTrue(self.joined.wait(5.0))
+      self._wait_joined(s)
       # Never a window, so nothing consumes it; the ping is what notices.
       s._engaged, s._standstill = True, False
       clients[0].ping.side_effect = RuntimeError("jetson rebooted")
@@ -291,7 +359,7 @@ class JoiningTest(unittest.TestCase):
       self.assertGreater(len(clients), 1, "a dead pending link was never reopened")
       clients[0].close.assert_called()
       # And the fresh one is what the window eventually gets.
-      s._standstill = True
+      s._engaged = False
       for _ in range(40):
         if self._run(s) == {'from': 'big'}:
           break
@@ -327,7 +395,7 @@ class JoiningTest(unittest.TestCase):
     s = self._state()
     s.lat_delay = 0.25
     self.assertEqual(self.small.lat_delay, 0.25)
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged = False
     self._run(s)
     self.assertEqual(self.big.lat_delay, 0.25)
@@ -341,7 +409,7 @@ class JoiningTest(unittest.TestCase):
     self._run(s)
     self.assertIs(self.params.get('ChestnutLoading'), True)
 
-    self.assertTrue(self.joined.wait(5.0))
+    self._wait_joined(s)
     s._engaged = False
     self._run(s)
     self.assertIs(self.params.get('ChestnutLoading'), False)

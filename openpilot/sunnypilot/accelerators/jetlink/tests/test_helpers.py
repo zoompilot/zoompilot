@@ -247,6 +247,25 @@ class TestSelectedModel(unittest.TestCase):
       assert helpers.selected_model() is None
 
 
+class TestSelectedModelReadiness(unittest.TestCase):
+  def test_old_cached_engine_is_not_the_new_selection(self):
+    from types import SimpleNamespace
+    from openpilot.sunnypilot.accelerators.jetlink import backend
+
+    accel = backend.JetlinkAccelerator()
+    with mock.patch.object(helpers, 'enabled', return_value=True), \
+         mock.patch.object(helpers, 'engine_ready_for', return_value=True), \
+         mock.patch.object(backend.spec_cache, 'load', return_value=SimpleNamespace(sha256='a' * 64)), \
+         mock.patch.object(helpers, 'selected_model', return_value={'oid': 'b' * 64}) as selected:
+      self.assertFalse(accel.ready())
+      client = mock.Mock()
+      with self.assertRaisesRegex(RuntimeError, 'not been provisioned'):
+        accel._open_link(client)
+      client.close.assert_called_once()
+      selected.return_value = {'oid': 'a' * 64}
+      self.assertTrue(accel.ready())
+
+
 class TestShippedModelPath(unittest.TestCase):
   """A file counts only when it is the model we mean, at the size we expect.
   Models live one file per oid so switching back does not re-download."""

@@ -43,7 +43,7 @@ from openpilot.sunnypilot.accelerators.jetlink import warp_cache
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
-SLOW_FRAME = 0.08  # seconds; past this a frame is worth a log line
+SLOW_FRAME = 0.05  # the full 20 Hz budget, not just the largest outliers
 
 
 class JetlinkModelState(ModelStateBase):
@@ -170,8 +170,14 @@ class JetlinkModelState(ModelStateBase):
     # modeldLagging, and "send" (the gadget write blocking until the host
     # reads) against "reply" (the Jetson's turnaround) says which end it was.
     if self._frame_id <= 3 or t4 - t0 > SLOW_FRAME:
-      cloudlog.warning("jetlink: frame %d warp %.1f data %.1f send %.1f reply %.1f ms", self._frame_id,
-                       (t1 - t0) * 1e3, (t2 - t1) * 1e3, (t3 - t2) * 1e3, (t4 - t3) * 1e3)
+      # These timings already arrive in every response. Persist them on the
+      # comma so a drive can distinguish server execution from receive stalls
+      # even when the Jetson is offline afterwards. Server total excludes USB.
+      gpu_us, queue_us, total_us = self.client.last_timings
+      cloudlog.warning("jetlink: frame %d warp %.1f data %.1f send %.1f reply %.1f ms; "
+                       + "server gpu %.1f queue %.1f total %.1f ms", self._frame_id,
+                       (t1 - t0) * 1e3, (t2 - t1) * 1e3, (t3 - t2) * 1e3, (t4 - t3) * 1e3,
+                       gpu_us / 1e3, queue_us / 1e3, total_us / 1e3)
 
     # The non-finite guard that upstream's ModelState.run does here runs on the
     # server instead (session.on_infer), which reports Status.NOT_FINITE; the

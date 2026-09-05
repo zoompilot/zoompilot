@@ -120,6 +120,8 @@ def link_configured() -> bool:
   attempt on a host already being there deadlocks - the Jetson can never
   enumerate because nobody ever presented the gadget to it.
   """
+  if gadget_error() is not None:
+    return False
   if link_endpoint() is not None:
     return True
   try:

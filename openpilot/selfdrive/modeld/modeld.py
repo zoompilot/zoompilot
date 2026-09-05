@@ -160,7 +160,7 @@ def main(demo=False):
   # its PCIe link is trained and before 12V is up; a jetlink can be mid-attach.
   # prepare() is where a backend waits for the real thing and may still say no,
   # because active() has to stay cheap enough for the UI to call it.
-  CHESTNUT = accel is not None and accel.prepare()
+  CHESTNUT = accel is not None and accelerators.prepare(accel)
   params = Params()
   params.put_bool("ChestnutLoading", CHESTNUT)
   if accel is not None and not CHESTNUT:

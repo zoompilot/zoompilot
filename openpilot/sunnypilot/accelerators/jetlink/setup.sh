@@ -26,6 +26,14 @@ fi
 ln -sfn "$REPO/jetlink" "$BASEDIR/jetlink"
 [ -f /AGNOS ] || exit 0
 
+# Do not silently pair a new fork with an old manually copied client package.
+# Validation is startup-only, before modeld or the gadget owner runs.
+LOCK="$BASEDIR/openpilot/sunnypilot/accelerators/jetlink/release.json"
+if ! python3 "$REPO/scripts/verify_release.py" "$REPO" "$LOCK" >/dev/null; then
+  echo "error: jetlink package does not match this openpilot release; reinstall the pinned package" > "$STATUS"
+  exit 0
+fi
+
 # The endpoints have to exist before jetlinkd or modeld can open them, and
 # configuring a gadget needs root while the launcher runs as comma. Do not
 # silence a failure: setup_gadget.sh leaves the reason in $STATUS, which is what

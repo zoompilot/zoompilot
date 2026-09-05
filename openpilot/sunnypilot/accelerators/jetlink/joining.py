@@ -39,14 +39,9 @@ Two rules the swap has to respect, both learned the hard way:
   FRAME_TIMEOUT, and a stall that long is enough dropped frames to raise
   modeldLagging, which is a soft disable.
 
-  Disengaged is the obvious window. Standstill is the other one, and it is the
-  one that makes this usable: a driver who engages on the ramp and lifts off at
-  their exit gives us no disengaged frame for the whole drive, and "the Jetson
-  was ready the whole time and never got used" is the complaint that shape of
-  drive produces. At a standstill the plan is not turning a wheel or asking for
-  acceleration, so the step lands on nothing. A drive that is neither - engaged
-  from the driveway to the destination without ever stopping - still runs
-  small, on purpose.
+  Require fresh, fully disengaged controls. Standstill alone is insufficient:
+  longitudinal control may still hold the brake or request a restart. A driver
+  who remains engaged keeps the current model until they disengage.
 """
 from __future__ import annotations
 
@@ -71,6 +66,7 @@ REJOIN_DELAY = 5.0
 REJOIN_DELAY_MAX = 60.0
 STABLE_SECONDS = 60.0
 ENGAGEMENT_POLL_MS = 100
+ENGAGEMENT_MAX_AGE = 0.25
 # How often a link that is ready but has nowhere to land gets checked, and how
 # long its check may take. Both are off the frame loop.
 KEEPALIVE_PERIOD = 10.0
@@ -106,18 +102,19 @@ def _background_priority() -> None:
 class JoiningModelState:
   """Duck-types selfdrive.modeld.modeld.ModelState, with a second one inside."""
 
-  def __init__(self, cam_w: int, cam_h: int, small, connect, build, prepare=None):
+  def __init__(self, cam_w: int, cam_h: int, small, connect, build, prepare=None, reset_small=None):
     self._small = small
     self._active = small
     self._cam = (cam_w, cam_h)
     self._connect = connect
     self._build = build
+    self._reset_small = reset_small
 
     # Whatever the swap would otherwise have to do on the frame loop, done now
     # instead. modeld constructs this from its loader thread and waits for it
     # on the main thread, so the GPU is idle and no frame can be dropped;
-    # measured on the car, doing it at the swap cost a 1.5 s frame. Failing
-    # here is survivable: build() then does the work at the swap, slowly.
+    # measured on the car, doing it at the swap cost a 1.5 s frame. Failure
+    # stays on modeld's startup fallback path, never a later driving frame.
     if prepare is not None:
       try:
         t0 = time.monotonic()
@@ -125,10 +122,12 @@ class JoiningModelState:
         cloudlog.warning("jetlink: prepared the large model ahead of the swap in %.2f s", time.monotonic() - t0)
       except Exception:
         cloudlog.exception("jetlink: could not prepare the large model ahead of the swap")
+        raise
 
     # Handed over by the joining thread, consumed by whichever modeld frame
     # first finds it safe to swap. Only ever assigned under the lock.
     self._joined: tuple[object, object] | None = None
+    self._retired = None
     self._lock = threading.Lock()
     self._rejoin = threading.Event()
     self._rejoin.set()
@@ -148,6 +147,7 @@ class JoiningModelState:
     # 100 Hz, so this is true within a frame or two of modeld starting.
     self._engaged = True
     self._standstill = False
+    self._engagement_updated = 0.0
     self._stop = threading.Event()
 
     # The two params modeld normally writes once the load is over are ours for
@@ -229,6 +229,8 @@ class JoiningModelState:
         raise
       cloudlog.exception("jetlink: large model failed mid-drive, back to the small model")
       self._demote()
+      if self._reset_small is not None:
+        self._reset_small()
       # Re-run the frame rather than propagate. modeld's fallback would take the
       # same decision and make it permanent; this one is retryable, which is
       # what a Jetson that rebooted or a cable that was nudged actually needs.
@@ -268,8 +270,9 @@ class JoiningModelState:
 
   @property
   def _window_open(self) -> bool:
-    # See the module docstring: disengaged, or engaged but stopped.
-    return not self._engaged or self._standstill
+    # Standstill does not make an active longitudinal controller safe to swap.
+    fresh = 0 <= time.monotonic() - self._engagement_updated < ENGAGEMENT_MAX_AGE
+    return fresh and not self._engaged
 
   def _maybe_swap(self) -> None:
     if self._joined is None or not self._window_open:
@@ -290,10 +293,8 @@ class JoiningModelState:
       cloudlog.warning("jetlink: built the large model state in %.0f ms", (time.monotonic() - t0) * 1000)
     except Exception:
       cloudlog.exception("jetlink: could not bring up the large model, staying small")
-      try:
-        client.close()
-      except Exception:
-        pass
+      with self._lock:
+        self._retired = client
       # Backed off like a demote: a build that fails the same way every time
       # would otherwise be a connect and a build per second for the drive.
       self._back_off()
@@ -306,13 +307,18 @@ class JoiningModelState:
       self._set_active(False)
     self._set_loading(True)
     self._report('connect', 'lost the jetson, reconnecting')
-    close = getattr(big, 'close', None)
-    if close is not None:
-      try:
-        close()
-      except Exception:
-        cloudlog.exception("jetlink: closing the failed large model")
+    with self._lock:
+      self._retired = big
     self._back_off()
+
+  def _close_retired(self) -> None:
+    with self._lock:
+      retired, self._retired = self._retired, None
+    if retired is not None:
+      try:
+        retired.close()
+      except Exception:
+        cloudlog.exception('jetlink: closing the retired link')
 
   def _back_off(self) -> None:
     """Push the next attempt out, and further each time one fails on its heels.
@@ -351,6 +357,9 @@ class JoiningModelState:
       # No timeout: once joined there is nothing to poll for, and close() sets
       # this to wake us. An idle wake per second is not free on modeld's core.
       self._rejoin.wait()
+      # Unbind and reader joins can block. Only this background owner does
+      # teardown, and it finishes before opening another link.
+      self._close_retired()
       if self._stop.is_set():
         return
       self._rejoin.clear()
@@ -368,9 +377,12 @@ class JoiningModelState:
         self._rejoin.set()
         continue
       with self._lock:
+        if self._stop.is_set():
+          client.close()
+          return
         self._joined = (client, spec)
       cloudlog.warning("jetlink: link ready, waiting for a window to swap")
-      self._report('connect', 'ready, waiting for a safe moment')
+      self._report('connect', 'ready; disengage to switch models')
       self._keep_alive()
 
   def _keep_alive(self) -> None:
@@ -389,7 +401,9 @@ class JoiningModelState:
     lock waiting for a ping to finish, because _maybe_swap does not take the
     lock at all when _joined is None.
     """
-    while not self._stop.wait(KEEPALIVE_PERIOD):
+    while not self._stop.is_set():
+      if self._rejoin.wait(KEEPALIVE_PERIOD):
+        return
       with self._lock:
         joined, self._joined = self._joined, None
       if joined is None:
@@ -414,16 +428,20 @@ class JoiningModelState:
 
   def _watch_engagement(self) -> None:
     _background_priority()
-    sm = messaging.SubMaster(['selfdriveState', 'carState'])
+    sm = messaging.SubMaster(['selfdriveState', 'carState', 'carControl'])
     while not self._stop.is_set():
       sm.update(ENGAGEMENT_POLL_MS)
-      if sm.updated['selfdriveState']:
-        self._engaged = sm['selfdriveState'].enabled
-      if sm.updated['carState']:
-        # Only believed while the car is actually talking to us. A carState
-        # that stopped arriving must not read as "stopped" and open a window
-        # that is not there.
-        self._standstill = sm.alive['carState'] and sm['carState'].standstill
+      self._update_engagement(sm)
+
+  def _update_engagement(self, sm) -> None:
+    # Recheck on every poll, including polls with no new messages: that is
+    # when alive turns false. Expire the snapshot on the frame thread too,
+    # so a stalled or failed watcher cannot leave a swap window open.
+    valid = all(sm.seen[s] and sm.alive[s] and sm.valid[s] for s in ('selfdriveState', 'carState', 'carControl'))
+    # Forks can keep lateral control active independently of enabled (MADS).
+    self._engaged = not valid or sm['selfdriveState'].enabled or sm['carControl'].latActive or sm['carControl'].longActive
+    self._standstill = valid and sm['carState'].standstill
+    self._engagement_updated = time.monotonic()
 
   def close(self) -> None:
     self._stop.set()

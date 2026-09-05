@@ -743,6 +743,18 @@ class TestAcceleratorLinkToggle:
     toggle.refresh()
     assert toggle.value == toggle._options[LINK_STATES.index("off")]
 
+  def test_link_toggle_cannot_change_runner_after_ignition(self, params):
+    from unittest import mock
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle
+
+    toggle = AcceleratorLinkToggle()
+    before = params.get(self.PARAM)
+    with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=False), \
+         mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.write_link_state') as write:
+      toggle._store('on')
+      write.assert_not_called()
+    assert params.get(self.PARAM) == before
+
   def test_layout_hides_the_toggle_until_it_means_something(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
 

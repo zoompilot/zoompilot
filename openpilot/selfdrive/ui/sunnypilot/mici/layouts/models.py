@@ -44,6 +44,7 @@ def write_link_state(state: str) -> None:
       ui_state.params.remove(LINK_PARAM)
     else:
       ui_state.params.put_bool(LINK_PARAM, state == "on", block=True)
+    ui_state.params.remove('ModelRunnerTypeCache')
   except Exception:
     pass  # the same unknown-key case as the read; nothing the panel can do about it
 
@@ -69,6 +70,8 @@ class AcceleratorLinkToggle(BigMultiToggle):
     self.refresh()
 
   def _store(self, label: str) -> None:
+    if not ui_state.is_offroad():
+      return
     write_link_state(LINK_STATES[self._options.index(label)])
 
   def refresh(self) -> None:

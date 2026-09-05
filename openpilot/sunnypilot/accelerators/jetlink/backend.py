@@ -138,10 +138,12 @@ class JetlinkAccelerator:
   def ready(self) -> bool:
     # Params only: no link IO, no file reads. Provisioning is jetlinkd's job,
     # so by the time modeld starts the answer is already recorded.
-    if not helpers.enabled():
+    if not helpers.enabled() or helpers.gadget_error() is not None:
       return False
     spec = spec_cache.load()
-    return spec is not None and helpers.engine_ready_for(spec.sha256)
+    selected = helpers.selected_model()
+    return (spec is not None and selected is not None and spec.sha256 == selected['oid']
+            and helpers.engine_ready_for(spec.sha256))
 
   def unavailable_reason(self) -> str | None:
     return helpers.gadget_alert()
@@ -177,11 +179,12 @@ class JetlinkAccelerator:
     # which is the one moment the GPU is idle and there are no frames to
     # drop; the swap itself lands on the frame loop. Sized from the cached
     # spec, which is what the link will hand back, so the swap can use it
-    # without a load. Should the server answer with another geometry, build
-    # falls back to loading the right warp there, slow but correct.
+    # without a load. Another geometry is rejected; GPU compilation must not
+    # be deferred to a driving frame.
     ready: dict = {}
 
     def prepare():
+      from openpilot.sunnypilot.accelerators.jetlink.fallback import prepare_reset
       # The gadget first, so the Jetson enumerates and the server opens us
       # while the warp loads. Left to the join thread, the bind landed ~3 s
       # later than this on every ignition of the 2026-09-04 drives: that thread
@@ -198,14 +201,23 @@ class JetlinkAccelerator:
         geometry = (img_w * 2, img_h * 2)
       else:
         geometry = warp_cache.device_geometry()[2:]
-      warp = warp_cache.load_warp(cam_w, cam_h, *geometry)
-      warp_cache.warm(warp, cam_w, cam_h)
+      try:
+        ready['reset_small'] = prepare_reset(small)
+        warp = warp_cache.load_warp(cam_w, cam_h, *geometry)
+        warp_cache.warm(warp, cam_w, cam_h)
+      except Exception:
+        client = ready.pop('client', None)
+        if client is not None:
+          client.close()
+        raise
       ready.update(warp=warp, geometry=geometry)
 
     def build(client, spec):
       from openpilot.sunnypilot.accelerators.jetlink.model_state import JetlinkModelState
       img_h, img_w = spec.input_shapes['img'][2:]
       warp = ready.get('warp') if ready.get('geometry') == (img_w * 2, img_h * 2) else None
+      if warp is None:
+        raise RuntimeError('no prepared warp for the server model geometry')
       return JetlinkModelState(cam_w, cam_h, client, spec, small, warp=warp)
 
     def connect():
@@ -213,7 +225,8 @@ class JetlinkAccelerator:
       # opens its own, as it does for every rejoin.
       return self._open_link(ready.pop('client', None))
 
-    return JoiningModelState(cam_w, cam_h, small, connect, build, prepare)
+    return JoiningModelState(cam_w, cam_h, small, connect, build, prepare,
+                             reset_small=lambda: ready['reset_small']())
 
   def _open_link(self, client=None):
     """Get a client and a spec. Link IO only, so it is safe off modeld's thread.
@@ -229,6 +242,12 @@ class JetlinkAccelerator:
       if client is not None:
         client.close()
       raise RuntimeError("no cached jetlink model spec; jetlinkd has not provisioned")
+
+    selected = helpers.selected_model()
+    if selected is None or selected['oid'] != cached.sha256:
+      if client is not None:
+        client.close()
+      raise RuntimeError('selected jetlink model has not been provisioned')
 
     # Two things can keep us waiting, and both resolve on their own: manager
     # stops jetlinkd and starts modeld in the same pass without waiting, so the
@@ -269,6 +288,11 @@ class JetlinkAccelerator:
     # own GPU; the Jetson runs ONNX from models.json instead.
     return None
 
+  def uses_stock_runner(self) -> bool:
+    # Configuration, not live presence/readiness: a late boot must not change
+    # which modeld manager runs in the middle of a drive.
+    return helpers.enabled() and helpers.link_configured()
+
   def model_choices(self) -> list[dict]:
     if not helpers.link_configured():
       return []
@@ -282,6 +306,8 @@ class JetlinkAccelerator:
     if name not in {m['name'] for m in helpers.model_index()}:
       raise ValueError(f'unknown jetlink model: {name}')
     Params().put(helpers.P_MODEL, name)
+    Params().put_bool(helpers.P_ENABLED, True)
+    Params().remove('ModelRunnerTypeCache')
 
   def daemon(self) -> Daemon:
     return Daemon("jetlinkd", "openpilot.sunnypilot.accelerators.jetlink.jetlinkd",

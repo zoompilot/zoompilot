@@ -143,6 +143,8 @@ def get_active_bundle(params: Params | None = None, *, chestnut: bool | None = N
   # no cross-slot fallback: an empty active slot means the hardware default, which
   # only stock modeld can run - modeld_v2 requires a real bundle
   params = params or Params()
+  if chestnut is None and accelerators.uses_stock_runner():
+    return None
   return get_selected_bundle(params, get_active_source(chestnut=chestnut))
 
 

@@ -72,10 +72,22 @@ def ready() -> bool:
   return active() is not None
 
 
+def prepare(backend: Accelerator) -> bool:
+  """An optional device failing initialization must not cost the small model."""
+  return bool(_ask(backend, 'prepare', False))
+
+
 def model_choices() -> list[dict]:
   """Optional backend-owned models, separate from model-manager bundles."""
   return [dict(choice, backend=b.name) for b in backends()
           if hasattr(b, 'model_choices') for choice in _ask(b, 'model_choices', [])]
+
+
+def uses_stock_runner() -> bool:
+  """Backend-owned models bypass bundles without deleting stored selections."""
+  if catalog() is not None:
+    return False  # Preserve Chestnut's catalog/runner selection.
+  return any(_ask(b, 'uses_stock_runner', False) for b in backends() if hasattr(b, 'uses_stock_runner'))
 
 
 def select_model(backend: str, name: str) -> None:

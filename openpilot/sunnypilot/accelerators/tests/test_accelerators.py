@@ -49,6 +49,24 @@ class FakeAccelerator:
 
 
 class AcceleratorTest(unittest.TestCase):
+  def test_chestnut_catalog_keeps_its_runner_precedence(self):
+    backend = mock.Mock()
+    backend.uses_stock_runner.return_value = True
+    with mock.patch.object(accelerators, '_cache', [backend]), \
+         mock.patch.object(accelerators, 'catalog', return_value='chestnut'):
+      self.assertFalse(accelerators.uses_stock_runner())
+      backend.uses_stock_runner.assert_not_called()
+
+  def test_prepare_failure_preserves_the_small_model_path(self):
+    backend = mock.Mock(name='backend')
+    backend.name = 'broken'
+    backend.prepare.side_effect = RuntimeError('device initialization failed')
+    with mock.patch.object(accelerators.cloudlog, 'exception'):
+      self.assertFalse(accelerators.prepare(backend))
+    backend.prepare.side_effect = None
+    backend.prepare.return_value = True
+    self.assertTrue(accelerators.prepare(backend))
+
   def install(self, *backends):
     patcher = mock.patch.object(accelerators, '_cache', list(backends))
     patcher.start()

@@ -86,7 +86,6 @@ class SelfdriveD(CruiseHelper):
     self.big_model_blocking = False
     self.big_model_active = False
     self.big_model_failed = False
-    self.big_model_ready_t = 0.
 
     # Setup sockets
     self.pm = messaging.PubMaster(['selfdriveState', 'onroadEvents'] + ['selfdriveStateSP', 'onroadEventsSP'])
@@ -199,7 +198,6 @@ class SelfdriveD(CruiseHelper):
     loading = self.params.get_bool("ChestnutLoading")
     running_big = self.sm.alive['modelV2'] and self.sm.valid['modelV2'] and self.sm['modelV2'].big
     if running_big and not self.big_model_running:
-      self.big_model_ready_t = time.monotonic()
       self.events_sp.add(custom.OnroadEventSP.EventName.bigModelReady)
     self.big_model_running = running_big
     # A load that holds modelV2 back keeps the driver out. One that joins onto
@@ -437,9 +435,9 @@ class SelfdriveD(CruiseHelper):
     # generic catch-all. ideally, a more specific event should be added above instead
     has_disable_events = self.events.contains(ET.NO_ENTRY) and (self.events.contains(ET.SOFT_DISABLE) or self.events.contains(ET.IMMEDIATE_DISABLE))
     no_system_errors = (not has_disable_events) or (len(self.events) == num_events)
-    warmup_sec = 5.
-    big_model_settling = self.big_model_blocking or time.monotonic() < self.big_model_ready_t + warmup_sec
-    if not self.sm.all_checks() and no_system_errors and not big_model_settling:  # the load holds modelV2 and friends back on purpose
+    # Accelerator loading has its own NO_ENTRY event. It must not suppress
+    # communication or localization faults, including during a mid-drive join.
+    if not self.sm.all_checks() and no_system_errors:
       if not self.sm.all_alive():
         self.events.add(EventName.commIssue)
       elif not self.sm.all_freq_ok():
@@ -458,7 +456,7 @@ class SelfdriveD(CruiseHelper):
     else:
       self.logged_comm_issue = None
 
-    if not self.CP.notCar and not big_model_settling:  # localization has nothing to work with during the load
+    if not self.CP.notCar:
       if not self.sm['deviceMotion'].posenetOK:
         self.events.add(EventName.posenetInvalid)
       if not self.sm['deviceMotion'].inputsOK:

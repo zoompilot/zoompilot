@@ -719,6 +719,18 @@ class TestActiveBundleSelection(OpenpilotTestCase):
     assert get_selected_bundle(params, "qcom").ref == "small"
     assert get_selected_bundle(params, "chestnut").ref == "big"
 
+  def test_backend_selection_preserves_both_bundle_slots(self):
+    params = self._params(qcom=self._raw_bundle('small'), chestnut=self._raw_bundle('big'))
+    with mock.patch('openpilot.sunnypilot.accelerators.uses_stock_runner', return_value=True):
+      assert get_active_bundle(params) is None
+      assert helpers.get_active_model_runner(params, force_check=True) == custom.ModelManagerSP.Runner.stock
+      assert get_selected_bundle(params, 'qcom').ref == 'small'
+      assert get_selected_bundle(params, 'chestnut').ref == 'big'
+    params.remove.assert_not_called()
+    with mock.patch('openpilot.sunnypilot.accelerators.uses_stock_runner', return_value=False), \
+         mock.patch('openpilot.sunnypilot.accelerators.catalog', return_value=None):
+      assert get_active_bundle(params).ref == 'small'
+
   def test_no_gpu_uses_qcom_slot(self):
     params = self._params(qcom=self._raw_bundle("small"), chestnut=self._raw_bundle("big"))
     with mock.patch("openpilot.sunnypilot.accelerators.catalog", return_value=None):
