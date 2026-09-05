@@ -602,6 +602,43 @@ class TestAcceleratorIconState:
     assert self._state(True, False, None) == ChestnutState.UNCOMPILED
     assert self._state(True, False, {'stage': 'build', 'frac': 0.3}) == ChestnutState.LOADING
     assert self._state(True, False, {'stage': 'failed', 'frac': 1.0}) == ChestnutState.FAILED
+    assert self._state(True, True, {'stage': 'connect', 'frac': 0.0}) == ChestnutState.LOADING
+    assert self._state(True, True, {'stage': 'failed', 'frac': 1.0}) == ChestnutState.FAILED
+    assert self._state(True, True, {'stage': 'ready', 'frac': 1.0}) == ChestnutState.READY
+
+  def test_absent_accelerator_does_not_pulse_onroad(self, params):
+    from types import SimpleNamespace
+    from openpilot.selfdrive.ui.ui_state import UIState, ChestnutState
+
+    state = SimpleNamespace(sm=self.FakeSM(False), started=True, started_frame=0,
+                            chestnut_loading=True)
+    UIState._update_chestnut_state(state)
+    assert state.chestnut_state == ChestnutState.DISCONNECTED
+
+
+class TestAcceleratorModelSelection:
+  def test_selection_does_not_write_model_manager_slots(self, params):
+    from unittest import mock
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
+
+    choice = {'backend': 'jetlink', 'name': 'Cinque Terre', 'selected': False, 'cached': True}
+    layout = ModelsLayoutMici()
+    with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.accelerators.select_model') as select, \
+         mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=True), \
+         mock.patch.object(layout, '_pop_to_main'), mock.patch.object(params, 'put') as put:
+      layout._choose_accelerator(choice)
+      select.assert_called_once_with('jetlink', 'Cinque Terre')
+      put.assert_not_called()
+
+  def test_selection_that_crosses_ignition_does_not_change_the_model(self, params):
+    from unittest import mock
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
+
+    layout = ModelsLayoutMici()
+    with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.accelerators.select_model') as select, \
+         mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=False):
+      layout._choose_accelerator({'backend': 'jetlink', 'name': 'Cinque Terre'})
+      select.assert_not_called()
 
   def test_a_present_accelerator_is_not_an_unknown_usb_device(self, params):
     import time

@@ -82,7 +82,7 @@ class SelfdriveD(CruiseHelper):
     self.calibrated_pose: Pose | None = None
     self.excessive_actuation_check = ExcessiveActuationCheck()
     self.excessive_actuation = self.params.get("Offroad_ExcessiveActuation") is not None
-    self.big_model_loading = False
+    self.big_model_running = False
     self.big_model_blocking = False
     self.big_model_active = False
     self.big_model_failed = False
@@ -197,10 +197,11 @@ class SelfdriveD(CruiseHelper):
       self.startup_event = None
 
     loading = self.params.get_bool("ChestnutLoading")
-    if self.big_model_loading and not loading:
+    running_big = self.sm.alive['modelV2'] and self.sm.valid['modelV2'] and self.sm['modelV2'].big
+    if running_big and not self.big_model_running:
       self.big_model_ready_t = time.monotonic()
       self.events_sp.add(custom.OnroadEventSP.EventName.bigModelReady)
-    self.big_model_loading = loading
+    self.big_model_running = running_big
     # A load that holds modelV2 back keeps the driver out. One that joins onto
     # a model already publishing (an accelerator on its own power, which can
     # take a whole drive to arrive) does not; see sunnypilot/accelerators/.

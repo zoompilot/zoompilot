@@ -67,6 +67,7 @@ UDC_PATH = Path("/sys/class/udc")
 # Written by scripts/setup_gadget.sh at boot: "ok", or "error: <reason>".
 # tmpfs, so it describes this boot and costs the flash nothing.
 GADGET_STATUS = Path("/dev/shm/jetlink-gadget")
+CC_ORIENTATION = Path('/sys/class/power_supply/usb/typec_cc_orientation')
 
 
 def gadget_error() -> str | None:
@@ -221,7 +222,12 @@ def gadget_present() -> bool:
   if link_endpoint() is not None:
     return True
   if dormant():
-    return True
+    # Enumeration is deliberately absent during suspend; physical cable
+    # detection still distinguishes a sleeping host from an unplugged one.
+    try:
+      return int(CC_ORIENTATION.read_text()) != 0
+    except (OSError, ValueError):
+      return False
   now = time.monotonic()
   if host_attached():
     _last_configured = now

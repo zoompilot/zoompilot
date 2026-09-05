@@ -155,6 +155,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"JetlinkModel", {PERSISTENT | BACKUP, STRING}},
     {"JetlinkEngineReady", {PERSISTENT, STRING}},
     {"JetlinkSpec", {PERSISTENT, JSON}},
+    {"JetlinkCachedModels", {PERSISTENT, JSON}},
     {"ApiCache_DriveStats", {PERSISTENT, JSON}},
     {"AutoLaneChangeBsmDelay", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"AutoLaneChangeTimer", {PERSISTENT | BACKUP, INT, "0"}},

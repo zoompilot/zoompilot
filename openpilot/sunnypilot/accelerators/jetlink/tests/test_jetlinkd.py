@@ -93,6 +93,9 @@ class TestProvisionCost(unittest.TestCase):
     self.model.write_bytes(b'x' * 4096)
     self.cache = FakeSpecCache()
     self.hashed: list[str] = []
+    p = mock.patch.object(jetlinkd, 'Params')
+    self.addCleanup(p.stop)
+    p.start()
 
     for target, new in (('spec_cache', self.cache), ('accelerators', mock.Mock())):
       p = mock.patch.object(jetlinkd, target, new)
@@ -307,6 +310,7 @@ class TestParked(unittest.TestCase):
       self.addCleanup(p.stop)
       p.start()
     for name, value in (('enabled', True), ('host_attached', True), ('engine_ready_for', True),
+                        ('selected_model', {'oid': self.cache.spec.sha256}),
                         ('active_model_path', self.model)):
       p = mock.patch.object(jetlinkd.helpers, name, return_value=value)
       self.addCleanup(p.stop)
@@ -366,8 +370,9 @@ class TestParked(unittest.TestCase):
     d.started = time.monotonic() - jetlinkd.DORMANT_HOLD
     d.step()
     d.started = time.monotonic()
-    self.model.write_bytes(b'y' * 8192)
-    d.step()
+    with mock.patch.object(jetlinkd.helpers, 'selected_model', return_value={'oid': 'other'}), \
+         mock.patch.object(jetlinkd.helpers, 'active_model_path', return_value=None):
+      d.step()
     assert not d.dormant
 
   def test_waking_for_work_that_is_done_goes_straight_back(self):

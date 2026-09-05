@@ -29,6 +29,10 @@ from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache
 # it enumerates rather than on our next poll.
 CONNECT_TIMEOUT = 45.0
 CONNECT_DELAY = 0.5
+# A serving accelerator gets ten frame periods to answer. Startup and engine
+# loading use their own longer timeouts on the joining thread; a dead server
+# must not hold the driving model's frame thread for several seconds.
+INFERENCE_TIMEOUT = 0.5
 # How long the load may wait for the early gadget bind. Sub-second when the
 # endpoints are free; jetlinkd may still be letting go of them.
 PRESENT_TIMEOUT = 5.0
@@ -247,6 +251,7 @@ class JetlinkAccelerator:
         # next time the car is parked, instead of every drive failing here.
         helpers.set_engine_ready(None)
         raise
+      client.deadline = INFERENCE_TIMEOUT
       return client, spec
     except BaseException:
       client.close()
@@ -263,6 +268,20 @@ class JetlinkAccelerator:
     # Every bundle in the chestnut catalog is a tinygrad pkl for the comma's
     # own GPU; the Jetson runs ONNX from models.json instead.
     return None
+
+  def model_choices(self) -> list[dict]:
+    if not helpers.link_configured():
+      return []
+    selected = helpers.selected_model() or {}
+    cached = helpers._get('JetlinkCachedModels') or []
+    return [{'name': m['name'], 'selected': m['oid'] == selected.get('oid'),
+             'cached': m['oid'] in cached} for m in helpers.model_index()]
+
+  def select_model(self, name: str) -> None:
+    from openpilot.common.params import Params
+    if name not in {m['name'] for m in helpers.model_index()}:
+      raise ValueError(f'unknown jetlink model: {name}')
+    Params().put(helpers.P_MODEL, name)
 
   def daemon(self) -> Daemon:
     return Daemon("jetlinkd", "openpilot.sunnypilot.accelerators.jetlink.jetlinkd",

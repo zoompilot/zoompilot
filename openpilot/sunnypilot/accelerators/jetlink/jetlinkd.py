@@ -49,6 +49,7 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot import accelerators
+from openpilot.common.params import Params
 from openpilot.sunnypilot.accelerators.jetlink import helpers, spec_cache, warp_cache
 
 POLL_HZ = 2.0
@@ -265,6 +266,7 @@ class Jetlinkd:
     accelerators.report_progress('connect', 0.0, 'talking to the jetson')
 
     hello = self.client.hello(timeout=10.0)
+    Params().put('JetlinkCachedModels', hello.get('cached_models', []))
     cloudlog.warning("jetlink: server %s trt %s", hello.get('device'), hello.get('trt_version'))
     # Asked without the file first, always. The server answers from the sha
     # alone when it already has the model, which is every poll of a parked car,
@@ -286,6 +288,8 @@ class Jetlinkd:
 
     spec_cache.store(spec, model_path)
     helpers.set_engine_ready(spec.sha256)
+    cached = helpers._get('JetlinkCachedModels') or []
+    Params().put('JetlinkCachedModels', sorted(set(cached) | {spec.sha256}))
     self.verified = True
     accelerators.report_progress('ready', 1.0, 'engine ready')
     helpers.cleanup_unchunked(keep=model_path)
@@ -345,11 +349,8 @@ class Jetlinkd:
     spec = spec_cache.load()
     if spec is None or not helpers.engine_ready_for(spec.sha256):
       return True
-    path = helpers.active_model_path()
-    if path is None:
-      return False  # nothing selected: nothing the Jetson can do about it
-    st = path.stat()
-    return spec_cache.source() != (str(path), st.st_mtime_ns, st.st_size)
+    selected = helpers.selected_model()
+    return selected is not None and selected.get('oid') != spec.sha256
 
   def shutdown_jetson(self, reason: str) -> None:
     """hardwared is shutting the comma down and wants the Jetson off too.

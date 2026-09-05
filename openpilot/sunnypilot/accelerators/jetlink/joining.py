@@ -222,7 +222,7 @@ class JoiningModelState:
     self._maybe_swap()
     active = self._active
     try:
-      return active.run(bufs, transforms, inputs, after_enqueue)
+      result = active.run(bufs, transforms, inputs, after_enqueue)
     except Exception:
       if active is self._small:
         # Nothing to do with the link. modeld's own handler owns this.
@@ -235,6 +235,15 @@ class JoiningModelState:
       # after_enqueue is dropped: the large model may already have called it,
       # and chestnutState is published once per frame at most.
       return self._small.run(bufs, transforms, inputs, None)
+    if active is not self._small and self._loading:
+      # A connected engine can still fail its first inference. Only announce
+      # readiness after it has produced a frame the caller can publish.
+      self._joined_at = time.monotonic()
+      self._set_active(True)
+      self._set_loading(False)
+      accelerators.clear_progress()
+      cloudlog.warning("jetlink: large model joined mid-drive, modelV2.big is now true")
+    return result
 
   def warmup(self) -> None:
     """modeld warms whatever make_model_state returned. Nothing to do here.
@@ -290,15 +299,11 @@ class JoiningModelState:
       self._back_off()
       return
     self._active = big
-    self._joined_at = time.monotonic()
-    self._set_active(True)
-    self._set_loading(False)
-    accelerators.clear_progress()
-    cloudlog.warning("jetlink: large model joined mid-drive, modelV2.big is now true")
 
   def _demote(self) -> None:
     big, self._active = self._active, self._small
-    self._set_active(False)
+    if not self._loading:
+      self._set_active(False)
     self._set_loading(True)
     self._report('connect', 'lost the jetson, reconnecting')
     close = getattr(big, 'close', None)

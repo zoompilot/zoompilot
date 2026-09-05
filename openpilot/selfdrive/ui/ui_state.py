@@ -222,36 +222,27 @@ class UIState(UIStateSP):
     detected = self.sm["deviceState"].chestnutPresent
     if not self.started:
       self.chestnut_present = detected
+      stage = str((self.accelerator_progress or {}).get('stage', ''))
       if not detected:
         self.chestnut_state = ChestnutState.DISCONNECTED
+      elif stage and stage != 'ready':
+        self.chestnut_state = ChestnutState.FAILED if stage == 'failed' else ChestnutState.LOADING
       elif self.chestnut_compiled:
         self.chestnut_state = ChestnutState.READY
       else:
-        # An accelerator that is being provisioned (a model downloading, an
-        # engine building for minutes) is loading, not broken. Only a
-        # provisioning that gave up reads as a failure.
-        stage = str((self.accelerator_progress or {}).get('stage', ''))
-        self.chestnut_state = (ChestnutState.FAILED if stage == 'failed' else
-                               ChestnutState.LOADING if stage else ChestnutState.UNCOMPILED)
+        self.chestnut_state = ChestnutState.UNCOMPILED
       return
 
     model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
     running_big = model_seen and self.sm.alive["modelV2"] and self.sm["modelV2"].big
     if running_big:
       self.chestnut_state = ChestnutState.ACTIVE
-    elif self.chestnut_loading or not model_seen:
-      # Loading is asked first, before presence and before failure, and it
-      # clears both. An accelerator that is not on the comma's own power cannot
-      # always have its model up by the first frame, so it loads onto a running
-      # small model and says so here; modelV2.big stays false for the whole
-      # join and must not read as a failure. Presence has to come second for
-      # the same reason: a Jetson rebooting mid-drive is not attached for a
-      # minute, and reading that as "unavailable" while the join loop is
-      # actively getting it back is what sent a driver looking for a way to
-      # force a reconnect on the 2026-09-04 drive. There is nothing to force.
-      self.chestnut_state = ChestnutState.LOADING
-    elif not self.chestnut_present:
+    elif not detected:
       self.chestnut_state = ChestnutState.DISCONNECTED
+    elif self.chestnut_loading or not model_seen:
+      # Retrying an absent accelerator does not mean it is loading. Once it
+      # is attached, a pending join is loading rather than a failed model.
+      self.chestnut_state = ChestnutState.LOADING
     elif not self.chestnut_compiled:
       self.chestnut_state = ChestnutState.UNCOMPILED
     else:

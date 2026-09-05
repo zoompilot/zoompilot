@@ -154,6 +154,31 @@ class JoiningTest(unittest.TestCase):
     # And it tries again rather than staying small for the rest of the drive.
     self.assertTrue(s._rejoin.is_set() or self.connect_calls > 1)
 
+  def test_failed_first_inference_never_announces_ready(self):
+    s = self._state()
+    self.assertTrue(self.joined.wait(5.0))
+    s._engaged = False
+    self.big.raises = RuntimeError('first inference failed')
+    self.assertEqual(self._run(s), {'from': 'small'})
+    self.assertIs(self.params.get('ChestnutLoading'), True)
+    self.assertNotIn('ChestnutActive', self.params)
+
+  def test_ready_is_written_only_after_inference_returns(self):
+    s = self._state()
+    self.assertTrue(self.joined.wait(5.0))
+    s._engaged = False
+    run = self.big.run
+
+    def inspect(*args):
+      self.assertIs(self.params.get('ChestnutLoading'), True)
+      self.assertNotIn('ChestnutActive', self.params)
+      return run(*args)
+
+    self.big.run = inspect
+    self.assertEqual(self._run(s), {'from': 'big'})
+    self.assertIs(self.params.get('ChestnutActive'), True)
+    self.assertIs(self.params.get('ChestnutLoading'), False)
+
   def test_prepare_runs_in_the_constructor_and_its_failure_is_survived(self):
     order = []
     self.connect_calls = 0

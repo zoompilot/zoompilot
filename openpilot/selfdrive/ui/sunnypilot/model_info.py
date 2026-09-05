@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.selfdrive.ui.ui_state import ui_state, ChestnutState
+from openpilot.sunnypilot import accelerators
 from openpilot.sunnypilot.models.fetcher import get_cached_bundles
 from openpilot.sunnypilot.models.helpers import get_active_source, get_selected_bundle, resolve_bundle_by_ref
 from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL, DEFAULT_MODEL
@@ -60,6 +61,10 @@ def carrying_model() -> tuple[str | None, str | None, str | None]:
   """(source, internal name, display name) of what actually drives. Runner-matched:
   when a Default big cannot carry, stock modeld runs the Default small, never the
   small slot's pick; a custom big has no automatic fallback yet -> (None, None, None)."""
+  if ui_state.chestnut_state == ChestnutState.ACTIVE:
+    name = accelerators.active_model_name()
+    if name is not None:
+      return 'accelerator', name, name
   source = active_source()
   if source == "chestnut":
     bundle = get_selected_bundle(ui_state.params, "chestnut")

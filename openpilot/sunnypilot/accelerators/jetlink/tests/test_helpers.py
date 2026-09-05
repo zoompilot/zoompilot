@@ -94,11 +94,15 @@ class TestDormant(unittest.TestCase):
 
   def test_dormant_counts_as_present_without_a_host(self):
     with mock.patch.object(helpers, 'link_endpoint', return_value=None), \
-         mock.patch.object(helpers, 'host_attached', return_value=False):
+         mock.patch.object(helpers, 'host_attached', return_value=False), \
+         mock.patch.object(helpers, 'CC_ORIENTATION', self.tmp / 'cc'):
+      (self.tmp / 'cc').write_text('1')
       helpers._last_configured = 0.0
       assert not helpers.gadget_present()
       helpers.set_dormant(True)
       assert helpers.gadget_present()
+      (self.tmp / 'cc').write_text('0')
+      assert not helpers.gadget_present()
 
   def test_shutdown_request_round_trip(self):
     assert helpers.pending_shutdown() is None

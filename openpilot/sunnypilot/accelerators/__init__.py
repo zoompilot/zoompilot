@@ -72,6 +72,27 @@ def ready() -> bool:
   return active() is not None
 
 
+def model_choices() -> list[dict]:
+  """Optional backend-owned models, separate from model-manager bundles."""
+  return [dict(choice, backend=b.name) for b in backends()
+          if hasattr(b, 'model_choices') for choice in _ask(b, 'model_choices', [])]
+
+
+def select_model(backend: str, name: str) -> None:
+  for b in backends():
+    if b.name == backend and hasattr(b, 'select_model'):
+      b.select_model(name)
+      return
+  raise ValueError(f'unknown accelerator: {backend}')
+
+
+def active_model_name() -> str | None:
+  backend = active()
+  if backend is None or not hasattr(backend, 'model_choices'):
+    return None
+  return next((m['name'] for m in _ask(backend, 'model_choices', []) if m['selected']), None)
+
+
 def catalog() -> str | None:
   """The model-manager catalog the attached accelerator draws from, if any.
 

@@ -41,6 +41,12 @@ for m in LogReader(rlog):
     Params().put('CarParams', m.carParams.as_builder().to_bytes())
     print('CarParams seeded from', seg, m.carParams.carFingerprint)
     break
+else:
+  cp = Params().get('CarParamsPersistent')
+  if cp is None:
+    raise SystemExit('segment has no CarParams and no saved configuration is available')
+  Params().put('CarParams', cp)
+  print('CarParams seeded from the saved device configuration')
 PYEOF
 
 $PY - <<'PYEOF' > /dev/null 2>&1 &
