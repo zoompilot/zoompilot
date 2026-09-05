@@ -1,0 +1,31 @@
+# Captured drives and their derived caches. Around 40 GB lives here and none of it was
+# ignored, so a stray `git add -A` would have staged the lot -- the same staging hazard the
+# LFS rules in CLAUDE.md exist for, minus the smudge error to warn you.
+#
+# Scoped here rather than in the root .gitignore on purpose: that file is upstream's and
+# every fork-only entry in it is another conflict at the next sync.
+#
+# The analysis scripts beside this file stay tracked; only the data they read does not.
+device_data/
+device_data_speedmax/
+device_routes/
+drive_logs/
+sla_drive_logs/
+test_data/
+lkas_block_c4/
+backup_params/
+rlogs_validation/
+
+# derived from the above, all regenerable
+.lkas_block_cache/
+.undelivered_cache/
+*.zst
+*.csv
+tune_metrics_cache.jsonl
+lkas_block_scenarios.json
+lkas_block_pr_data.json
+accel_cmd_characterization.json
+
+# PNG files use an LFS remote unavailable to device installers. Regenerate them from source.
+*.png
+*.svg
