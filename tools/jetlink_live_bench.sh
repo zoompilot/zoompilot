@@ -61,24 +61,63 @@ CAM=$!
 sleep 4
 
 $PY - "$((N + 5))" <<'PYEOF' > /data/tmp/mon.log 2>&1 &
-import sys, time
+import signal, sys, time
 import openpilot.cereal.messaging as messaging
+
+# The script kills this at N seconds and the loop runs to N+5, so without this
+# the summary below never prints - which is the only part worth reading.
+_stop = False
+
+
+def _bye(*_a):
+  global _stop
+  _stop = True
+
+
+signal.signal(signal.SIGTERM, _bye)
+
+# The budget is what matters, not the average. A frame past 50 ms is a dropped
+# camera frame, and modeld's filter turning that into frameDropPerc > 1 is
+# ET.SOFT_DISABLE in selfdrived. A rolling window hides exactly the frames
+# that do it, so keep every sample and report the tail.
+BUDGET = 50.0
 sm = messaging.SubMaster(['modelV2', 'narrowRoadCameraState', 'chestnutState'])
 t0 = time.monotonic(); last = t0
-cnt = dict.fromkeys(sm.services, 0); big = 0; exec_ms = []
-while time.monotonic() - t0 < float(sys.argv[1]):
+cnt = dict.fromkeys(sm.services, 0); big = 0
+ex = []; over = []; worst_drop = 0.0; lagging = 0
+while not _stop and time.monotonic() - t0 < float(sys.argv[1]):
   sm.update(100)
   for k in sm.services:
     cnt[k] += sm.updated[k]
   if sm.updated['modelV2']:
-    big += sm['modelV2'].big
-    exec_ms.append(sm['modelV2'].modelExecutionTime * 1000)
+    m = sm['modelV2']
+    big += m.big
+    e = m.modelExecutionTime * 1000
+    ex.append(e)
+    if e > BUDGET:
+      over.append((round(time.monotonic() - t0, 1), round(e, 1)))
+    worst_drop = max(worst_drop, m.frameDropPerc)
+    lagging += m.frameDropPerc > 1.0
   if time.monotonic() - last >= 5:
     last = time.monotonic()
-    e = exec_ms[-100:] or [0]
-    print('t=%3.0f cam=%d modelV2=%d big=%d chestnutState=%d exec_last100 mean/max=%.1f/%.1f ms' % (
-      last - t0, cnt['narrowRoadCameraState'], cnt['modelV2'], big, cnt['chestnutState'],
-      sum(e) / len(e), max(e)), flush=True)
+    w = ex[-100:] or [0]
+    print('t=%3.0f cam=%d modelV2=%d big=%d exec_last100 mean/max=%.1f/%.1f  worst_all=%.1f over_budget=%d' % (
+      last - t0, cnt['narrowRoadCameraState'], cnt['modelV2'], big,
+      sum(w) / len(w), max(w), max(ex or [0]), len(over)), flush=True)
+
+def q(xs, p):
+  xs = sorted(xs)
+  return xs[min(len(xs) - 1, int(len(xs) * p))] if xs else 0.0
+
+if ex:
+  print('', flush=True)
+  print('=== tail over %d frames' % len(ex), flush=True)
+  print('  mean %.1f  p50 %.1f  p99 %.1f  p99.9 %.1f  max %.1f ms' % (
+    sum(ex) / len(ex), q(ex, .50), q(ex, .99), q(ex, .999), max(ex)), flush=True)
+  print('  frames over %.0f ms: %d (%.3f%%)' % (BUDGET, len(over), 100.0 * len(over) / len(ex)), flush=True)
+  if over:
+    print('  the offenders (t=s, ms): %s' % (over[:20],), flush=True)
+  print('  worst frameDropPerc %.2f%%  frames with >1%% (modeldLagging): %d' % (worst_drop, lagging), flush=True)
 PYEOF
 MON=$!
 
@@ -92,4 +131,4 @@ $PY -c "from openpilot.common.params import Params; Params().remove('CarParams')
 
 echo "big-model joins: $(grep -c 'large model joined' /data/tmp/modeld.log)  failures: $(grep -c 'large model failed' /data/tmp/modeld.log)"
 grep "LinkError:" /data/tmp/modeld.log | sort | uniq -c
-tail -3 /data/tmp/mon.log
+tail -8 /data/tmp/mon.log
