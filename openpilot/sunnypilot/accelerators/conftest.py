@@ -20,7 +20,13 @@ params.cc reads OPENPILOT_PREFIX on every Params() construction, so setting it
 here - before pytest imports a single test module - is enough to give the whole
 subtree its own directory.
 """
-import os
-import uuid
+from openpilot.common.prefix import OpenpilotPrefix
 
-os.environ['OPENPILOT_PREFIX'] = f"acceltest{uuid.uuid4().hex[:8]}"
+# A prefix isolates Params and msgq. Setting the environment alone left the
+# msgq directory absent on AGNOS, breaking any test using a real SubMaster.
+_prefix = OpenpilotPrefix()
+_prefix.__enter__()
+
+
+def pytest_sessionfinish(session, exitstatus):
+  _prefix.__exit__(None, None, None)

@@ -76,7 +76,7 @@ class HevcFrameReader:
 
 
 def disengaged(m):
-  """selfdriveState with enabled=False, everything else untouched.
+  """Disable both engagement and independent actuation in the isolated replay.
 
   The joining state only swaps to the accelerator while the car is
   disengaged, which is right on the road and wrong here: a segment recorded
@@ -84,11 +84,16 @@ def disengaged(m):
   say so only at the end. The replay never controls anything, so the flag
   carries no meaning beyond letting the swap happen.
   """
-  if m.which() != 'selfdriveState' or not m.selfdriveState.enabled:
-    return m
-  b = m.as_builder()
-  b.selfdriveState.enabled = False
-  return b.as_reader()
+  if m.which() == 'selfdriveState':
+    b = m.as_builder()
+    b.selfdriveState.enabled = False
+    return b.as_reader()
+  if m.which() == 'carControl':
+    b = m.as_builder()
+    b.carControl.latActive = False
+    b.carControl.longActive = False
+    return b.as_reader()
+  return m
 
 
 def trim_to_frames(msgs: list, n: int) -> list:
@@ -293,7 +298,7 @@ def main() -> int:
   # subscribes to it, so process_replay does not deliver it; feed it here or
   # the whole replay runs on the small model waiting for a signal that never
   # comes.
-  cfg = replace(cfg, pubs=[*cfg.pubs, 'selfdriveState'])
+  cfg = replace(cfg, pubs=list(dict.fromkeys([*cfg.pubs, 'selfdriveState', 'carState', 'carControl'])))
   out = replay_process(cfg, lr, frs, fingerprint=fingerprint, custom_params=custom)
   return summarise(out, args.dump)
 

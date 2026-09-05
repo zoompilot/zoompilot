@@ -689,6 +689,12 @@ class TestActiveBundleValidation(OpenpilotTestCase):
 
 
 class TestActiveBundleSelection(OpenpilotTestCase):
+  def setUp(self):
+    super().setUp()
+    patcher = mock.patch('openpilot.sunnypilot.accelerators.uses_stock_runner', return_value=False)
+    patcher.start()
+    self.addCleanup(patcher.stop)
+
   """The effective active bundle is the active source's slot: chestnut when the attached
   accelerator draws from that catalog, qcom otherwise. An empty active slot means the
   hardware default (stock runner), never the other slot's pick - modeld_v2 requires a
@@ -757,6 +763,12 @@ class TestActiveBundleSelection(OpenpilotTestCase):
 
 
 class TestEffectiveSource(OpenpilotTestCase):
+  def setUp(self):
+    super().setUp()
+    patcher = mock.patch('openpilot.sunnypilot.accelerators.uses_stock_runner', return_value=False)
+    patcher.start()
+    self.addCleanup(patcher.stop)
+
   """One gate decides the active source. With no flags it is runtime truth (the
   attached accelerator draws from the chestnut catalog); display callers (mici)
   pass the ui_state flags, which additionally
