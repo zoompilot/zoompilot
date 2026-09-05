@@ -18,6 +18,7 @@ rlogs_validation/
 
 # derived from the above, all regenerable
 .lkas_block_cache/
+.undelivered_cache/
 *.zst
 *.csv
 tune_metrics_cache.jsonl
