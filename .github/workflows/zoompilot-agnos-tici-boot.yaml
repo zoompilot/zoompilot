@@ -1,0 +1,263 @@
+name: zoompilot agnos tici boot
+
+# Build the AGNOS boot partition for the comma three (tici) and publish it.
+#
+# comma deleted comma_tici.dts from agnos-kernel-sdm845 in b90695f101ba, so every
+# AGNOS from 13 on has no device tree for the comma three and will not boot one.
+# This workflow builds comma's kernel at a pinned commit with that DTS restored,
+# packages the boot image the way agnos-builder's package_ota.py does, publishes
+# the .img.xz as a release asset, and opens a PR pointing the boot entry of
+# openpilot/common/hardware/comma/tici_agnos.json at it. Every other partition on
+# a comma three stays on comma's official images.
+#
+# This is not comma's official boot image and cannot be. See docs/agnos-tici-boot.md
+# for what that means, how to verify the result, and how to recover a device that
+# will not boot after flashing one.
+#
+# Nothing here has been run on a physical comma three.
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_commit:
+        description: commaai/agnos-kernel-sdm845 commit to build
+        default: c368754c26c7b9659de187addc6cccedc6cfb0a0
+        required: true
+      agnos_builder_commit:
+        description: commaai/agnos-builder commit supplying build_kernel.sh, the toolchain and the signing key
+        default: 8f7207a4f083ce3215f893a01b74613c507cc4bc
+        required: true
+      runner:
+        description: runner label. ubuntu-latest cross compiles from x86_64; ubuntu-24.04-arm builds natively like comma's CI
+        default: ubuntu-latest
+        required: true
+      release_tag:
+        description: tag to publish the asset under. Blank means agnos-tici-boot-<run number>
+        default: ''
+      open_pr:
+        description: open a PR updating the boot entry in tici_agnos.json
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    name: build tici boot image
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out zoompilot
+        uses: actions/checkout@v4
+        with:
+          path: zoompilot
+          lfs: false
+          submodules: false
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      # LFS carries the cross toolchain (tools/aarch64-linux-gnu-gcc.tar.gz) and the
+      # firmware images. extract_tools.sh pulls everything if any pointer is left, so
+      # take the whole thing up front rather than fighting it.
+      - name: Check out agnos-builder
+        uses: actions/checkout@v4
+        with:
+          repository: commaai/agnos-builder
+          ref: ${{ inputs.agnos_builder_commit }}
+          path: agnos-builder
+          lfs: true
+          submodules: false
+
+      # Shallow, so we do not pull the whole kernel history onto a runner disk.
+      # github.com serves fetch-by-sha, so any commit works, not just a branch tip.
+      - name: Check out the kernel at the pinned commit
+        working-directory: agnos-builder
+        run: |
+          set -e
+          rm -rf agnos-kernel-sdm845
+          mkdir agnos-kernel-sdm845
+          cd agnos-kernel-sdm845
+          git init -q .
+          git remote add origin https://github.com/commaai/agnos-kernel-sdm845.git
+          git fetch --depth 1 origin ${{ inputs.kernel_commit }}
+          git checkout -q --detach FETCH_HEAD
+          git log -1 --format='kernel %H %ci %s'
+
+      # build_kernel.sh re-clones the submodule if it looks uninitialized. It does not
+      # here, because the directory now has its own .git, but a silent re-clone would
+      # throw away the patch below, so fail loudly instead of trusting it.
+      - name: Confirm build_kernel.sh will not re-clone the kernel
+        working-directory: agnos-builder
+        run: |
+          status=$(git submodule status --cached agnos-kernel-sdm845/ || true)
+          echo "submodule status: $status"
+          case "$status" in
+            -*) echo "::error::kernel checkout looks uninitialized to git; build_kernel.sh would re-clone it and drop the DTS patch"; exit 1 ;;
+          esac
+
+      - name: Restore comma_tici.dts
+        working-directory: agnos-builder/agnos-kernel-sdm845
+        run: |
+          set -e
+          git apply -v "$GITHUB_WORKSPACE/zoompilot/scripts/agnos/restore-comma_tici-dts.patch"
+          test -f arch/arm64/boot/dts/qcom/comma_tici.dts
+          grep -q 'comma_tici.dtb' arch/arm64/boot/dts/qcom/Makefile
+          # tici_defconfig leaves CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES empty, which
+          # makes arch/arm64/boot/Makefile append every dtb it finds. If a kernel bump ever
+          # sets a name list, the dtb would build but never reach Image-dtb.
+          grep -q 'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES=""' arch/arm64/configs/tici_defconfig \
+            || { echo "::error::tici_defconfig now names the appended dtbs; comma_tici.dtb must be added to that list"; exit 1; }
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: agnos-builder/.ccache
+          key: agnos-kernel-${{ inputs.kernel_commit }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: |
+            agnos-kernel-${{ inputs.kernel_commit }}-${{ runner.arch }}-
+            agnos-kernel-
+
+      - name: Build the kernel
+        working-directory: agnos-builder
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/agnos-builder/.ccache
+          CCACHE_MAXSIZE: 5G
+        run: ./build_kernel.sh
+
+      # Image-dtb is the uncompressed kernel with every built dtb concatenated onto it,
+      # and boot.img is that plus the mkbootimg header and comma's LE signature. The
+      # bootloader picks a dtb by qcom,msm-id and board-id, so all three comma boards
+      # ride in one image and the comma three simply had no entry to pick.
+      - name: Confirm the tici device tree is in the image
+        working-directory: agnos-builder
+        run: |
+          set -e
+          dtb=agnos-kernel-sdm845/out/arch/arm64/boot/dts/qcom/comma_tici.dtb
+          test -f "$dtb" || { echo "::error::comma_tici.dtb was not built"; exit 1; }
+          for board in tici tizi mici; do
+            if strings -a output/boot.img | grep -qx "comma $board"; then
+              echo "boot.img carries the $board device tree"
+            elif [ "$board" = tici ]; then
+              echo "::error::boot.img does not contain the comma tici device tree"; exit 1
+            else
+              echo "::warning::boot.img does not contain the comma $board device tree"
+            fi
+          done
+          ls -l output/boot.img
+
+      - name: Package and hash
+        id: package
+        working-directory: agnos-builder
+        run: |
+          set -e
+          ENTRY=$GITHUB_WORKSPACE/entry.json
+          NAME=$(python3 "$GITHUB_WORKSPACE/zoompilot/scripts/agnos/manifest_entry.py" output/boot.img --xz-name)
+          # Single threaded on purpose. xz -T0 can emit concatenated streams, and agnos.py
+          # stops decompressing at the first stream end, which would truncate the flash.
+          # Compression level does not affect any manifest field; hash is of the plain image.
+          xz -9 -T1 -c output/boot.img > "$GITHUB_WORKSPACE/$NAME"
+          TAG="${{ inputs.release_tag }}"
+          [ -n "$TAG" ] || TAG="agnos-tici-boot-${{ github.run_number }}"
+          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/$NAME"
+          python3 "$GITHUB_WORKSPACE/zoompilot/scripts/agnos/manifest_entry.py" output/boot.img \
+            --url "$URL" --verify-xz "$GITHUB_WORKSPACE/$NAME" -o "$ENTRY"
+          {
+            echo "asset=$NAME"
+            echo "tag=$TAG"
+            echo "url=$URL"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Summarise
+        run: |
+          {
+            echo '## tici boot image'
+            echo
+            echo "- kernel \`${{ inputs.kernel_commit }}\` with \`comma_tici.dts\` restored"
+            echo "- agnos-builder \`${{ inputs.agnos_builder_commit }}\`"
+            echo "- built on \`${{ inputs.runner }}\`"
+            echo
+            echo 'Paste into the `boot` entry of `openpilot/common/hardware/comma/tici_agnos.json`:'
+            echo
+            echo '```json'
+            cat entry.json
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tici-boot
+          path: |
+            ${{ steps.package.outputs.asset }}
+            entry.json
+            agnos-builder/output/boot.img
+          compression-level: 0
+
+      - name: Publish the release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.package.outputs.tag }}
+          ASSET: ${{ steps.package.outputs.asset }}
+        run: |
+          set -e
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          AGNOS boot partition for the comma three.
+
+          Kernel `KERNEL_COMMIT` from commaai/agnos-kernel-sdm845 with `comma_tici.dts` restored,
+          built with agnos-builder `BUILDER_COMMIT`.
+
+          This is not comma's official boot image and cannot be reproduced bit for bit against one.
+          Read `docs/agnos-tici-boot.md` before flashing it.
+          EOF
+          sed -i "s/KERNEL_COMMIT/${{ inputs.kernel_commit }}/; s/BUILDER_COMMIT/${{ inputs.agnos_builder_commit }}/" "$RUNNER_TEMP/notes.md"
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "${{ github.repository }}" \
+              --title "AGNOS tici boot $TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          gh release upload "$TAG" "$ASSET" --repo "${{ github.repository }}" --clobber
+          curl -sIL "${{ steps.package.outputs.url }}" | grep -i '^\(HTTP/\|content-type\|content-length\)' || true
+
+      - name: Open a PR updating the tici manifest
+        if: ${{ inputs.open_pr }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: zoompilot
+        run: |
+          set -e
+          BRANCH="agnos-tici-boot/${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          python3 scripts/agnos/update_manifest.py \
+            openpilot/common/hardware/comma/tici_agnos.json "$GITHUB_WORKSPACE/entry.json" \
+            --comment "kernel ${{ inputs.kernel_commit }} with comma_tici.dts restored, agnos-builder ${{ inputs.agnos_builder_commit }}, built by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git add openpilot/common/hardware/comma/tici_agnos.json
+          SHORT=$(echo "${{ inputs.kernel_commit }}" | cut -c1-9)
+          git commit -m "agnos: tici boot image from kernel $SHORT"
+          git push origin "$BRANCH"
+          cat > "$RUNNER_TEMP/pr.md" <<'EOF'
+          Boot partition for the comma three, built by [run RUN_ID](RUN_URL).
+
+          - kernel `KERNEL_COMMIT` with `comma_tici.dts` restored by `scripts/agnos/restore-comma_tici-dts.patch`
+          - agnos-builder `BUILDER_COMMIT`
+          - asset `ASSET_NAME`
+
+          Untested on hardware. Read `docs/agnos-tici-boot.md` before flashing anything.
+          EOF
+          sed -i \
+            -e "s/RUN_ID/${{ github.run_id }}/" \
+            -e "s#RUN_URL#${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#" \
+            -e "s/KERNEL_COMMIT/${{ inputs.kernel_commit }}/" \
+            -e "s/BUILDER_COMMIT/${{ inputs.agnos_builder_commit }}/" \
+            -e "s/ASSET_NAME/${{ steps.package.outputs.asset }}/" \
+            "$RUNNER_TEMP/pr.md"
+          gh pr create --base "${{ github.ref_name }}" --head "$BRANCH" \
+            --title "agnos: tici boot image from kernel $SHORT" \
+            --body-file "$RUNNER_TEMP/pr.md"
