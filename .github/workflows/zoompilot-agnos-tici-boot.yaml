@@ -87,6 +87,8 @@ jobs:
             git checkout -q --detach FETCH_HEAD
           fi
           git log -1 --format='kernel %H %ci %s'
+          # the inputs accept a branch name, so record what was actually built
+          echo "KERNEL_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       # build_kernel.sh re-clones the submodule if it looks uninitialized. It does not
       # here, because the directory now has its own .git, but a silent re-clone would
@@ -177,7 +179,7 @@ jobs:
           {
             echo '## tici boot image'
             echo
-            echo "- kernel \`${{ inputs.kernel_commit }}\` with \`comma_tici.dts\` restored"
+            echo "- kernel \`$KERNEL_SHA\` with \`comma_tici.dts\` restored (requested \`${{ inputs.kernel_commit }}\`)"
             echo "- agnos-builder \`${{ inputs.agnos_builder_commit }}\`"
             echo "- built on \`${{ inputs.runner }}\`"
             echo
@@ -214,7 +216,7 @@ jobs:
           This is not comma's official boot image and cannot be reproduced bit for bit against one.
           Read `docs/agnos-tici-boot.md` before flashing it.
           EOF
-          sed -i "s/KERNEL_COMMIT/${{ inputs.kernel_commit }}/; s/BUILDER_COMMIT/${{ inputs.agnos_builder_commit }}/" "$RUNNER_TEMP/notes.md"
+          sed -i "s/KERNEL_COMMIT/$KERNEL_SHA/; s/BUILDER_COMMIT/${{ inputs.agnos_builder_commit }}/" "$RUNNER_TEMP/notes.md"
           if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "${{ github.repository }}" \
               --title "AGNOS tici boot $TAG" \
@@ -236,9 +238,9 @@ jobs:
           git checkout -b "$BRANCH"
           python3 scripts/agnos/update_manifest.py \
             openpilot/common/hardware/comma/tici_agnos.json "$GITHUB_WORKSPACE/entry.json" \
-            --comment "kernel ${{ inputs.kernel_commit }} with comma_tici.dts restored, agnos-builder ${{ inputs.agnos_builder_commit }}, built by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --comment "kernel $KERNEL_SHA with comma_tici.dts restored, agnos-builder ${{ inputs.agnos_builder_commit }}, built by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           git add openpilot/common/hardware/comma/tici_agnos.json
-          SHORT=$(echo "${{ inputs.kernel_commit }}" | cut -c1-9)
+          SHORT=$(echo "$KERNEL_SHA" | cut -c1-9)
           git commit -m "agnos: tici boot image from kernel $SHORT"
           git push origin "$BRANCH"
           cat > "$RUNNER_TEMP/pr.md" <<'EOF'
@@ -253,7 +255,7 @@ jobs:
           sed -i \
             -e "s/RUN_ID/${{ github.run_id }}/" \
             -e "s#RUN_URL#${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#" \
-            -e "s/KERNEL_COMMIT/${{ inputs.kernel_commit }}/" \
+            -e "s/KERNEL_COMMIT/$KERNEL_SHA/" \
             -e "s/BUILDER_COMMIT/${{ inputs.agnos_builder_commit }}/" \
             -e "s/ASSET_NAME/${{ steps.package.outputs.asset }}/" \
             "$RUNNER_TEMP/pr.md"

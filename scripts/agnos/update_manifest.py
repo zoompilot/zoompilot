@@ -33,10 +33,25 @@ def main() -> None:
   missing = [k for k in REQUIRED if k not in entry]
   if missing:
     raise SystemExit(f"entry is missing {missing}")
+  # agnos.py reads size as an int and hashes exactly that many bytes off the block
+  # device. A string size leaves a stub in the inactive boot partition and breaks
+  # updates permanently, so type check before this can reach a device.
+  if not isinstance(entry["size"], int) or entry["size"] <= 0:
+    raise SystemExit(f"size must be a positive int, got {entry['size']!r}")
+  for k in ("hash", "hash_raw"):
+    v = entry[k]
+    if not isinstance(v, str) or len(v) != 64 or any(c not in "0123456789abcdef" for c in v):
+      raise SystemExit(f"{k} must be a 64 character lowercase sha256, got {v!r}")
+  if entry["sparse"] is not False:
+    raise SystemExit("this script only writes flat images, sparse must be false")
   if not entry["sparse"] and entry["hash"] != entry["hash_raw"]:
     raise SystemExit("non-sparse entry must have hash == hash_raw")
   if not entry["url"].startswith("https://"):
     raise SystemExit(f"refusing a non-https url: {entry['url']}")
+  # the asset is named after its own hash, so a mismatch means the url and the
+  # hashes came from different builds
+  if entry["hash_raw"] not in entry["url"]:
+    raise SystemExit("url does not contain hash_raw; url and hashes are from different builds")
 
   if args.comment:
     entry["_comment"] = args.comment

@@ -186,16 +186,46 @@ To try an image without going through the updater, do the same thing by hand and
 slot intact:
 
 ```bash
-# on the device
-abctl --boot_slot                       # which slot is live now
-sudo dd if=boot.img of=/dev/disk/by-partlabel/boot_b   # the OTHER one
-sudo abctl --set_active 1               # 1 for _b, 0 for _a
+# on the device. Derive the inactive slot, never hardcode it: writing the slot you
+# are running from destroys the fallback this whole procedure depends on.
+live=$(abctl --boot_slot | tr -d '[:space:]')   # a or b
+case "$live" in
+  a) target=b; idx=1 ;;
+  b) target=a; idx=0 ;;
+  *) echo "could not read the live slot, stop here"; exit 1 ;;
+esac
+echo "live slot $live, writing boot_$target"
+
+sudo dd if=boot.img of=/dev/disk/by-partlabel/boot_$target
+sudo abctl --set_active $idx
 sudo reboot
 ```
+
+This is what `agnos.py` does: `get_target_slot_number()` picks the inactive slot, and the updater
+verifies the write before it ever calls `abctl --set_active`.
 
 agnos-builder's own `load_kernel.sh` dds to **both** `boot_a` and `boot_b`. Do not use it here.
 That destroys the fallback slot, which is the only thing standing between a bad kernel and a QDL
 session.
+
+## Which partitions come from where
+
+This is the part that is easy to get wrong, and getting it wrong looks like
+`Unsupported firmware detected` on a black screen at boot, before openpilot runs at all.
+
+| partition | source | why |
+|---|---|---|
+| `xbl`, `xbl_config`, `aop`, `devcfg` | comma, current AGNOS | byte identical between 18.4 and 19.7, not device specific |
+| `abl` | **comma, AGNOS 12.8** | the last bootloader comma shipped for the comma three. A newer `abl` rejects the board |
+| `boot` | **ours** | comma's kernel has no `comma_tici.dtb` from AGNOS 13 on |
+| `system` | comma, current AGNOS | the rootfs, shared across devices |
+
+Both field validated comma three forks, sunnypilot's `sync-20251218-tici` and opgm's `master-c3`,
+independently pin 12.8's `abl` alongside a much newer everything else. That combination looked like
+an unexplained hybrid at first and it is not: `abl` is the one bootloader partition that is device
+specific, and it is the piece that decides whether the board is allowed to boot at all.
+
+If you ever bump the AGNOS version here, carry `abl` forward unchanged.
 
 ## Recovery
 
@@ -204,8 +234,13 @@ boot at all, and the usual escape hatch is worse for a comma three than for othe
 
 - **Slot fallback.** If only one slot is bad the bootloader falls back to the other after its retry
   count runs out. This is the reason for flashing the inactive slot only.
-- **QDL.** `xbl`, `xbl_config` and `abl` are never written by this workflow, so the bootloader and
-  its QDL/EDL entry survive whatever happens to `boot`. Recovery is
+- **QDL always survives, but not for the reason you might assume.** This workflow only ever
+  produces `boot`, however `tici_agnos.json` is a whole manifest: taking an AGNOS update through
+  the updater also writes comma's `xbl`, `xbl_config`, `abl`, `aop` and `devcfg` to the target
+  slot, exactly as it would on a 3X. A comma three therefore does run a bootloader newer than any
+  comma shipped for it, which is the same arrangement the third party 18.4 images already in the
+  field use. What makes QDL safe is that EDL lives in the SoC boot ROM, not in a partition, so it
+  is reachable however badly `boot` or even `xbl` is written. Recovery is
   `agnos-builder/tools/qdl flash boot <known-good boot.img>`, which is what
   `agnos-builder/flash_kernel.sh` does. Getting the device into QDL mode is documented at
   <https://flash.comma.ai>.
@@ -214,6 +249,27 @@ boot at all, and the usual escape hatch is worse for a comma three than for othe
   reflashing to "factory" does **not** get a comma three booting again. The only boot images that
   work are AGNOS 12.8's and ones built like this. Download 12.8's `boot` image, or keep the
   previous working build, before you flash a new one.
+
+## If the device shows "Unsupported firmware detected"
+
+A black screen reading `Unsupported firmware detected` with a link to
+`commaai/hardware/tree/master/comma_three` is the bootloader refusing the board. It happens before
+openpilot runs, so nothing in openpilot can fix it. The cause was a manifest carrying a newer `abl`
+than 12.8; see the table above.
+
+The device is not bricked. The bootloader is running, which means `xbl` and the boot ROM are fine.
+
+1. **Try the other slot first.** The updater flashes the inactive slot and switches to it, so the
+   slot you were on before the update is still intact. Let it fail its retry count and the
+   bootloader should fall back on its own. From a working shell, `abctl --set_active` back to the
+   previous slot.
+2. **Otherwise reflash AGNOS 12.8 over QDL.** 12.8 is the last release comma built for the comma
+   three and it is still on the CDN. Get the device into QDL mode as described at
+   <https://flash.comma.ai>, then flash 12.8's images with `agnos-builder/tools/qdl`. Do **not** use
+   flash.comma.ai's own bundle: it serves current AGNOS, which has neither a `comma_tici` device
+   tree nor a compatible `abl`, so it puts the device back into exactly this state.
+3. Then install `develop-tici` again. With 12.8's `abl` pinned, the update no longer replaces the
+   bootloader with one that rejects the board.
 
 ## Files
 

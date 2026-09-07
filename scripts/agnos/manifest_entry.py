@@ -47,10 +47,10 @@ from pathlib import Path
 
 SECTOR_SIZE = 4096
 SPARSE_MAGIC = 0xED26FF3A
+BOOT_MAGIC = b"ANDROID!"
 
-# The tici boot partition. Anything larger cannot be flashed. Derived from
-# comma's own boot.img sizes, not read off a device, so treat it as a sanity
-# bound rather than the truth. See docs/agnos-tici-boot.md.
+# boot_a and boot_b are 67108864 bytes each, read out of comma's gpt_main_4.
+# Anything larger cannot be flashed.
 MAX_BOOT_SIZE = 64 * 1024 * 1024
 
 
@@ -60,6 +60,14 @@ def build_entry(path: Path, name: str, url: str) -> dict:
 
   if size >= 4 and struct.unpack("<I", data[:4])[0] == SPARSE_MAGIC:
     raise SystemExit(f"{path} is an Android sparse image; this script only handles flat images")
+
+  # Every other defect here (wrong hash, wrong size, wrong url) aborts the flash and
+  # leaves the device on its current slot. An internally consistent image the
+  # bootloader refuses is the one input that survives verification and still reaches
+  # abctl --set_active, so refuse anything that is not a signed Android boot image.
+  # build_kernel.sh leaves the unsigned boot.img.nonsecure next to the real one.
+  if data[:8] != BOOT_MAGIC:
+    raise SystemExit(f"{path} is not an Android boot image (no ANDROID! magic); refusing to publish it")
 
   digest = hashlib.sha256(data).hexdigest()
 
