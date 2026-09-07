@@ -165,18 +165,20 @@ jobs:
       # broken: comma's uncompressed 19.7 image is exactly 46897152 bytes, 100% of the
       # partition, so appending a fourth device tree put us 372736 bytes over.
       #
-      # The limit checked here is the smaller, older one. comma grew the boot partition
-      # when it stopped compressing the kernel, and all-partitions.json only describes
-      # what a device gets from a current flash.comma.ai restore. A comma three that was
-      # last written by AGNOS 12.8 still has an 18515968 byte boot partition, and we
-      # would rather not require a restore.
+      # The limit that matters is the smaller, older one. comma grew the boot partition
+      # when it stopped compressing the kernel, and the all-partitions.json in this repo
+      # describes a comma four. flash.comma.ai reads its table for a comma three from
+      # commaai/openpilot branch release-tici, which is frozen at v0.10.0 and still
+      # flashes AGNOS 12.8, so a restored comma three has an 18515968 byte boot
+      # partition. Every other partition in the manifest fits both tables.
       - name: Confirm the image fits the boot partition
         run: |
           set -e
           size=$(stat -c %s agnos-builder/output/boot.img)
           current=$(python3 -c "import json; print([p['size'] for p in json.load(open('zoompilot/openpilot/common/hardware/comma/all-partitions.json')) if p['name'] == 'boot'][0])")
+          # commaai/openpilot release-tici system/hardware/tici/all-partitions.json
           legacy=18515968
-          echo "boot.img $size; boot partition is $current after a current restore, $legacy on an AGNOS 12.8 era device"
+          echo "boot.img $size; boot partition is $legacy on a comma three, $current on a comma four"
           for limit in "$legacy" "$current"; do
             if [ "$size" -gt "$limit" ]; then
               echo "::error::boot.img is $((size - limit)) bytes larger than a $limit byte boot partition; agnos.py could not write it"

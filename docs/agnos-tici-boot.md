@@ -4,8 +4,10 @@
 cannot take from comma, publishes it as a release asset, and fills in the `boot` entry of
 `openpilot/common/hardware/comma/tici_agnos.json`.
 
-**Nothing in this document has been run on a comma three.** The image has never been built, never
-been flashed and never been booted. Read [Recovery](#recovery) before you flash anything.
+**The first image built from this workflow could not be flashed at all.** It was packaged
+uncompressed and came out larger than the boot partition, which is what left a tester sitting on
+the bootloader splash. The current image is gzipped and fits. See [Sizing](#sizing). Nothing here
+has yet booted a comma three; read [Recovery](#recovery) before you flash anything.
 
 ## Why
 
@@ -32,8 +34,10 @@ way `agnos-builder/build_kernel.sh` does it:
 
 - cross compiled with `DEFCONFIG=tici_defconfig` inside comma's `Dockerfile.builder` container
   (Ubuntu 20.04, python2, the Linaro `aarch64-linux-gnu` toolchain from `tools/`)
-- `Image-dtb` is the uncompressed `Image` with `comma_tici.dtb`, `comma_tizi.dtb`,
-  `comma_mici.dtb` and `comma_ultimate_provisioning.dtb` concatenated onto it
+- `Image.gz-dtb` is the gzipped `Image` with `comma_tici.dtb`, `comma_tizi.dtb`,
+  `comma_mici.dtb` and `comma_ultimate_provisioning.dtb` concatenated onto it. comma's current
+  `tici_defconfig` asks for the uncompressed `Image-dtb`;
+  `scripts/agnos/gzip_kernel_image.sh` flips it back, for the reasons under [Sizing](#sizing)
 - wrapped by `tools/mkbootimg` with comma's cmdline, 4096 byte pages, base `0x80000000`
 - signed with `vble-qti.key`, which is committed in the clear in agnos-builder, and the padded
   signature appended
@@ -56,6 +60,46 @@ against a specific `vermagic`), so the pairing is expected to work. Expected, no
 Both pins are workflow inputs. Raising `kernel_commit` is the intended way to track comma; the
 patch's `Makefile` hunk carries three lines of context and will need refreshing if a kernel bump
 adds or removes a board there.
+
+## Sizing
+
+The boot partition has no slack in it, and a comma three's is the small one.
+
+| image | bytes |
+|---|---|
+| AGNOS 12.8, gzip, 4 dtbs | 18515968 |
+| FrogPilot's rebuilt 18.4, gzip, 4 dtbs | 18130944 |
+| AGNOS 19.7, uncompressed, 3 dtbs | 46897152 |
+| ours as first published, uncompressed, 4 dtbs | 47269888 |
+| ours, gzip, 4 dtbs | 17864704 |
+
+| boot partition | bytes | who has it |
+|---|---|---|
+| comma three | 18515968 | anything restored with flash.comma.ai |
+| comma four | 46897152 | `all-partitions.json` in this repo |
+
+comma sizes the partition to the image exactly, so there is never room for a fourth device tree in
+whatever comma last shipped. The comma four's table is not the comma three's: flash.comma.ai reads
+its partition table for a comma three from `commaai/openpilot` branch `release-tici`, which is
+frozen at v0.10.0 and still flashes AGNOS 12.8, so a restored comma three has an 18515968 byte boot
+partition. `boot` is the only entry in the manifest that differs between the two tables; everything
+else, `system` included, fits both.
+
+`agnos.py` writes the decompressed image straight at `/dev/disk/by-partlabel/boot_x`, so an image
+that does not fit is not truncated into something that half works, it simply cannot be written. The
+first image published from this workflow was 47269888 bytes against an 18515968 byte partition. The
+five partitions ahead of `boot` in the manifest flashed, `boot` failed, the slot was never swapped,
+and `launch_chffrplus.sh` re-ran the updater forever. On the car that looks like a device sitting on
+the bootloader splash.
+
+So the image is built gzipped, CI fails the build unless it fits the smaller table, and `agnos.py`
+measures the real partition before writing so a manifest that cannot fit is refused rather than
+leaving the inactive slot half written.
+
+Gzip is not only a size decision. Every AGNOS that has ever booted a comma three shipped a gzip
+kernel, and so do FrogPilot's and StarPilot's rebuilds; the uncompressed `Image-dtb` format, with
+its `UNCOMPRESSED_IMG` header, arrived long after comma stopped building for the board. We pin
+AGNOS 12.8's `abl`, and 12.8 only ever loaded gzip.
 
 ## Running the build
 
@@ -277,6 +321,7 @@ The device is not bricked. The bootloader is running, which means `xbl` and the 
 |---|---|
 | `.github/workflows/zoompilot-agnos-tici-boot.yaml` | the build, package, publish and PR |
 | `scripts/agnos/restore-comma_tici-dts.patch` | the deleted DTS and the one `Makefile` line |
+| `scripts/agnos/gzip_kernel_image.sh` | switches comma's build from `Image-dtb` to `Image.gz-dtb` |
 | `scripts/agnos/manifest_entry.py` | computes and verifies a manifest entry for a flat image |
 | `scripts/agnos/update_manifest.py` | swaps one entry into a manifest |
 | `openpilot/common/hardware/comma/tici_agnos.json` | the comma three's manifest |
