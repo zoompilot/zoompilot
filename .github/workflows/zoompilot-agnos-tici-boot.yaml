@@ -80,13 +80,12 @@ jobs:
         working-directory: agnos-builder
         run: |
           set -e
-          rm -rf agnos-kernel-sdm845
-          mkdir agnos-kernel-sdm845
+          git submodule update --init --depth 1 agnos-kernel-sdm845
           cd agnos-kernel-sdm845
-          git init -q .
-          git remote add origin https://github.com/commaai/agnos-kernel-sdm845.git
-          git fetch --depth 1 origin ${{ inputs.kernel_commit }}
-          git checkout -q --detach FETCH_HEAD
+          if [ "$(git rev-parse HEAD)" != "${{ inputs.kernel_commit }}" ]; then
+            git fetch --depth 1 origin ${{ inputs.kernel_commit }}
+            git checkout -q --detach FETCH_HEAD
+          fi
           git log -1 --format='kernel %H %ci %s'
 
       # build_kernel.sh re-clones the submodule if it looks uninitialized. It does not
