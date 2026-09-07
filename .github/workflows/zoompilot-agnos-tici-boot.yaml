@@ -115,6 +115,14 @@ jobs:
           grep -q 'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES=""' arch/arm64/configs/tici_defconfig \
             || { echo "::error::tici_defconfig now names the appended dtbs; comma_tici.dtb must be added to that list"; exit 1; }
 
+      # comma's tici_defconfig builds an uncompressed kernel, and at 19.7 that image
+      # is exactly the size of the boot partition. A fourth device tree does not fit.
+      - name: Build the kernel image gzip compressed
+        run: |
+          zoompilot/scripts/agnos/gzip_kernel_image.sh \
+            agnos-builder/agnos-kernel-sdm845 \
+            agnos-builder/build_kernel.sh
+
       - name: Restore ccache
         uses: actions/cache@v4
         with:
@@ -131,9 +139,9 @@ jobs:
           CCACHE_MAXSIZE: 5G
         run: ./build_kernel.sh
 
-      # Image-dtb is the uncompressed kernel with every built dtb concatenated onto it,
+      # Image.gz-dtb is the gzipped kernel with every built dtb concatenated onto it,
       # and boot.img is that plus the mkbootimg header and comma's LE signature. The
-      # bootloader picks a dtb by qcom,msm-id and board-id, so all three comma boards
+      # bootloader picks a dtb by qcom,msm-id and board-id, so all four comma boards
       # ride in one image and the comma three simply had no entry to pick.
       - name: Confirm the tici device tree is in the image
         working-directory: agnos-builder
@@ -151,6 +159,31 @@ jobs:
             fi
           done
           ls -l output/boot.img
+
+      # agnos.py writes the decompressed image straight at the block device, so an
+      # image larger than the partition cannot be flashed at all. This is what shipped
+      # broken: comma's uncompressed 19.7 image is exactly 46897152 bytes, 100% of the
+      # partition, so appending a fourth device tree put us 372736 bytes over.
+      #
+      # The limit checked here is the smaller, older one. comma grew the boot partition
+      # when it stopped compressing the kernel, and all-partitions.json only describes
+      # what a device gets from a current flash.comma.ai restore. A comma three that was
+      # last written by AGNOS 12.8 still has an 18515968 byte boot partition, and we
+      # would rather not require a restore.
+      - name: Confirm the image fits the boot partition
+        run: |
+          set -e
+          size=$(stat -c %s agnos-builder/output/boot.img)
+          current=$(python3 -c "import json; print([p['size'] for p in json.load(open('zoompilot/openpilot/common/hardware/comma/all-partitions.json')) if p['name'] == 'boot'][0])")
+          legacy=18515968
+          echo "boot.img $size; boot partition is $current after a current restore, $legacy on an AGNOS 12.8 era device"
+          for limit in "$legacy" "$current"; do
+            if [ "$size" -gt "$limit" ]; then
+              echo "::error::boot.img is $((size - limit)) bytes larger than a $limit byte boot partition; agnos.py could not write it"
+              exit 1
+            fi
+          done
+          echo "fits with $((legacy - size)) bytes to spare on the tighter layout"
 
       - name: Package and hash
         id: package

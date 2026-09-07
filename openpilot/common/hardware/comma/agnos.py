@@ -184,8 +184,27 @@ def extract_compressed_image(target_slot_number: int, partition: dict, cloudlog)
     os.sync()
 
 
+def check_partition_fits(target_slot_number: int, partition: dict) -> None:
+  # A manifest entry larger than the partition cannot be flashed: agnos.py writes
+  # the decompressed image straight at the block device and the write fails at the
+  # end. Refuse before touching anything, so a bad manifest does not leave the
+  # inactive slot half written, and so the reason is in the log.
+  path = get_partition_path(target_slot_number, partition)
+  try:
+    with open(path, 'rb') as f:
+      available = f.seek(0, os.SEEK_END)
+  except OSError:
+    return  # not a block device, e.g. running the updater off device
+
+  if partition['size'] > available:
+    raise Exception(f"{partition['name']} is {partition['size']} bytes, "
+                    f"{partition['size'] - available} more than the {available} byte partition")
+
+
 def flash_partition(target_slot_number: int, partition: dict, cloudlog, standalone=False):
   cloudlog.info(f"Downloading and writing {partition['name']}")
+
+  check_partition_fits(target_slot_number, partition)
 
   if verify_partition(target_slot_number, partition):
     cloudlog.info(f"Already flashed {partition['name']}")
