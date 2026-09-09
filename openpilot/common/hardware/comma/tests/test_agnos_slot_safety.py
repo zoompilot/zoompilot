@@ -132,3 +132,16 @@ def test_flash_verifies_each_partition_before_return(tmp_path, monkeypatch):
 
   with pytest.raises(RuntimeError, match="verification failed for boot"):
     agnos.flash_agnos_update(manifest, 1, _cloudlog())
+
+
+def test_swap_clears_fast_check_trailers_after_verify(tmp_path, monkeypatch):
+  manifest = _manifest(tmp_path, [{"name": "system"}, {"name": "boot", "full_check": True}])
+  order = []
+  monkeypatch.setattr(agnos, "get_active_slot_number", lambda: 0)
+  monkeypatch.setattr(agnos, "verify_agnos_update", lambda *_: order.append("verify") or True)
+  monkeypatch.setattr(agnos, "clear_partition_hash", lambda _slot, p: order.append(f"clear:{p['name']}"))
+  monkeypatch.setattr(agnos, "activate_slot", lambda *_: order.append("activate"))
+
+  agnos.swap(manifest, 1, _cloudlog())
+
+  assert order == ["verify", "clear:system", "activate"]

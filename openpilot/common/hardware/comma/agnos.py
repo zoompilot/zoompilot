@@ -287,6 +287,14 @@ def swap(manifest_path: str, target_slot_number: int, cloudlog) -> None:
   validate_target_slot_number(target_slot_number)
   if not verify_agnos_update(manifest_path, target_slot_number):
     raise RuntimeError(f"AGNOS verification failed for target slot {target_slot_number}")
+
+  # Once the slot boots, its partitions are no longer what the manifest hashed.
+  # Clear the trailers so the fast check cannot pass on a slot that has run;
+  # a later update to it will reflash. Full-check partitions carry no trailer.
+  for partition in load_manifest(manifest_path):
+    if not partition.get('full_check', False):
+      clear_partition_hash(target_slot_number, partition)
+
   activate_slot(target_slot_number, cloudlog)
 
 
