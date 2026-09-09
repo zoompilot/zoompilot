@@ -72,20 +72,30 @@ def test_manifest_must_be_a_list(tmp_path):
     agnos.load_manifest(str(manifest))
 
 
-def test_activation_retries_then_requires_postcondition(monkeypatch):
-  active_slots = iter((0, 0, 1))
+def _abctl(stdout="", stderr=""):
+  return subprocess.CompletedProcess(["abctl"], 0, stdout=stdout, stderr=stderr)
+
+
+def test_activation_retries_until_abctl_confirms_the_lun_switch(monkeypatch):
+  outputs = iter((_abctl(stderr="No such file or directory"), _abctl(stdout="nothing"), _abctl(stdout="set lun as boot lun")))
   calls, delays = [], []
-  monkeypatch.setattr(agnos, "get_active_slot_number", lambda: next(active_slots))
-  monkeypatch.setattr(agnos.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+  monkeypatch.setattr(agnos, "get_active_slot_number", lambda: 0)
+  monkeypatch.setattr(agnos.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs)) or next(outputs))
   monkeypatch.setattr(agnos.time, "sleep", delays.append)
 
   agnos.activate_slot(1, _cloudlog())
 
-  assert calls == [
-    (["abctl", "--set_active", "1"], {"check": True, "capture_output": True, "text": True}),
-    (["abctl", "--set_active", "1"], {"check": True, "capture_output": True, "text": True}),
-  ]
-  assert delays == [agnos.ACTIVATION_RETRY_DELAY]
+  assert calls == [(["abctl", "--set_active", "1"], {"check": True, "capture_output": True, "text": True})] * 3
+  assert delays == [agnos.ACTIVATION_RETRY_DELAY] * 2
+
+
+def test_activation_never_reads_the_booted_slot_back(monkeypatch):
+  # abctl --boot_slot is the booted slot and cannot change before reboot
+  monkeypatch.setattr(agnos, "get_active_slot_number", lambda: 0)
+  monkeypatch.setattr(agnos.subprocess, "run", lambda *_a, **_k: _abctl(stdout="set lun as boot lun"))
+  monkeypatch.setattr(agnos.subprocess, "check_output", lambda *_a, **_k: pytest.fail("must not read abctl --boot_slot after set_active"))
+
+  agnos.activate_slot(1, _cloudlog())
 
 
 def test_activation_command_failure_is_bounded(monkeypatch):

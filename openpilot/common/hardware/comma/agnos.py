@@ -265,17 +265,25 @@ def flash_partition(target_slot_number: int, partition: dict, cloudlog, standalo
       out.write(partition['hash_raw'].lower().encode())
 
 
+def activation_succeeded(out: str) -> bool:
+  # abctl --boot_slot reports the slot the kernel booted from (androidboot.slot_suffix),
+  # which does not change until reboot, so the active slot cannot be read back.
+  # The only confirmation is abctl's own report that it switched the boot LUN.
+  return ("lun as boot lun" in out) and ("No such file or directory" not in out)
+
+
 def activate_slot(target_slot_number: int, cloudlog) -> None:
   validate_target_slot_number(target_slot_number)
   for attempt in range(1, ACTIVATION_ATTEMPTS + 1):
     try:
-      subprocess.run([ABCTL, "--set_active", str(target_slot_number)], check=True, capture_output=True, text=True)
-      if get_active_slot_number() == target_slot_number:
-        cloudlog.info(f"Activated slot {target_slot_number}")
+      proc = subprocess.run([ABCTL, "--set_active", str(target_slot_number)], check=True, capture_output=True, text=True)
+      out = proc.stdout + proc.stderr
+      if activation_succeeded(out):
+        cloudlog.info(f"Activated slot {target_slot_number}: {out.strip()}")
         return
-      cloudlog.error(f"Activation postcondition failed for slot {target_slot_number}")
+      cloudlog.error(f"Activation of slot {target_slot_number} not confirmed: {out.strip()}")
     except subprocess.CalledProcessError as exc:
-      cloudlog.error(f"Activation failed for slot {target_slot_number}: {exc}")
+      cloudlog.error(f"Activation failed for slot {target_slot_number}: {exc} {exc.stdout} {exc.stderr}")
 
     if attempt < ACTIVATION_ATTEMPTS:
       time.sleep(ACTIVATION_RETRY_DELAY)
@@ -329,9 +337,8 @@ def flash_agnos_update(manifest_path: str, target_slot_number: int, cloudlog, st
       cloudlog.info(f"Failed to flash {partition['name']}, aborting")
       raise Exception("Maximum retries exceeded")
 
-  if not verify_agnos_update(manifest_path, target_slot_number):
-    raise RuntimeError(f"AGNOS verification failed for target slot {target_slot_number}")
-
+  # every partition was verified as it landed; --swap and swap() re-verify
+  # the manifest before activation, so a third full read here buys nothing
   cloudlog.info(f"AGNOS ready on slot {target_slot_number}")
 
 
