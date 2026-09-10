@@ -9,14 +9,13 @@ import threading
 import time
 
 
-from openpilot.common.api import api_get
+from openpilot.common.api.backend import backend_config
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
-from openpilot.selfdrive.ui.lib.api_helpers import get_token
+from openpilot.selfdrive.ui.lib.api_helpers import authenticated_api_get
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.ui_state import ui_state, device
-from openpilot.system.athena.registration import UNREGISTERED_DONGLE_ID
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.scroller import NavScroller
 
@@ -67,13 +66,11 @@ class TripsLayoutMici(NavScroller):
 
   def _fetch_drive_stats(self):
     try:
-      dongle_id = self._params.get("DongleId")
-      if not dongle_id or dongle_id == UNREGISTERED_DONGLE_ID:
-        return
-      identity_token = get_token(dongle_id)
-      response = api_get(f"v1.1/devices/{dongle_id}/stats", access_token=identity_token, session=self._session)
-      if response.status_code == 200:
-        self._params.put(self.PARAM_KEY, response.json())
+      config, response = authenticated_api_get(self._params, "v1.1/devices/{dongle_id}/stats", session=self._session)
+      if backend_config(self._params) == config and response.status_code == 200:
+        data = response.json()
+        if backend_config(self._params) == config:
+          self._params.put(self.PARAM_KEY, data)
     except Exception as e:
       cloudlog.error(f"Failed to fetch drive stats: {e}")
 

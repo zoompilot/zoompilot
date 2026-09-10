@@ -1,5 +1,6 @@
 import pyray as rl
 
+from openpilot.common.api.backend import use_konik
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
@@ -60,4 +61,5 @@ class PrimeWidget(Widget):
 
     font = gui_app.font(FontWeight.BOLD)
     rl.draw_text_ex(font, tr("✓ SUBSCRIBED"), rl.Vector2(x, y), 41, 0, rl.Color(134, 255, 78, 255))
-    rl.draw_text_ex(font, tr("comma prime"), rl.Vector2(x, y + 61), 75, 0, rl.WHITE)
+    brand = tr("Konik stable") if use_konik(ui_state.params) else tr("comma prime")
+    rl.draw_text_ex(font, brand, rl.Vector2(x, y + 61), 75, 0, rl.WHITE)

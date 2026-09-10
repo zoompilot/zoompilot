@@ -7,6 +7,7 @@ from enum import Enum
 from sentry_sdk.integrations.threading import ThreadingIntegration
 
 from openpilot.common.params import Params
+from openpilot.common.api.backend import use_konik
 from openpilot.system.athena.registration import UNREGISTERED_DONGLE_ID
 from openpilot.common.hardware import HARDWARE
 from openpilot.common.hardware.hw import Paths
@@ -18,6 +19,21 @@ from openpilot.sunnypilot.sunnylink.api import UNREGISTERED_SUNNYLINK_DONGLE_ID
 CRASHES_DIR = Paths.crash_log_root()
 
 
+def _remote_enabled() -> bool:
+  return not use_konik(Params())
+
+
+def _remote_call(fn, *args, **kwargs) -> bool:
+  if not _remote_enabled():
+    return False
+  fn(*args, **kwargs)
+  return True
+
+
+def _before_send(event, _hint):
+  return event if _remote_enabled() else None
+
+
 class SentryProject(Enum):
   # python project
   SELFDRIVE = "https://186a6736b7927e5ae9b92c869ba81b6b@o1138119.ingest.us.sentry.io/4508660076052480"
@@ -27,13 +43,15 @@ class SentryProject(Enum):
 
 def report_tombstone(fn: str, message: str, contents: str) -> None:
   cloudlog.error({'tombstone': message})
+  if not _remote_enabled():
+    return
 
   with sentry_sdk.configure_scope() as scope:
     set_user()
-    scope.set_extra("tombstone_fn", fn)
-    scope.set_extra("tombstone", contents)
-    sentry_sdk.capture_message(message=message)
-    sentry_sdk.flush()
+    _remote_call(scope.set_extra, "tombstone_fn", fn)
+    _remote_call(scope.set_extra, "tombstone", contents)
+    if _remote_call(sentry_sdk.capture_message, message=message):
+      _remote_call(sentry_sdk.flush)
 
 
 def capture_exception(*args, **kwargs) -> None:
@@ -41,10 +59,12 @@ def capture_exception(*args, **kwargs) -> None:
 
   try:
     save_exception(traceback.format_exc())
+    if not _remote_enabled():
+      return
 
     set_user()
-    sentry_sdk.capture_exception(*args, **kwargs)
-    sentry_sdk.flush()  # https://github.com/getsentry/sentry-python/issues/291
+    if _remote_call(sentry_sdk.capture_exception, *args, **kwargs):
+      _remote_call(sentry_sdk.flush)  # https://github.com/getsentry/sentry-python/issues/291
   except Exception:
     cloudlog.exception("sentry exception")
 
@@ -73,35 +93,41 @@ def save_exception(content: str) -> None:
 
 
 def capture_fingerprint_mock() -> None:
+  if not _remote_enabled():
+    return
   try:
     set_user()
     message = "car doesn't match any fingerprints"
-    sentry_sdk.capture_message(message=message, level="error")
-    sentry_sdk.flush()
+    if _remote_call(sentry_sdk.capture_message, message=message, level="error"):
+      _remote_call(sentry_sdk.flush)
   except Exception as e:
     cloudlog.exception(f"sentry fingerprint MOCK exception: {e}")
 
 
 def capture_fingerprint(candidate: str, car_name: str) -> None:
+  if not _remote_enabled():
+    return
   try:
     set_user()
-    sentry_sdk.set_tag("carFingerprint", candidate)
-    sentry_sdk.set_tag("carName", car_name)
+    _remote_call(sentry_sdk.set_tag, "carFingerprint", candidate)
+    _remote_call(sentry_sdk.set_tag, "carName", car_name)
 
     message = f"Fingerprinted {candidate}"
-    sentry_sdk.capture_message(message=message, level="info")
-    sentry_sdk.flush()
+    if _remote_call(sentry_sdk.capture_message, message=message, level="info"):
+      _remote_call(sentry_sdk.flush)
   except Exception as e:
     cloudlog.exception(f"sentry fingerprint exception: {e}")
 
 
 def set_tag(key: str, value: str) -> None:
-  sentry_sdk.set_tag(key, value)
+  _remote_call(sentry_sdk.set_tag, key, value)
 
 
 def set_user() -> None:
+  if not _remote_enabled():
+    return
   dongle_id, git_username, _ = get_properties()
-  sentry_sdk.set_user({"id": dongle_id, "name": git_username})
+  _remote_call(sentry_sdk.set_user, {"id": dongle_id, "name": git_username})
 
 
 def get_properties() -> tuple[str, str, str]:
@@ -115,6 +141,8 @@ def get_properties() -> tuple[str, str, str]:
 
 
 def init(project: SentryProject) -> bool:
+  if not _remote_enabled():
+    return False
   build_metadata = get_build_metadata()
 
   env = build_metadata.channel_type
@@ -124,20 +152,23 @@ def init(project: SentryProject) -> bool:
   if project == SentryProject.SELFDRIVE:
     integrations.append(ThreadingIntegration(propagate_hub=True))
 
-  sentry_sdk.init(project.value,
-                  default_integrations=False,
-                  release=get_version(),
-                  integrations=integrations,
-                  traces_sample_rate=1.0,
-                  max_value_length=8192,
-                  environment=env)
+  if not _remote_call(sentry_sdk.init, project.value,
+                      default_integrations=False,
+                      release=get_version(),
+                      integrations=integrations,
+                      traces_sample_rate=1.0,
+                      max_value_length=8192,
+                      environment=env,
+                      before_send=_before_send,
+                      before_send_transaction=_before_send):
+    return False
 
-  sentry_sdk.set_user({"id": dongle_id, "name": git_username})
-  sentry_sdk.set_tag("dirty", build_metadata.openpilot.is_dirty)
-  sentry_sdk.set_tag("origin", build_metadata.openpilot.git_origin)
-  sentry_sdk.set_tag("branch", build_metadata.channel)
-  sentry_sdk.set_tag("commit", build_metadata.openpilot.git_commit)
-  sentry_sdk.set_tag("device", HARDWARE.get_device_type())
-  sentry_sdk.set_tag("sunnylink_dongle_id", sunnylink_dongle_id)
+  _remote_call(sentry_sdk.set_user, {"id": dongle_id, "name": git_username})
+  _remote_call(sentry_sdk.set_tag, "dirty", build_metadata.openpilot.is_dirty)
+  _remote_call(sentry_sdk.set_tag, "origin", build_metadata.openpilot.git_origin)
+  _remote_call(sentry_sdk.set_tag, "branch", build_metadata.channel)
+  _remote_call(sentry_sdk.set_tag, "commit", build_metadata.openpilot.git_commit)
+  _remote_call(sentry_sdk.set_tag, "device", HARDWARE.get_device_type())
+  _remote_call(sentry_sdk.set_tag, "sunnylink_dongle_id", sunnylink_dongle_id)
 
-  return True
+  return _remote_enabled()

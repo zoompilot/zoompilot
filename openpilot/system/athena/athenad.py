@@ -19,6 +19,7 @@ import threading
 import time
 import gzip
 from contextlib import suppress
+import heapq
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from functools import partial, total_ordering
@@ -37,6 +38,7 @@ from opendbc.car.structs import car
 from openpilot.cereal.services import SERVICE_LIST
 from openpilot.common.api import Api, get_key_pair
 from openpilot.common.basedir import BASEDIR
+from openpilot.common.api.backend import backend_config, connect_client
 from openpilot.common.utils import CallbackReader, get_upload_stream
 from openpilot.common.params import Params
 from openpilot.common.realtime import set_core_affinity
@@ -50,7 +52,6 @@ from openpilot.common.hardware.hw import Paths
 from openpilot.system.athena.rpc import dispatcher, handle, is_call, is_response, loads
 
 
-ATHENA_HOST = os.getenv('ATHENA_HOST', 'wss://athena.comma.ai')
 HANDLER_THREADS = int(os.getenv('HANDLER_THREADS', "4"))
 LOCAL_PORT_WHITELIST = {22, }  # SSH
 
@@ -65,6 +66,8 @@ WS_FRAME_SIZE = 4096
 DEVICE_STATE_UPDATE_INTERVAL = 1.0  # in seconds
 DEFAULT_UPLOAD_PRIORITY = 99  # higher number = lower priority
 CLIP_CHUNK_SIZE = 512 * 1024
+LOCAL_PROXY_CONNECT_TIMEOUT = 30
+LOCAL_PROXY_READ_TIMEOUT = 0.1
 
 SEND_PRIORITY_HIGH = 0
 SEND_PRIORITY_LOW = 1
@@ -76,8 +79,8 @@ SSH_TOS = 0x90  # AF42, DSCP of 36/HDD_LINUX_AC_VI with the minimum delay flag
 
 NetworkType = log.DeviceState.NetworkType
 
-UploadFileDict = dict[str, str | int | float | bool]
-UploadItemDict = dict[str, str | bool | int | float | dict[str, str]]
+UploadFileDict = dict[str, str | int | float | bool | dict[str, str]]
+UploadItemDict = dict[str, str | bool | int | float | dict[str, str] | None]
 
 UploadFilesToUrlResponse = dict[str, int | list[UploadItemDict] | list[str]]
 
@@ -119,11 +122,12 @@ class UploadItem:
   progress: float = 0
   allow_cellular: bool = False
   priority: int = DEFAULT_UPLOAD_PRIORITY
+  source_backend: str | None = None
 
   @classmethod
   def from_dict(cls, d: dict) -> UploadItem:
     return cls(d["path"], d["url"], d["headers"], d["created_at"], d["id"], d["retry_count"], d["current"],
-               d["progress"], d["allow_cellular"], d["priority"])
+               d["progress"], d["allow_cellular"], d["priority"], d.get("source_backend"))
 
   def __lt__(self, other):
     if not isinstance(other, UploadItem):
@@ -138,7 +142,8 @@ class UploadItem:
 
 dispatcher["echo"] = lambda s: s
 recv_queue: Queue[str] = queue.Queue()
-send_queue: Queue[tuple[int, int, str]] = queue.PriorityQueue()
+SendQueueItem = tuple[int, int, str, threading.Event | None]
+send_queue: Queue[SendQueueItem] = queue.PriorityQueue()
 upload_queue: Queue[UploadItem] = queue.PriorityQueue()
 log_recv_queue: Queue[str] = queue.Queue()
 cancelled_uploads: set[str] = set()
@@ -146,9 +151,11 @@ cancelled_uploads: set[str] = set()
 cur_upload_items: dict[int, UploadItem | None] = {}
 
 send_seq = itertools.count()
-def send_queue_push(data: str, priority: int) -> None:
+def send_queue_push(data: str, priority: int, target_queue: Queue[SendQueueItem] | None = None,
+                    completion: threading.Event | None = None) -> None:
   assert priority is not None, "send queue priority must be specified"
-  send_queue.put_nowait((priority, next(send_seq), data)) # tie-break with a monotonic counter
+  target_queue = target_queue if target_queue is not None else send_queue
+  target_queue.put_nowait((priority, next(send_seq), data, completion)) # tie-break with a monotonic counter
 
 
 # TODO-SP: adapt zst for sunnylink
@@ -163,42 +170,80 @@ class AbortTransferException(Exception):
 
 
 class UploadQueueCache:
+  _param_key: str | None = None
 
-  @staticmethod
-  def initialize(upload_queue: Queue[UploadItem]) -> None:
+  @classmethod
+  def configure(cls, param_key: str) -> None:
+    if cls._param_key not in (None, param_key):
+      raise RuntimeError(f"UploadQueueCache already configured for {cls._param_key}")
+    cls._param_key = param_key
+
+  @classmethod
+  def _key(cls) -> str:
+    if cls._param_key is None:
+      raise RuntimeError("UploadQueueCache is not configured")
+    return cls._param_key
+
+  @classmethod
+  def initialize(cls, upload_queue: Queue[UploadItem], source_backend: str) -> None:
     try:
-      upload_queue_json = Params().get("AthenadUploadQueue")
+      upload_queue_json = Params().get(cls._key())
       if upload_queue_json is not None:
-        for item in upload_queue_json:
-          upload_queue.put(UploadItem.from_dict(item))
+        for item_dict in upload_queue_json:
+          try:
+            item = UploadItem.from_dict(item_dict)
+            if item.source_backend == source_backend:
+              upload_queue.put(item)
+          except Exception:
+            cloudlog.exception("athena.UploadQueueCache.item.exception")
+        cls.cache(upload_queue, source_backend)
     except Exception:
       cloudlog.exception("athena.UploadQueueCache.initialize.exception")
 
-  @staticmethod
-  def cache(upload_queue: Queue[UploadItem]) -> None:
+  @classmethod
+  def sanitize(cls, upload_queue: Queue[UploadItem], source_backend: str) -> None:
+    with upload_queue.mutex:
+      upload_queue.queue[:] = [item for item in upload_queue.queue if item.source_backend == source_backend]
+      heapq.heapify(upload_queue.queue)
+    cls.cache(upload_queue, source_backend)
+
+  @classmethod
+  def cache(cls, upload_queue: Queue[UploadItem], source_backend: str | None = None) -> None:
     try:
-      queue: list[UploadItem | None] = list(upload_queue.queue)
-      items = [asdict(i) for i in queue if i is not None and (i.id not in cancelled_uploads)]
-      Params().put("AthenadUploadQueue", items, block=True)
+      with upload_queue.mutex:
+        queued_items: list[UploadItem | None] = list(upload_queue.queue)
+      items = [asdict(i) for i in queued_items if i is not None and (i.id not in cancelled_uploads)]
+      params = Params()
+      if source_backend is not None:
+        # the runtime queue only holds the active backend's items; keep the
+        # other backend's parked uploads or a backend switch would delete them
+        stored = params.get(cls._key()) or []
+        items = [d for d in stored if isinstance(d, dict) and d.get("source_backend") not in (None, source_backend)] + items
+      params.put(cls._key(), items, block=True)
     except Exception:
       cloudlog.exception("athena.UploadQueueCache.cache.exception")
 
 
-def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
+def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None, source_backend: str | None = None, api=None) -> None:
   end_event = threading.Event()
+  session_recv_queue: Queue[str] = queue.Queue()
+  session_send_queue: Queue[SendQueueItem] = queue.PriorityQueue()
+  session_log_recv_queue: Queue[str] = queue.Queue()
 
   threads = [
-    threading.Thread(target=ws_manage, args=(ws, end_event), name='ws_manage'),
-    threading.Thread(target=ws_recv, args=(ws, end_event), name='ws_recv'),
-    threading.Thread(target=ws_send, args=(ws, end_event), name='ws_send'),
-    threading.Thread(target=upload_handler, args=(end_event,), name='upload_handler'),
-    threading.Thread(target=upload_handler, args=(end_event,), name='upload_handler2'),
-    threading.Thread(target=upload_handler, args=(end_event,), name='upload_handler3'),
-    threading.Thread(target=upload_handler, args=(end_event,), name='upload_handler4'),
-    threading.Thread(target=log_handler, args=(end_event,), name='log_handler'),
-    threading.Thread(target=stat_handler, args=(end_event,), name='stat_handler'),
+    threading.Thread(target=ws_manage, args=(ws, end_event, source_backend), name='ws_manage'),
+    threading.Thread(target=ws_recv, args=(ws, end_event, session_recv_queue), name='ws_recv'),
+    threading.Thread(target=ws_send, args=(ws, end_event, session_send_queue), name='ws_send'),
+    threading.Thread(target=upload_handler, args=(end_event, source_backend), name='upload_handler'),
+    threading.Thread(target=upload_handler, args=(end_event, source_backend), name='upload_handler2'),
+    threading.Thread(target=upload_handler, args=(end_event, source_backend), name='upload_handler3'),
+    threading.Thread(target=upload_handler, args=(end_event, source_backend), name='upload_handler4'),
+    threading.Thread(target=log_handler, args=(end_event, LOG_ATTR_NAME, session_send_queue, session_log_recv_queue), name='log_handler'),
+    threading.Thread(target=stat_handler, args=(end_event, None, False, session_send_queue), name='stat_handler'),
   ] + [
-    threading.Thread(target=jsonrpc_handler, args=(end_event,), name=f'worker_{x}')
+    threading.Thread(target=jsonrpc_handler,
+                     args=(end_event, None, source_backend, api, session_recv_queue, session_send_queue, session_log_recv_queue),
+                     name=f'worker_{x}')
     for x in range(HANDLER_THREADS)
   ]
 
@@ -212,34 +257,55 @@ def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
     end_event.set()
     raise
   finally:
+    end_event.set()
+    ws.close()
     for thread in threads:
       cloudlog.debug(f"athena.joining {thread.name}")
       thread.join()
 
 
-def jsonrpc_handler(end_event: threading.Event, localProxyHandler = None) -> None:
-  dispatcher["startLocalProxy"] = localProxyHandler or partial(startLocalProxy, end_event)
+def jsonrpc_handler(end_event: threading.Event, localProxyHandler=None, source_backend: str | None = None, api=None,
+                    source_recv_queue: Queue[str] | None = None,
+                    target_send_queue: Queue[SendQueueItem] | None = None,
+                    target_log_recv_queue: Queue[str] | None = None) -> None:
+  source_recv_queue = source_recv_queue if source_recv_queue is not None else recv_queue
+  target_log_recv_queue = target_log_recv_queue if target_log_recv_queue is not None else log_recv_queue
+  methods = dispatcher.copy()
+  def session_start_local_proxy(remote_ws_uri: str, local_port: int) -> dict[str, int]:
+    return startLocalProxy(end_event, remote_ws_uri, local_port, api=api, source_backend=source_backend)
+
+  methods["startLocalProxy"] = localProxyHandler or session_start_local_proxy
+  if source_backend is not None:
+    methods["uploadFileToUrl"] = lambda fn, url, headers: _upload_file_to_url(fn, url, headers, source_backend)
+    methods["uploadFilesToUrls"] = lambda files_data: _upload_files_to_urls(files_data, source_backend)
   while not end_event.is_set():
     try:
-      data = recv_queue.get(timeout=1)
+      data = source_recv_queue.get(timeout=1)
+      if end_event.is_set() or (source_backend is not None and not _source_is_current(source_backend)):
+        break
       msg = loads(data)
       if is_call(msg):
         cloudlog.event("athena.jsonrpc_handler.call_method", data=data)
-        send_queue_push(handle(msg, dispatcher), SEND_PRIORITY_HIGH)
+        send_queue_push(handle(msg, methods), SEND_PRIORITY_HIGH, target_send_queue)
       elif is_response(msg):
-        log_recv_queue.put_nowait(data)
+        target_log_recv_queue.put_nowait(data)
       else:
         raise Exception("not a valid request or response")
     except queue.Empty:
       pass
     except Exception as e:
       cloudlog.exception("athena jsonrpc handler failed")
-      send_queue_push(json.dumps({"error": str(e)}), SEND_PRIORITY_HIGH)
+      send_queue_push(json.dumps({"error": str(e)}), SEND_PRIORITY_HIGH, target_send_queue)
 
 
-def retry_upload(tid: int, end_event: threading.Event, increase_count: bool = True) -> None:
+def _source_is_current(source_backend: str | None) -> bool:
+  return source_backend == "sunnylink" or (source_backend is not None and backend_config(Params()).name == source_backend)
+
+
+def retry_upload(tid: int, end_event: threading.Event, increase_count: bool = True, source_backend: str | None = None) -> None:
   item = cur_upload_items[tid]
-  if item is not None and item.retry_count < MAX_RETRY_COUNT:
+  source_backend = source_backend or (item.source_backend if item is not None else None)
+  if item is not None and item.source_backend == source_backend and _source_is_current(source_backend) and item.retry_count < MAX_RETRY_COUNT:
     new_retry_count = item.retry_count + 1 if increase_count else item.retry_count
 
     item = replace(
@@ -249,17 +315,19 @@ def retry_upload(tid: int, end_event: threading.Event, increase_count: bool = Tr
       current=False
     )
     upload_queue.put_nowait(item)
-    UploadQueueCache.cache(upload_queue)
-
+    UploadQueueCache.cache(upload_queue, source_backend)
     cur_upload_items[tid] = None
 
     for _ in range(RETRY_DELAY):
       time.sleep(1)
       if end_event.is_set():
         break
+  else:
+    cur_upload_items[tid] = None
+    UploadQueueCache.cache(upload_queue, source_backend)
 
 
-def cb(sm, item, tid, end_event: threading.Event, sz: int, cur: int) -> None:
+def cb(sm, item, tid, end_event: threading.Event, source_backend: str | None, sz: int, cur: int) -> None:
   # Abort transfer if connection changed to metered after starting upload
   # or if athenad is shutting down to re-connect the websocket
   if not item.allow_cellular:
@@ -268,13 +336,13 @@ def cb(sm, item, tid, end_event: threading.Event, sz: int, cur: int) -> None:
       if sm['deviceState'].networkMetered:
         raise AbortTransferException
 
-  if end_event.is_set():
+  if end_event.is_set() or not _source_is_current(source_backend):
     raise AbortTransferException
 
   cur_upload_items[tid] = replace(item, progress=cur / sz if sz else 1)
 
 
-def upload_handler(end_event: threading.Event) -> None:
+def upload_handler(end_event: threading.Event, source_backend: str | None = None) -> None:
   sm = messaging.SubMaster(['deviceState'])
   tid = threading.get_ident()
 
@@ -283,15 +351,24 @@ def upload_handler(end_event: threading.Event) -> None:
 
     try:
       cur_upload_items[tid] = item = replace(upload_queue.get(timeout=1), current=True)
+      source_backend = source_backend or item.source_backend
+      if item.source_backend != source_backend or not _source_is_current(source_backend):
+        cur_upload_items[tid] = None
+        UploadQueueCache.cache(upload_queue, source_backend)
+        continue
 
       if item.id in cancelled_uploads:
         cancelled_uploads.remove(item.id)
+        cur_upload_items[tid] = None
+        UploadQueueCache.cache(upload_queue, source_backend)
         continue
 
       # Remove item if too old
       age = datetime.now() - datetime.fromtimestamp(item.created_at / 1000)
       if age.total_seconds() > MAX_AGE:
         cloudlog.event("athena.upload_handler.expired", item=item, error=True)
+        cur_upload_items[tid] = None
+        UploadQueueCache.cache(upload_queue, source_backend)
         continue
 
       # Check if uploading over metered connection is allowed
@@ -299,7 +376,7 @@ def upload_handler(end_event: threading.Event) -> None:
       metered = sm['deviceState'].networkMetered
       network_type = sm['deviceState'].networkType.raw
       if metered and (not item.allow_cellular):
-        retry_upload(tid, end_event, False)
+        retry_upload(tid, end_event, False, source_backend)
         continue
 
       try:
@@ -311,20 +388,22 @@ def upload_handler(end_event: threading.Event) -> None:
 
         cloudlog.event("athena.upload_handler.upload_start", fn=fn, sz=sz, network_type=network_type, metered=metered, retry_count=item.retry_count)
 
-        with _do_upload(item, partial(cb, sm, item, tid, end_event)) as response:
+        if not _source_is_current(source_backend):
+          raise AbortTransferException
+        with _do_upload(item, partial(cb, sm, item, tid, end_event, source_backend)) as response:
           if response.status_code not in (200, 201, 401, 403, 412):
             cloudlog.event("athena.upload_handler.retry", status_code=response.status_code, fn=fn, sz=sz, network_type=network_type, metered=metered)
-            retry_upload(tid, end_event)
+            retry_upload(tid, end_event, source_backend=source_backend)
           else:
             cloudlog.event("athena.upload_handler.success", fn=fn, sz=sz, network_type=network_type, metered=metered)
 
-        UploadQueueCache.cache(upload_queue)
+        UploadQueueCache.cache(upload_queue, source_backend)
       except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.SSLError):
         cloudlog.event("athena.upload_handler.timeout", fn=fn, sz=sz, network_type=network_type, metered=metered)
-        retry_upload(tid, end_event)
+        retry_upload(tid, end_event, source_backend=source_backend)
       except AbortTransferException:
         cloudlog.event("athena.upload_handler.abort", fn=fn, sz=sz, network_type=network_type, metered=metered)
-        retry_upload(tid, end_event, False)
+        retry_upload(tid, end_event, False, source_backend)
 
     except queue.Empty:
       pass
@@ -642,17 +721,28 @@ dispatcher.add_method(video_clips.getClipChunk)
 
 @dispatcher.add_method
 def uploadFileToUrl(fn: str, url: str, headers: dict[str, str]) -> UploadFilesToUrlResponse:
+  return _upload_file_to_url(fn, url, headers, backend_config(Params()).name)
+
+
+def _upload_file_to_url(fn: str, url: str, headers: dict[str, str], source_backend: str) -> UploadFilesToUrlResponse:
   # this is because mypy doesn't understand that the decorator doesn't change the return type
-  response: UploadFilesToUrlResponse = uploadFilesToUrls([{
+  response: UploadFilesToUrlResponse = _upload_files_to_urls([{
     "fn": fn,
     "url": url,
     "headers": headers,
-  }])
+  }], source_backend)
   return response
 
 
 @dispatcher.add_method
 def uploadFilesToUrls(files_data: list[UploadFileDict]) -> UploadFilesToUrlResponse:
+  return _upload_files_to_urls(files_data, backend_config(Params()).name)
+
+
+def _upload_files_to_urls(files_data: list[UploadFileDict], source_backend: str) -> UploadFilesToUrlResponse:
+  if not _source_is_current(source_backend):
+    return {"enqueued": 0, "items": []}
+
   files = map(UploadFile.from_dict, files_data)
 
   items: list[UploadItemDict] = []
@@ -685,13 +775,14 @@ def uploadFilesToUrls(files_data: list[UploadFileDict]) -> UploadFilesToUrlRespo
       id=None,
       allow_cellular=file.allow_cellular,
       priority=file.priority,
+      source_backend=source_backend,
     )
     upload_id = hashlib.sha1(str(item).encode()).hexdigest()
     item = replace(item, id=upload_id)
     upload_queue.put_nowait(item)
     items.append(asdict(item))
 
-  UploadQueueCache.cache(upload_queue)
+  UploadQueueCache.cache(upload_queue, source_backend)
 
   resp: UploadFilesToUrlResponse = {"enqueued": len(items), "items": items}
   if failed:
@@ -718,6 +809,7 @@ def cancelUpload(upload_id: str | list[str]) -> dict[str, int | str]:
     return {"success": 0, "error": "not found"}
 
   cancelled_uploads.update(cancelled_ids)
+  UploadQueueCache.cache(upload_queue, backend_config(Params()).name)
   return {"success": 1}
 
 @dispatcher.add_method
@@ -736,11 +828,21 @@ def setRouteViewed(route: str) -> dict[str, int | str]:
   return {"success": 1}
 
 
-def startLocalProxy(global_end_event: threading.Event, remote_ws_uri: str, local_port: int) -> dict[str, int]:
+def startLocalProxy(global_end_event: threading.Event, remote_ws_uri: str, local_port: int, api=None,
+                    source_backend: str | None = None) -> dict[str, int]:
   cloudlog.debug("athena.startLocalProxy.starting")
-  dongle_id = Params().get("DongleId")
-  identity_token = Api(dongle_id).get_token()
-  ws = create_connection(remote_ws_uri, cookie="jwt=" + identity_token, enable_multithread=True)
+  if source_backend is not None and not _source_is_current(source_backend):
+    raise RuntimeError("backend changed before local proxy setup")
+  api = api or Api(Params().get("DongleId"))
+  identity_token = api.get_token()
+  if source_backend is not None and not _source_is_current(source_backend):
+    raise RuntimeError("backend changed during local proxy setup")
+  ws = create_connection(remote_ws_uri, cookie="jwt=" + identity_token, enable_multithread=True,
+                         timeout=LOCAL_PROXY_CONNECT_TIMEOUT)
+  ws.settimeout(LOCAL_PROXY_READ_TIMEOUT)
+  if global_end_event.is_set() or (source_backend is not None and not _source_is_current(source_backend)):
+    ws.close()
+    raise RuntimeError("session or backend changed during local proxy setup")
 
   return start_local_proxy_shim(global_end_event, local_port, ws)
 
@@ -768,7 +870,7 @@ def start_local_proxy_shim(global_end_event: threading.Event, local_port: int, w
     proxy_end_event = threading.Event()
     threads = [
       threading.Thread(target=ws_proxy_recv, args=(ws, local_sock, ssock, proxy_end_event, global_end_event)),
-      threading.Thread(target=ws_proxy_send, args=(ws, local_sock, csock, proxy_end_event))
+      threading.Thread(target=ws_proxy_send, args=(ws, local_sock, csock, proxy_end_event, global_end_event))
     ]
     for thread in threads:
       thread.start()
@@ -868,7 +970,8 @@ def get_logs_to_send_sorted(log_attr_name=LOG_ATTR_NAME) -> list[str]:
   return sorted(logs)[:-1]
 
 
-def add_log_to_queue(log_path, log_id, is_sunnylink=False):
+def add_log_to_queue(log_path, log_id, is_sunnylink=False, target_send_queue: Queue[SendQueueItem] | None = None,
+                     completion: threading.Event | None = None) -> bool:
   MAX_SIZE_KB = 32
   MAX_SIZE_BYTES = MAX_SIZE_KB * 1024
 
@@ -878,7 +981,7 @@ def add_log_to_queue(log_path, log_id, is_sunnylink=False):
     # Check if the file is empty
     if not data:
       cloudlog.warning(f"Log file {log_path} is empty.")
-      return
+      return False
 
     # Initialize variables for encoding
     payload = data
@@ -917,15 +1020,28 @@ def add_log_to_queue(log_path, log_id, is_sunnylink=False):
 
     if is_sunnylink and size_in_bytes <= MAX_SIZE_BYTES:
       cloudlog.debug(f"Target is sunnylink and log file {log_path} is small enough to send in one request ({size_in_bytes} bytes).")
-      send_queue_push(jsonrpc_str, SEND_PRIORITY_LOW)
+      send_queue_push(jsonrpc_str, SEND_PRIORITY_LOW, target_send_queue, completion)
+      return True
     elif is_sunnylink:
       cloudlog.warning(f"Target is sunnylink and log file {log_path} is too large to send in one request.")
     else:
       cloudlog.debug(f"Target is not sunnylink, proceeding to send log file {log_path} in one request ({size_in_bytes} bytes).")
-      send_queue_push(jsonrpc_str, SEND_PRIORITY_LOW)
+      send_queue_push(jsonrpc_str, SEND_PRIORITY_LOW, target_send_queue, completion)
+      return True
+    return False
 
 
-def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None:
+def wait_for_send(completion: threading.Event, end_event: threading.Event) -> bool:
+  while not end_event.is_set():
+    if completion.wait(0.1):
+      return not end_event.is_set()
+  return False
+
+
+def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME,
+                target_send_queue: Queue[SendQueueItem] | None = None,
+                source_log_recv_queue: Queue[str] | None = None) -> None:
+  source_log_recv_queue = source_log_recv_queue if source_log_recv_queue is not None else log_recv_queue
   is_sunnylink = log_attr_name != LOG_ATTR_NAME
   if PC:
     cloudlog.debug("athena.log_handler: Not supported on PC")
@@ -947,12 +1063,12 @@ def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None
         log_entry = log_files.pop() # newest log file
         cloudlog.debug(f"athena.log_handler.forward_request {log_entry}")
         try:
-          curr_time = int(time.time())  # noqa: TID251
           log_path = os.path.join(Paths.swaglog_root(), log_entry)
-          setxattr(log_path, log_attr_name, int.to_bytes(curr_time, 4, sys.byteorder))
-
-          add_log_to_queue(log_path, log_entry, is_sunnylink)
-          curr_log = log_entry
+          completion = threading.Event()
+          if add_log_to_queue(log_path, log_entry, is_sunnylink, target_send_queue, completion) and wait_for_send(completion, end_event):
+            curr_time = int(time.time())  # noqa: TID251
+            setxattr(log_path, log_attr_name, int.to_bytes(curr_time, 4, sys.byteorder))
+            curr_log = log_entry
         except OSError:
           pass  # file could be deleted by log rotation
 
@@ -962,7 +1078,7 @@ def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None
         if end_event.is_set():
           break
         try:
-          log_resp = json.loads(log_recv_queue.get(timeout=1))
+          log_resp = json.loads(source_log_recv_queue.get(timeout=1))
           log_entry = log_resp.get("id")
           log_success = "result" in log_resp and log_resp["result"].get("success")
           cloudlog.debug(f"athena.log_handler.forward_response {log_entry} {log_success}")
@@ -982,7 +1098,8 @@ def log_handler(end_event: threading.Event, log_attr_name=LOG_ATTR_NAME) -> None
       cloudlog.exception("athena.log_handler.exception")
 
 
-def stat_handler(end_event: threading.Event, stats_dir=None, is_sunnylink=False) -> None:
+def stat_handler(end_event: threading.Event, stats_dir=None, is_sunnylink=False,
+                 target_send_queue: Queue[SendQueueItem] | None = None) -> None:
   stats_dir = stats_dir or Paths.stats_root()
   last_scan = 0.0
 
@@ -1015,8 +1132,10 @@ def stat_handler(end_event: threading.Event, stats_dir=None, is_sunnylink=False)
               "id": stat_filenames[0]
             }
 
-            send_queue_push(json.dumps(jsonrpc), SEND_PRIORITY_LOW)
-          os.remove(stat_path)
+            completion = threading.Event()
+            send_queue_push(json.dumps(jsonrpc), SEND_PRIORITY_LOW, target_send_queue, completion)
+          if wait_for_send(completion, end_event):
+            os.remove(stat_path)
         last_scan = curr_scan
     except Exception:
       cloudlog.exception("athena.stat_handler.exception")
@@ -1029,9 +1148,11 @@ def ws_proxy_recv(ws: WebSocket, local_sock: socket.socket, ssock: socket.socket
       sock = ws.sock
       if sock is None:
         return
-      r = select.select((sock,), (), (), 30)
+      r = select.select((sock,), (), (), 0.1)
       if r[0]:
         data = ws.recv()
+        if end_event.is_set() or global_end_event.is_set():
+          break
         if isinstance(data, str):
           data = data.encode("utf-8")
         local_sock.sendall(data)
@@ -1050,10 +1171,11 @@ def ws_proxy_recv(ws: WebSocket, local_sock: socket.socket, ssock: socket.socket
   end_event.set()
 
 
-def ws_proxy_send(ws: WebSocket, local_sock: socket.socket, signal_sock: socket.socket, end_event: threading.Event) -> None:
-  while not end_event.is_set():
+def ws_proxy_send(ws: WebSocket, local_sock: socket.socket, signal_sock: socket.socket,
+                  end_event: threading.Event, global_end_event: threading.Event) -> None:
+  while not (end_event.is_set() or global_end_event.is_set()):
     try:
-      r, _, _ = select.select((local_sock, signal_sock), (), ())
+      r, _, _ = select.select((local_sock, signal_sock), (), (), 0.1)
       if r:
         if r[0].fileno() == signal_sock.fileno():
           # got end signal from ws_proxy_recv
@@ -1065,6 +1187,8 @@ def ws_proxy_send(ws: WebSocket, local_sock: socket.socket, signal_sock: socket.
           end_event.set()
           break
 
+        if end_event.is_set() or global_end_event.is_set():
+          break
         ws.send(data, ABNF.OPCODE_BINARY)
     except Exception:
       cloudlog.exception("athenad.ws_proxy_send.exception")
@@ -1072,10 +1196,12 @@ def ws_proxy_send(ws: WebSocket, local_sock: socket.socket, signal_sock: socket.
 
   cloudlog.debug("athena.ws_proxy_send closing sockets")
   signal_sock.close()
+  ws.close()
   cloudlog.debug("athena.ws_proxy_send done closing sockets")
 
 
-def ws_recv(ws: WebSocket, end_event: threading.Event) -> None:
+def ws_recv(ws: WebSocket, end_event: threading.Event, target_recv_queue: Queue[str] | None = None) -> None:
+  target_recv_queue = target_recv_queue if target_recv_queue is not None else recv_queue
   last_ping = int(time.monotonic() * 1e9)
   while not end_event.is_set():
     try:
@@ -1083,7 +1209,7 @@ def ws_recv(ws: WebSocket, end_event: threading.Event) -> None:
       if opcode in (ABNF.OPCODE_TEXT, ABNF.OPCODE_BINARY):
         if opcode == ABNF.OPCODE_TEXT:
           data = data.decode("utf-8")
-        recv_queue.put_nowait(data)
+        target_recv_queue.put_nowait(data)
       elif opcode == ABNF.OPCODE_PING:
         last_ping = int(time.monotonic() * 1e9)
         Params().put("LastAthenaPingTime", last_ping, block=True)
@@ -1097,15 +1223,24 @@ def ws_recv(ws: WebSocket, end_event: threading.Event) -> None:
       end_event.set()
 
 
-def ws_send(ws: WebSocket, end_event: threading.Event) -> None:
+def ws_send(ws: WebSocket, end_event: threading.Event,
+            source_send_queue: Queue[SendQueueItem] | None = None) -> None:
+  source_send_queue = source_send_queue if source_send_queue is not None else send_queue
   while not end_event.is_set():
     try:
-      _, _, data = send_queue.get(timeout=1)
+      _, _, data, completion = source_send_queue.get(timeout=1)
+      if end_event.is_set():
+        break
       for i in range(0, len(data), WS_FRAME_SIZE):
+        if end_event.is_set():
+          break
         frame = data[i:i+WS_FRAME_SIZE]
         last = i + WS_FRAME_SIZE >= len(data)
         opcode = ABNF.OPCODE_TEXT if i == 0 else ABNF.OPCODE_CONT
         ws.send_frame(ABNF.create_frame(frame, opcode, last))
+      else:
+        if completion is not None and not end_event.is_set():
+          completion.set()
     except queue.Empty:
       pass
     except Exception:
@@ -1113,12 +1248,17 @@ def ws_send(ws: WebSocket, end_event: threading.Event) -> None:
       end_event.set()
 
 
-def ws_manage(ws: WebSocket, end_event: threading.Event) -> None:
+def ws_manage(ws: WebSocket, end_event: threading.Event, source_backend: str | None = None) -> None:
   params = Params()
   onroad_prev = None
   sock = ws.sock
 
-  while not end_event.wait(5):
+  while not end_event.wait(1):
+    if source_backend not in (None, "sunnylink") and not _source_is_current(source_backend):
+      end_event.set()
+      ws.close()
+      break
+
     onroad = not params.get_bool("IsOffroad")
     if onroad != onroad_prev:
       onroad_prev = onroad
@@ -1148,16 +1288,16 @@ def main(exit_event: threading.Event | None = None):
     cloudlog.exception("failed to set core affinity")
 
   params = Params()
-  dongle_id = params.get("DongleId")
-  UploadQueueCache.initialize(upload_queue)
-
-  ws_uri = ATHENA_HOST + "/ws/v2/" + dongle_id
-  api = Api(dongle_id)
+  UploadQueueCache.configure("AthenadUploadQueue")
+  UploadQueueCache.initialize(upload_queue, backend_config(params).name)
 
   conn_start = None
   conn_retries = 0
   while exit_event is None or not exit_event.is_set():
     try:
+      config, api = connect_client(params)
+      UploadQueueCache.sanitize(upload_queue, config.name)
+      ws_uri = f"{config.athena_host}/ws/v2/{api.dongle_id}"
       if conn_start is None:
         conn_start = time.monotonic()
 
@@ -1173,7 +1313,7 @@ def main(exit_event: threading.Event | None = None):
       conn_retries = 0
       cur_upload_items.clear()
 
-      handle_long_poll(ws, exit_event)
+      handle_long_poll(ws, exit_event, config.name, api)
 
       ws.close()
     except (KeyboardInterrupt, SystemExit):

@@ -5,7 +5,7 @@ import time
 import uuid
 
 from openpilot.common.test import OpenpilotTestCase
-from openpilot.common.params import Params, ParamKeyFlag, UnknownKeyName
+from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType, UnknownKeyName
 
 class TestParams(OpenpilotTestCase):
   def setup_method(self):
@@ -144,3 +144,50 @@ class TestParams(OpenpilotTestCase):
     now = datetime.datetime.now(datetime.UTC)
     self.params.put("InstallDate", now, block=True)
     assert self.params.get("InstallDate") == now
+
+  def test_backend_security_params_schema(self):
+    bool_keys = {
+      "KonikLockout",
+      "KonikInterlock",
+    }
+    string_keys = {"CommaDongleId", "KonikDongleId"}
+    persistent_keys = set(self.params.all_keys(ParamKeyFlag.PERSISTENT))
+
+    for key in bool_keys:
+      assert key.encode() in persistent_keys
+      assert self.params.get_type(key) == ParamKeyType.BOOL
+      assert self.params.get_default_value(key) is False
+
+    # Konik is the default backend on first boot
+    assert b"UseKonikServer" in persistent_keys
+    assert self.params.get_type("UseKonikServer") == ParamKeyType.BOOL
+    assert self.params.get_default_value("UseKonikServer") is False
+    for key in string_keys:
+      assert key.encode() in persistent_keys
+      assert self.params.get_type(key) == ParamKeyType.STRING
+      assert self.params.get_default_value(key) is None
+
+    assert b"SunnylinkUploadQueue" in persistent_keys
+    assert self.params.get_type("SunnylinkUploadQueue") == ParamKeyType.JSON
+    assert self.params.get_default_value("SunnylinkUploadQueue") is None
+
+  def test_backend_security_params_are_not_backed_up_or_logged(self):
+    backup_keys = set(self.params.all_keys(ParamKeyFlag.BACKUP))
+    security_keys = {
+      b"KonikLockout",
+      b"KonikInterlock",
+      b"CommaDongleId",
+      b"KonikDongleId",
+      b"SunnylinkUploadQueue",
+    }
+    assert not backup_keys.intersection(security_keys | {b"UseKonikServer"})
+    assert security_keys <= set(self.params.all_keys(ParamKeyFlag.DONT_LOG))
+
+  def test_sunnylink_upload_queue_is_independent_json(self):
+    athena_queue = [{"url": "https://comma.example/upload"}]
+    sunnylink_queue = [{"url": "https://konik.example/upload", "headers": {"Authorization": "secret"}}]
+    self.params.put("AthenadUploadQueue", athena_queue, block=True)
+    self.params.put("SunnylinkUploadQueue", sunnylink_queue, block=True)
+
+    assert self.params.get("AthenadUploadQueue") == athena_queue
+    assert self.params.get("SunnylinkUploadQueue") == sunnylink_queue

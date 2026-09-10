@@ -11,7 +11,7 @@ from collections.abc import Iterator
 
 from openpilot.cereal import log
 import openpilot.cereal.messaging as messaging
-from openpilot.common.api import Api
+from openpilot.common.api.backend import backend_config, connect_client
 from openpilot.common.utils import get_upload_stream
 from openpilot.common.params import Params
 from openpilot.common.realtime import set_core_affinity
@@ -73,8 +73,6 @@ def clear_locks(root: str) -> None:
 
 class Uploader:
   def __init__(self, dongle_id: str, root: str):
-    self.dongle_id = dongle_id
-    self.api = Api(dongle_id)
     self.root = root
 
     self.params = Params()
@@ -138,9 +136,15 @@ class Uploader:
     return None
 
   def do_upload(self, key: str, fn: str):
-    url_resp = self.api.get("v1.4/" + self.dongle_id + "/upload_url/", timeout=10, path=key, access_token=self.api.get_token())
+    config, api = connect_client(self.params)
+    access_token = api.get_token()
+    if backend_config(self.params) != config:
+      return None
+    url_resp = api.get("v1.4/" + api.dongle_id + "/upload_url/", timeout=10, path=key, access_token=access_token)
+    if backend_config(self.params) != config:
+      return None
     if url_resp.status_code == 412:
-      return url_resp
+      return url_resp, config
 
     url_resp_json = json.loads(url_resp.text)
     url = url_resp_json['url']
@@ -148,14 +152,20 @@ class Uploader:
     cloudlog.debug("upload_url v1.4 %s %s", url, str(headers))
 
     if fake_upload:
-      return FakeResponse()
+      if backend_config(self.params) != config:
+        return None
+      return FakeResponse(), config
 
     stream = None
     try:
       compress = key.endswith('.zst') and not fn.endswith('.zst')
       stream, _ = get_upload_stream(fn, compress)
+      if backend_config(self.params) != config:
+        return None
       response = requests.put(url, data=stream, headers=headers, timeout=10)
-      return response
+      if backend_config(self.params) != config:
+        return None
+      return response, config
     finally:
       if stream:
         stream.close()
@@ -168,6 +178,7 @@ class Uploader:
       return False
 
     cloudlog.event("upload_start", key=key, fn=fn, sz=sz, network_type=network_type, metered=metered)
+    config = None
 
     if sz == 0:
       # tag files of 0 size as uploaded
@@ -181,9 +192,14 @@ class Uploader:
       stat = None
       last_exc = None
       try:
-        stat = self.do_upload(key, fn)
+        result = self.do_upload(key, fn)
+        if result is not None:
+          stat, config = result
       except Exception as e:
         last_exc = (e, traceback.format_exc())
+
+      if config is not None and backend_config(self.params) != config:
+        stat = None
 
       if stat is not None and stat.status_code in (200, 201, 401, 403, 412):
         self.last_filename = fn
@@ -199,6 +215,9 @@ class Uploader:
       else:
         success = False
         cloudlog.event("upload_failed", stat=stat, exc=last_exc, key=key, fn=fn, sz=sz, network_type=network_type, metered=metered)
+
+    if success and config is not None and backend_config(self.params) != config:
+      success = False
 
     if success:
       # tag file as uploaded

@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdio>
+#include <deque>
 #include <exception>
 #include <string>
 #include <utility>
@@ -162,10 +163,16 @@ ParamsBuffer params_key_at(ParamsHandle *handle, size_t index) noexcept {
 
 size_t params_keys_by_flag(ParamsHandle *handle, uint32_t flag, ParamsBuffer *out, size_t out_size) noexcept {
   return translate_exceptions(size_t{0}, [&]() {
+    // return_string() keeps a single static string alive; filling an array
+    // needs every entry alive simultaneously, so keep them in a deque
+    // (stable data pointers across push_back) for the caller's copy.
+    static thread_local std::deque<std::string> keepalive;
+    keepalive.clear();
     auto filtered = handle->params.allKeys(static_cast<ParamKeyFlag>(flag));
     size_t count = std::min(filtered.size(), out_size);
     for (size_t i = 0; i < count; i++) {
-      out[i] = return_string(filtered[i]);
+      keepalive.push_back(std::move(filtered[i]));
+      out[i] = {keepalive.back().data(), keepalive.back().size()};
     }
     return filtered.size();
   });

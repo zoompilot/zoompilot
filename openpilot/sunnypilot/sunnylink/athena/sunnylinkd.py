@@ -12,6 +12,7 @@ import errno
 import gzip
 import json
 import os
+import queue
 import ssl
 import threading
 import time
@@ -23,7 +24,8 @@ from openpilot.common.realtime import set_core_affinity
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware.hw import Paths
 from openpilot.system.athena.athenad import ws_send, jsonrpc_handler, \
-  recv_queue, UploadQueueCache, upload_queue, cur_upload_items, backoff, ws_manage, log_handler, start_local_proxy_shim, upload_handler, stat_handler
+  recv_queue, UploadQueueCache, upload_queue, cur_upload_items, backoff, ws_manage, log_handler, start_local_proxy_shim, upload_handler, \
+  stat_handler, LOCAL_PROXY_CONNECT_TIMEOUT, LOCAL_PROXY_READ_TIMEOUT, SendQueueItem
 from websocket import (ABNF, WebSocket, WebSocketException, WebSocketTimeoutException,
                        create_connection, WebSocketConnectionClosedException)
 
@@ -53,6 +55,14 @@ BLOCKED_PARAMS = {
   "GithubSshKeys",   # Direct SSH key injection
   "HasAcceptedTerms",
   "HasAcceptedTermsSP",
+  "UseKonikServer",
+  "KonikLockout",
+  "KonikInterlock",
+  "CommaDongleId",
+  "KonikDongleId",
+  "DongleId",
+  "AthenadUploadQueue",
+  "SunnylinkUploadQueue",
   "OnroadCycleRequested",      # Prevent remote cycle trigger
   "AlphaLongitudinalEnabled",  # Flips longitudinal mode via an onroad cycle; local UI only
   "ParamsVersion",         # Device-managed version counter
@@ -64,17 +74,26 @@ def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
   sm = messaging.SubMaster(['deviceState'])
   end_event = threading.Event()
   comma_prime_cellular_end_event = threading.Event()
+  session_recv_queue: queue.Queue[str] = queue.Queue()
+  session_send_queue: queue.PriorityQueue[SendQueueItem] = queue.PriorityQueue()
+  session_log_recv_queue: queue.Queue[str] = queue.Queue()
 
   threads = [
-              threading.Thread(target=ws_manage, args=(ws, end_event), name='ws_manage'),
-              threading.Thread(target=ws_recv, args=(ws, end_event), name='ws_recv'),
-              threading.Thread(target=ws_send, args=(ws, end_event), name='ws_send'),
+              threading.Thread(target=ws_manage, args=(ws, end_event, "sunnylink"), name='ws_manage'),
+              threading.Thread(target=ws_recv, args=(ws, end_event, session_recv_queue), name='ws_recv'),
+              threading.Thread(target=ws_send, args=(ws, end_event, session_send_queue), name='ws_send'),
               threading.Thread(target=ws_ping, args=(ws, end_event), name='ws_ping'),
-              threading.Thread(target=upload_handler, args=(end_event,), name='upload_handler'),
-              threading.Thread(target=sunny_log_handler, args=(end_event, comma_prime_cellular_end_event), name='log_handler'),
-              threading.Thread(target=stat_handler, args=(end_event, Paths.stats_sp_root(), True), name='stat_handler'),
+              threading.Thread(target=upload_handler, args=(end_event, "sunnylink"), name='upload_handler'),
+              threading.Thread(target=sunny_log_handler,
+                               args=(end_event, comma_prime_cellular_end_event, session_send_queue, session_log_recv_queue),
+                               name='log_handler'),
+              threading.Thread(target=stat_handler,
+                               args=(end_event, Paths.stats_sp_root(), True, session_send_queue), name='stat_handler'),
             ] + [
-              threading.Thread(target=jsonrpc_handler, args=(end_event, partial(startLocalProxy, end_event),), name=f'worker_{x}')
+              threading.Thread(target=jsonrpc_handler,
+                               args=(end_event, partial(startLocalProxy, end_event), "sunnylink", None,
+                                     session_recv_queue, session_send_queue, session_log_recv_queue),
+                               name=f'worker_{x}')
               for x in range(HANDLER_THREADS)
             ]
 
@@ -107,13 +126,15 @@ def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
   finally:
     end_event.set()
     comma_prime_cellular_end_event.set()
+    ws.close()
     for thread in threads:
       cloudlog.debug(f"sunnylinkd athena.joining {thread.name}")
       thread.join()
       cloudlog.debug(f"sunnylinkd athena.joined {thread.name}")
 
 
-def ws_recv(ws: WebSocket, end_event: threading.Event) -> None:
+def ws_recv(ws: WebSocket, end_event: threading.Event, target_recv_queue: queue.Queue[str] | None = None) -> None:
+  target_recv_queue = target_recv_queue if target_recv_queue is not None else recv_queue
   last_ping = int(time.monotonic() * 1e9)
   while not end_event.is_set():
     try:
@@ -121,7 +142,7 @@ def ws_recv(ws: WebSocket, end_event: threading.Event) -> None:
       if opcode in (ABNF.OPCODE_TEXT, ABNF.OPCODE_BINARY):
         if opcode == ABNF.OPCODE_TEXT:
           data = data.decode("utf-8")
-        recv_queue.put_nowait(data)
+        target_recv_queue.put_nowait(data)
         cloudlog.debug(f"sunnylinkd.ws_recv.recv {data}")
       elif opcode in (ABNF.OPCODE_PING, ABNF.OPCODE_PONG):
         cloudlog.debug("sunnylinkd.ws_recv.pong")
@@ -152,10 +173,12 @@ def ws_ping(ws: WebSocket, end_event: threading.Event) -> None:
   cloudlog.debug("sunnylinkd.ws_ping.end_event is set, exiting ws_ping thread")
 
 
-def sunny_log_handler(end_event: threading.Event, comma_prime_cellular_end_event: threading.Event) -> None:
+def sunny_log_handler(end_event: threading.Event, comma_prime_cellular_end_event: threading.Event,
+                      target_send_queue: queue.Queue[SendQueueItem] | None = None,
+                      source_log_recv_queue: queue.Queue[str] | None = None) -> None:
   while not end_event.wait(0.1):
     if not comma_prime_cellular_end_event.is_set():
-      log_handler(comma_prime_cellular_end_event, SUNNYLINK_LOG_ATTR_NAME)
+      log_handler(comma_prime_cellular_end_event, SUNNYLINK_LOG_ATTR_NAME, target_send_queue, source_log_recv_queue)
   comma_prime_cellular_end_event.set()
 
 
@@ -166,7 +189,7 @@ def toggleLogUpload(enabled: bool):
 
 @dispatcher.add_method
 def getParamsAllKeys() -> list[str]:
-  keys: list[str] = [k.decode('utf-8') for k in Params().all_keys()]
+  keys: list[str] = [k.decode('utf-8') for k in Params().all_keys() if k.decode('utf-8') not in BLOCKED_PARAMS]
   return keys
 
 
@@ -208,7 +231,7 @@ def getParams(params_keys: list[str], compression: bool = False) -> str | dict[s
       ParamKeyType.BYTES.value: b"",
     }
 
-    param_keys_validated = [key for key in params_keys if key in available_keys]
+    param_keys_validated = [key for key in params_keys if key in available_keys and key not in BLOCKED_PARAMS]
     params_dict: dict[str, list[dict[str, str | bool | int]]] = {"params": []}
     for key in param_keys_validated:
       value = get_param_as_byte(key)
@@ -261,8 +284,10 @@ def startLocalProxy(global_end_event: threading.Event, remote_ws_uri: str, local
 
   cloudlog.debug("athena.startLocalProxy.starting")
   ws = create_connection(
-    remote_ws_uri, header={"Authorization": f"Bearer {sunnylink_api.get_token()}"}, enable_multithread=True, sslopt={"cert_reqs": ssl.CERT_NONE}
+    remote_ws_uri, header={"Authorization": f"Bearer {sunnylink_api.get_token()}"}, enable_multithread=True, sslopt={"cert_reqs": ssl.CERT_NONE},
+    timeout=LOCAL_PROXY_CONNECT_TIMEOUT,
   )
+  ws.settimeout(LOCAL_PROXY_READ_TIMEOUT)
 
   return start_local_proxy_shim(global_end_event, local_port, ws)
 
@@ -279,7 +304,8 @@ def main(exit_event: threading.Event | None = None):
 
   sunnylink_dongle_id = params.get("SunnylinkDongleId")
   sunnylink_api = SunnylinkApi(sunnylink_dongle_id)
-  UploadQueueCache.initialize(upload_queue)
+  UploadQueueCache.configure("SunnylinkUploadQueue")
+  UploadQueueCache.initialize(upload_queue, "sunnylink")
 
   update_car_list_param()
 

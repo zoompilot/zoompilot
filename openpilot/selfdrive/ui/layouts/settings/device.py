@@ -3,6 +3,7 @@ import math
 
 from openpilot.cereal import messaging, log
 from openpilot.common.basedir import BASEDIR
+from openpilot.common.api.backend import use_konik
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.onroad.cabin_camera_dialog import CabinCameraDialog
@@ -24,6 +25,7 @@ if gui_app.sunnypilot_ui():
 # Description constants
 DESCRIPTIONS = {
   'pair_device': tr_noop("Pair your device with comma connect (connect.comma.ai) and claim your comma prime offer."),
+  'pair_device_konik': tr_noop("Pair your device with Konik Stable Connect (stable.konik.ai)."),
   'driver_camera': tr_noop("Preview the driver facing camera to ensure that driver monitoring has good visibility. (vehicle must be off)"),
   'reset_calibration': tr_noop("sunnypilot requires the device to be mounted within 4° left or right and within 5° up or 9° down."),
   'review_guide': tr_noop("Review the rules, features, and limitations of sunnypilot"),
@@ -45,7 +47,8 @@ class DeviceLayout(Widget):
     ui_state.add_offroad_transition_callback(self._offroad_transition)
 
   def _initialize_items(self):
-    self._pair_device_btn = button_item(lambda: tr("Pair Device"), lambda: tr("PAIR"), lambda: tr(DESCRIPTIONS['pair_device']),
+    self._pair_device_btn = button_item(lambda: tr("Pair Device"), lambda: tr("PAIR"),
+                                        lambda: tr(DESCRIPTIONS['pair_device_konik'] if use_konik(self._params) else DESCRIPTIONS['pair_device']),
                                         callback=lambda: gui_app.push_widget(PairingDialog()))
     self._pair_device_btn.set_visible(lambda: not ui_state.prime_state.is_paired())
 
