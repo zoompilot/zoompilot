@@ -87,6 +87,8 @@ class DisplayLayoutMici(NavScroller):
       picker_unit=tr("seconds"),
     )
 
+    self._home_model = BigParamControl(tr("model on home"), "HomeShowActiveModel")
+
     self._screensaver = BigParamControl(tr("screen saver"), "ScreenSaverEnabled")
     # Match the TICI screen-saver range and one-minute step.
     self._screensaver_timeout = BigParamOption(
@@ -98,13 +100,14 @@ class DisplayLayoutMici(NavScroller):
     )
 
     self._scroller.add_widgets([self._brightness, self._brightness_timer, self._ui_timeout,
-                                self._screensaver, self._screensaver_timeout])
+                                self._home_model, self._screensaver, self._screensaver_timeout])
 
   def _update_state(self):
     super()._update_state()
     self._brightness.refresh()
     self._brightness_timer.refresh()
     self._ui_timeout.refresh()
+    self._home_model.refresh()
     self._screensaver.refresh()
     self._screensaver_timeout.refresh()
 

@@ -61,6 +61,11 @@ class DisplayLayout(Widget):
                                     f"{value} s" if value < 60 else f"{int(value/60)} m"),
       inline=True
     )
+    self._home_model_toggle = toggle_item_sp(
+      param="HomeShowActiveModel",
+      title=lambda: tr("Show Driving Model on Home Screen"),
+      description=lambda: tr("Name the active driving model on the offroad home screen."),
+    )
     self._screensaver_toggle = toggle_item_sp(
       param="ScreenSaverEnabled",
       title=lambda: tr("Screen Saver"),
@@ -79,6 +84,7 @@ class DisplayLayout(Widget):
       self._onroad_brightness,
       self._onroad_brightness_timer,
       self._interactivity_timeout,
+      self._home_model_toggle,
       self._screensaver_toggle,
       self._screensaver_timeout,
     ]
