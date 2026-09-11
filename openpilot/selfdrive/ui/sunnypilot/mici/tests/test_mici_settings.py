@@ -494,3 +494,18 @@ class TestLayoutsSurviveRender:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.home import MiciHomeLayoutSP
 
     render(MiciHomeLayoutSP())
+
+  @pytest.mark.parametrize("show_model", [False, True])
+  def test_home_layouts_render_with_the_model_name(self, params, show_model):
+    # HomeShowActiveModel gates a draw the default-off path never reaches, so the on path
+    # needs rendering too or the toggle ships untested. Both UIs draw it, mici on its footer
+    # row and tici on the header row, so both are checked here.
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.home import MiciHomeLayoutSP
+    from openpilot.selfdrive.ui.sunnypilot.layouts.home import HomeLayoutSP
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    params.put_bool("HomeShowActiveModel", show_model, block=True)
+    ui_state.update_params()
+    assert ui_state.home_show_active_model == show_model
+    render(MiciHomeLayoutSP())
+    render(HomeLayoutSP())

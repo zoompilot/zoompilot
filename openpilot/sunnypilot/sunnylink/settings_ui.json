@@ -1382,6 +1382,12 @@
               ]
             },
             {
+              "key": "HomeShowActiveModel",
+              "widget": "toggle",
+              "title": "Show Driving Model on Home Screen",
+              "description": "Name the active driving model on the offroad home screen."
+            },
+            {
               "key": "ScreenSaverEnabled",
               "widget": "toggle",
               "title": "Screen Saver",
