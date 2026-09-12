@@ -1,0 +1,248 @@
+   -0.057  deviceState                        deviceState.started None -> True
+   -0.033  can                                GEAR.src0.BRAKE_HOLD None -> 0
+   -0.033  can                                PEDALS.src0 first seen
+   -0.033  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL None -> (0, 0, 1, 0)
+   -0.033  can                                ENGINE_DATA.moving(>0.1kph) None -> False
+   -0.033  can                                ENGINE_DATA.src0 first seen
+   -0.033  can                                CRZ_INFO.src0 first seen
+   -0.033  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 None -> (0, 0, 0)
+   -0.033  can                                CRZ_CTRL.src0 first seen
+   -0.033  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 None -> (0, 0, 0, 0)
+   -0.013  can                                CAM_LKAS.src0 first seen
+   -0.013  can                                CAM_LKAS.src0.ERR1/ERR2 None -> (0, 0)
+   -0.013  can                                CRZ_BTNS MAIN None -> 0 raw 0001ffd400000000
+   -0.013  can                                CRZ_BTNS MAIN None -> 0 raw 0001ffd400000000
+   -0.013  can                                CRZ_BTNS.src0.MODE_X/MODE_Y None -> (0, 0)
+   -0.013  can                                CRZ_BTNS.src0.CAN_OFF None -> 0
+   -0.013  can                                CRZ_BTNS.src0.RES None -> 0
+   -0.013  can                                CRZ_BTNS.src0.TJA_BUTTON None -> 0
+    0.000  initData                           seg 0 starts, commit 309f10f708 branch jetson-trt
+    0.000  initData                           seg 1 starts, commit 309f10f708 branch jetson-trt
+    0.000  initData                           seg 2 starts, commit 309f10f708 branch jetson-trt
+    0.000  initData                           seg 3 starts, commit 309f10f708 branch jetson-trt
+    0.000  initData                           seg 4 starts, commit 309f10f708 branch jetson-trt
+    0.000  initData                           seg 5 starts, commit 309f10f708 branch jetson-trt
+    0.000  initData                           seg 6 starts, commit 309f10f708 branch jetson-trt
+    0.000  initData                           seg 7 starts, commit 309f10f708 branch jetson-trt
+    0.027  can                                CRZ_BTNS.src0.MODE_X/MODE_Y (0, 0) -> (0, 1)
+    0.037  pandaStates                        first pandaStates uptime=2922 ignLine=False ignCan=True safety=elm327 controlsAllowed=False
+    0.037  pandaStates                        panda.ignitionLine None -> False
+    0.037  pandaStates                        panda.ignitionCan None -> True
+    0.037  pandaStates                        panda.safetyModel None -> elm327
+    0.037  pandaStates                        panda.controlsAllowed None -> False
+    0.037  pandaStates                        panda.harness None -> flipped
+    0.057  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (0, 0, 1, 0) -> (1, 0, 1, 0)
+    0.067  can                                CAM_LANEINFO.src0 first seen
+    0.067  can                                CAM_LANEINFO.src0.NO_ERR/ERR/BIT2/LANES/TJA None -> (1, 0, 1, 1, 0)
+    0.067  can                                CRZ_BTNS.src0.MODE_X/MODE_Y (0, 1) -> (0, 0)
+    0.387  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 0) -> (0, 0, 1)
+    0.387  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (0, 0, 0, 0) -> (1, 0, 1, 0)
+    1.021  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 1, 1)
+    1.127  log:card:30                        Using cached CarParams
+    3.142  log:card:40                        {'event': 'fingerprinted', 'car_fingerprint': 'MAZDA_CX5_2022', 'source': 1, 'fuzzy': False, 'cached': True, 'fw_count': 6, 'ecu_responses': [], 'vin_rx_addr': -1, 'vin_rx_bus': -1, 'fingerprints': '{0: {254: 8, 304: 8, 357: 8, 358: 8, 359: 8, 512: 8, 514: 8, 535: 8, 542: 8, 543: 8, 577: 8, 515: 8, 736: 8, 134: 8, 978: 8, 1045: 8, 1056: 8, 1067: 8, 1233: 8, 1236: 8, 1237: 8, 1238: 8, 1239: 8, 1241...
+    3.361  selfdriveState                     selfdriveState.enabled None -> False
+    3.361  selfdriveState                     selfdriveState.state None -> disabled
+    3.429  carControl                         carControl.enabled None -> False
+    3.429  carControl                         carControl.latActive None -> False
+    3.429  carControl                         carControl.longActive None -> False
+    3.721  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+    3.721  carState                           carState.cruiseState.available None -> False
+    3.721  carState                           carState.cruiseState.enabled None -> False
+    3.721  carState                           carState.accFaulted None -> False
+    3.721  carState                           carState.canValid None -> False
+    3.721  carState                           carState.standstill None -> True
+    3.721  carState                           carState.steerFaultPermanent None -> False
+    3.727  carState                           carState.cruiseState.available False -> True
+    3.833  carState                           carState.canValid False -> True
+    5.771  can                                CAM_LANEINFO.src0.NO_ERR/ERR/BIT2/LANES/TJA (1, 0, 1, 1, 0) -> (0, 0, 0, 1, 0)
+    6.905  can                                ENGINE_DATA.moving(>0.1kph) False -> True
+    6.907  carState                           carState.standstill True -> False
+    9.704  can                                echo.CRZ_INFO.src130 first seen
+    9.714  can                                echo.CRZ_CTRL.src130 first seen
+    9.783  can                                echo.CRZ_BTNS.src130 first seen
+    9.793  pandaStates                        panda.safetyModel elm327 -> mazda
+    9.943  can                                ENGINE_DATA.moving(>0.1kph) True -> False
+    9.945  carState                           carState.standstill False -> True
+   10.557  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 1) -> (1, 0, 0, 1)
+   10.988  can                                ENGINE_DATA.moving(>0.1kph) False -> True
+   10.990  carState                           carState.standstill True -> False
+   11.119  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 1) -> (1, 0, 0, 0)
+   13.377  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (1, 0, 1, 0)
+   14.190  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 0, 0)
+   15.897  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (1, 0, 1, 0)
+   17.012  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 0, 0)
+   24.526  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (1, 0, 1, 0)
+   27.420  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 0, 0)
+   27.450  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 1) -> (0, 1, 1)
+   38.440  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (1, 0, 1, 0)
+   38.469  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (0, 0, 1)
+   46.676  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 1, 1)
+   46.867  can                                ENGINE_DATA.moving(>0.1kph) True -> False
+   46.869  carState                           carState.standstill False -> True
+   53.939  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+   54.310  can                                ENGINE_DATA.moving(>0.1kph) False -> True
+   54.312  carState                           carState.standstill True -> False
+   56.239  can                                ENGINE_DATA.moving(>0.1kph) True -> False
+   56.241  carState                           carState.standstill False -> True
+   64.323  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 1) -> (1, 0, 0, 1)
+   64.353  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 1) -> (0, 1, 1)
+   64.474  can                                ENGINE_DATA.moving(>0.1kph) False -> True
+   64.476  carState                           carState.standstill True -> False
+   64.734  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 1) -> (1, 0, 0, 0)
+   70.802  can                                CRZ_BTNS MAIN 0 -> 1 raw 0061ff3000000000
+   70.802  can                                CRZ_BTNS.src0.MODE_X/MODE_Y (0, 0) -> (1, 1)
+   70.804  carState.buttonEvents              mainCruise pressed=True
+   71.081  can                                CRZ_BTNS MAIN 1 -> 0 raw 0001ffc000000000
+   71.081  can                                CRZ_BTNS.src0.MODE_X/MODE_Y (1, 1) -> (0, 0)
+   71.084  carState.buttonEvents              mainCruise pressed=False
+   72.095  can                                CRZ_BTNS.src0.CAN_OFF 0 -> 1
+   72.097  carState.buttonEvents              cancel pressed=True
+   72.125  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (0, 0, 0, 0)
+   72.176  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (0, 1, 0)
+   72.176  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (1, 0, 1, 0) -> (0, 0, 0, 0)
+   72.178  carState                           carState.cruiseState.available True -> False
+   72.195  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 0) -> (0, 0, 0)
+   72.338  can                                CRZ_BTNS.src0.CAN_OFF 1 -> 0
+   72.340  carState.buttonEvents              cancel pressed=False
+   72.638  can                                CRZ_BTNS MAIN 0 -> 1 raw 0061ff0800000000
+   72.638  can                                CRZ_BTNS.src0.MODE_X/MODE_Y (0, 0) -> (1, 1)
+   72.640  carState.buttonEvents              mainCruise pressed=True
+   72.688  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (0, 0, 0, 0) -> (1, 0, 0, 0)
+   72.707  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 0) -> (0, 0, 1)
+   72.717  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (0, 0, 0, 0) -> (1, 0, 1, 0)
+   72.719  carState                           carState.cruiseState.available False -> True
+   72.725  carControl                         carControl.latActive False -> True
+   72.728  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 1) -> (0, 1, 1)
+   72.839  can                                CRZ_BTNS MAIN 1 -> 0 raw 0001ffd400000000
+   72.839  can                                CRZ_BTNS.src0.MODE_X/MODE_Y (1, 1) -> (0, 0)
+   72.841  carState.buttonEvents              mainCruise pressed=False
+   73.251  carState.buttonEvents              accelCruise pressed=True
+   73.292  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (0, 1, 0, 0)
+   73.311  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (1, 1, 1)
+   73.311  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (1, 0, 1, 0) -> (1, 1, 1, 0)
+   73.313  carState                           carState.cruiseState.enabled False -> True
+   73.317  selfdriveState                     selfdriveState.enabled False -> True
+   73.317  selfdriveState                     selfdriveState.state disabled -> overriding
+   73.319  carControl                         carControl.enabled False -> True
+   73.372  pandaStates                        panda.controlsAllowed False -> True
+   76.174  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (1, 1, 1, 0) -> (1, 1, 1, 1)
+   76.287  carState.buttonEvents              accelCruise pressed=False
+   76.672  selfdriveState                     selfdriveState.state overriding -> enabled
+   76.675  carControl                         carControl.longActive False -> True
+  104.159  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+  145.731  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (0, 1, 0, 0) -> (0, 1, 1, 0)
+  145.736  selfdriveState                     selfdriveState.enabled True -> False
+  145.736  selfdriveState                     selfdriveState.state enabled -> disabled
+  145.738  carControl                         carControl.enabled True -> False
+  145.738  carControl                         carControl.longActive True -> False
+  145.741  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (0, 1, 1, 0) -> (1, 0, 1, 0)
+  145.751  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (1, 1, 1) -> (0, 1, 1)
+  145.761  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (1, 1, 1, 1) -> (1, 0, 1, 0)
+  145.763  carState                           carState.cruiseState.enabled True -> False
+  145.780  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (0, 0, 1)
+  145.790  pandaStates                        panda.controlsAllowed True -> False
+  154.068  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 0, 0)
+  154.098  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 1) -> (0, 1, 1)
+  154.382  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+  162.346  can                                CRZ_BTNS.src0.RES 0 -> 1
+  162.348  carState.buttonEvents              resumeCruise pressed=True
+  162.406  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (0, 1, 0, 0)
+  162.446  can                                CRZ_BTNS.src0.RES 1 -> 0
+  162.448  carState.buttonEvents              resumeCruise pressed=False
+  162.456  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (1, 1, 1)
+  162.456  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (1, 0, 1, 0) -> (1, 1, 1, 0)
+  162.458  carState                           carState.cruiseState.enabled False -> True
+  162.461  selfdriveState                     selfdriveState.enabled False -> True
+  162.461  selfdriveState                     selfdriveState.state disabled -> overriding
+  162.463  carControl                         carControl.enabled False -> True
+  162.466  pandaStates                        panda.controlsAllowed False -> True
+  162.698  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (1, 1, 1, 0) -> (1, 1, 1, 1)
+  162.723  selfdriveState                     selfdriveState.state overriding -> enabled
+  162.726  carControl                         carControl.longActive False -> True
+  204.608  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+  254.829  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+  305.049  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+  310.179  can                                echo.CRZ_BTNS.src128 first seen
+  355.267  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+  355.918  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (0, 1, 0, 0) -> (0, 1, 1, 0)
+  355.918  pandaStates                        panda.controlsAllowed True -> False
+  355.924  selfdriveState                     selfdriveState.enabled True -> False
+  355.924  selfdriveState                     selfdriveState.state enabled -> disabled
+  355.926  carControl                         carControl.enabled True -> False
+  355.926  carControl                         carControl.longActive True -> False
+  355.938  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (0, 1, 1, 0) -> (1, 0, 1, 0)
+  355.948  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (1, 1, 1) -> (0, 1, 1)
+  355.948  can                                CRZ_CTRL.src0.AVAIL/ACTIVE/GAP/ACTIVE2 (1, 1, 1, 1) -> (1, 0, 1, 0)
+  355.950  carState                           carState.cruiseState.enabled True -> False
+  355.968  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (0, 0, 1)
+  359.134  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 0, 0)
+  359.165  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 1) -> (0, 1, 1)
+  383.916  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (1, 0, 1, 0)
+  383.946  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (0, 0, 1)
+  390.999  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 0, 0)
+  391.028  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 1) -> (0, 1, 1)
+  405.495  carParams                          opLong=False alphaAvail=True fp=MAZDA_CX5_2022 safetyParam=2
+  419.522  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (1, 0, 1, 0)
+  419.552  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (0, 0, 1)
+  427.526  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 1, 0) -> (1, 0, 0, 0)
+  427.546  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 0, 1) -> (0, 1, 1)
+  435.862  can                                PEDALS.src0.ACC_OFF(armed)/ACC_ACTIVE/BRAKE_ON/STANDSTILL (1, 0, 0, 0) -> (1, 0, 1, 0)
+  435.885  can                                CRZ_INFO.src0.ACTIVE/SET_ALLOWED/NS7 (0, 1, 1) -> (0, 0, 1)
+  441.930  carControl                         carControl.latActive True -> False
+  442.182  can                                ENGINE_DATA.moving(>0.1kph) True -> False
+  442.183  carState                           carState.standstill False -> True
+  442.945  can                                CRZ_INFO.src0 silent from here (last frame)
+  442.945  can                                CRZ_CTRL.src0 silent from here (last frame)
+  443.016  can                                ENGINE_DATA.src0 silent from here (last frame)
+  443.105  pandaStates                        panda.ignitionCan True -> False
+  443.128  deviceState                        deviceState.started True -> False
+  443.160  carState                           carState.canValid True -> False
+
+== distinct CRZ_CTRL (0x21c) payloads by source: hex count first_t last_t ==
+  can src0       0360000000000000 n=    21    -0.033 ..     0.367
+  can src0       0361070000000000 n=   269     0.387 ..     5.750
+  can src0       0261070000000000 n=     2     5.771 ..     5.791
+  can src0       0201070000000000 n=  7924     5.811 ..   442.945
+  can src0       0201010000000000 n=    27    72.176 ..    72.688
+  can src0       0a01070000000000 n=   155    73.311 ..   162.678
+  can src0       0a01070000001000 n=  5986    76.174 ..   355.928
+  can src0       0902070000001000 n=  5112    80.997 ..   333.090
+  can src0       0902872000001000 n=  1793   109.891 ..   145.741
+  can src0       0102872000380000 n=    26   145.761 ..   146.253
+  can src0       0201872000380000 n=   224   146.273 ..   150.734
+  can src0       0201872000000000 n=    47   150.754 ..   151.679
+  can src0       0a01070000001109 n=   100   310.502 ..   312.481
+  can src0       0a01070000001100 n=   150   312.500 ..   315.483
+  can src0       0201070000380000 n=    63   355.948 ..   357.184
+  can src0       0201070000380109 n=   101   357.204 ..   359.205
+  can src0       0201070000380100 n=    86   359.225 ..   360.922
+  can src0       0201070000000100 n=    63   360.942 ..   362.189
+  can src2       0360000000000000 n=    21    -0.033 ..     0.367
+  can src2       0361070000000000 n=   269     0.387 ..     5.750
+  can src2       0261070000000000 n=     2     5.771 ..     5.791
+  can src2       0201070000000000 n=   195     5.811 ..     9.704
+  echo src130    0201070000000000 n=  7729     9.714 ..   442.945
+  echo src130    0201010000000000 n=    27    72.176 ..    72.688
+  echo src130    0a01070000000000 n=   155    73.311 ..   162.678
+  echo src130    0a01070000001000 n=  5986    76.174 ..   355.928
+  echo src130    0902070000001000 n=  5112    80.997 ..   333.090
+  echo src130    0902872000001000 n=  1793   109.891 ..   145.741
+  echo src130    0102872000380000 n=    26   145.761 ..   146.253
+  echo src130    0201872000380000 n=   224   146.273 ..   150.734
+  echo src130    0201872000000000 n=    47   150.754 ..   151.679
+  echo src130    0a01070000001109 n=   100   310.502 ..   312.481
+  echo src130    0a01070000001100 n=   150   312.500 ..   315.483
+  echo src130    0201070000380000 n=    63   355.948 ..   357.184
+  echo src130    0201070000380109 n=   101   357.204 ..   359.205
+  echo src130    0201070000380100 n=    86   359.225 ..   360.922
+  echo src130    0201070000000100 n=    63   360.942 ..   362.189
+
+== per-segment counts ==
+seg 0: t_end=61.1 commit=309f10f708 last_speed_kph=0.0 0:CRZ_INFO=3057 0:CRZ_CTRL=3057 0:PEDALS=6112 0:CRZ_BTNS=614 130:21b=2570 192:243=4874 128:243=1002 2:CAM_LKAS=949 2:CAM_LANEINFO=119
+seg 1: t_end=121.11 commit=309f10f708 last_speed_kph=80.59 0:CRZ_INFO=3000 0:CRZ_CTRL=3000 0:PEDALS=6000 0:CRZ_BTNS=608 130:21b=3000 192:243=1156 128:243=4994 2:CAM_LKAS=924 2:CAM_LANEINFO=133
+seg 2: t_end=181.11 commit=309f10f708 last_speed_kph=77.04 0:CRZ_INFO=3000 0:CRZ_CTRL=3000 0:PEDALS=5999 0:CRZ_BTNS=603 130:21b=3000 128:243=5974 2:CAM_LKAS=936 2:CAM_LANEINFO=131
+seg 3: t_end=241.13 commit=309f10f708 last_speed_kph=81.32000000000001 0:CRZ_INFO=3000 0:CRZ_CTRL=3000 0:PEDALS=6000 0:CRZ_BTNS=600 130:21b=3000 128:243=5973 2:CAM_LKAS=923 2:CAM_LANEINFO=134
+seg 4: t_end=301.11 commit=309f10f708 last_speed_kph=81.95 0:CRZ_INFO=3000 0:CRZ_CTRL=3000 0:PEDALS=5999 0:CRZ_BTNS=600 130:21b=3000 128:243=5974 2:CAM_LKAS=925 2:CAM_LANEINFO=134
+seg 5: t_end=361.12 commit=309f10f708 last_speed_kph=28.84 0:CRZ_INFO=3000 0:CRZ_CTRL=3000 0:PEDALS=6000 0:CRZ_BTNS=601 130:21b=3000 128:243=5974 2:CAM_LKAS=921 2:CAM_LANEINFO=133
+seg 6: t_end=421.13 commit=309f10f708 last_speed_kph=42.39 0:CRZ_INFO=2999 0:CRZ_CTRL=2999 0:PEDALS=5996 0:CRZ_BTNS=600 130:21b=2999 128:243=5971 2:CAM_LKAS=936 2:CAM_LANEINFO=131
+seg 7: t_end=443.25 commit=309f10f708 last_speed_kph=0.0 0:CRZ_INFO=1093 0:CRZ_CTRL=1093 0:PEDALS=2193 0:CRZ_BTNS=219 130:21b=1093 192:243=7 128:243=2192 2:CAM_LKAS=340 2:CAM_LANEINFO=47
