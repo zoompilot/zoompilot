@@ -1588,6 +1588,19 @@
                   "equals": true
                 }
               ]
+            },
+            {
+              "key": "CylinderDeactivationUI",
+              "widget": "toggle",
+              "title": "Cylinder Status Ring",
+              "description": "Ring around the driver-monitoring icon showing cylinder deactivation and engine braking status, on engines that report the cylinder mode on the bus.",
+              "visibility": [
+                {
+                  "type": "capability",
+                  "field": "brand",
+                  "equals": "mazda"
+                }
+              ]
             }
           ]
         },

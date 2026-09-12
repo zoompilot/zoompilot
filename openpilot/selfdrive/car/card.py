@@ -221,6 +221,7 @@ class Car:
       # Use CarState w/ buttons from the step selfdrived enables on
       self.v_cruise_helper.initialize_v_cruise(self.CS_prev, self.experimental_mode, self.dynamic_experimental_control)
     self.card_ext.update_v_cruise_post(CS, CS_SP)
+    self.card_ext.fill_cylinder_deactivation(CS_SP)
 
     # TODO: mirror the carState.cruiseState struct?
     CS.vCruise = float(self.v_cruise_helper.v_cruise_kph)

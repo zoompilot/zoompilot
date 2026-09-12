@@ -6,6 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.sunnypilot.mads.helpers import offroad_brand
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, multiple_button_item_sp
 from openpilot.system.ui.widgets.scroller_tici import Scroller
@@ -93,6 +94,11 @@ class VisualsLayout(Widget):
            "This displays what the car is currently doing, not what the planner is requesting."),
         None,
       ),
+      "CylinderDeactivationUI": (
+        lambda: tr("Cylinder Status Ring"),
+        tr("Ring showing cylinder deactivation and engine braking status."),
+        None,
+      ),
     }
     self._toggles = {}
     for param, (title, desc, callback) in self._toggle_defs.items():
@@ -104,6 +110,10 @@ class VisualsLayout(Widget):
         callback=callback,
       )
       self._toggles[param] = toggle
+
+    # the ring wraps the driver-monitoring circle, which only Mazda cars have
+    self._toggles["CylinderDeactivationUI"].set_visible(
+      lambda: offroad_brand(ui_state.params, ui_state.CP, ui_state.is_offroad()) == "mazda")
 
     self._chevron_info = multiple_button_item_sp(
       title=lambda: tr("Display Metrics Below Chevron"),

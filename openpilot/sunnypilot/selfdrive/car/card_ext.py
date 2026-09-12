@@ -21,6 +21,7 @@ class CardExt:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params, sm, v_cruise_helper, CI) -> None:
     self.sm = sm
     self.v_cruise_helper = v_cruise_helper
+    self.CI = CI
     # The stock ECU transition contract (opendbc/sunnypilot/car/stock_ecu.py): a controller that
     # silences a stock ECU under openpilot longitudinal exposes `stock_ecu_state`; nothing
     # brand-specific is read here. The hand-back server answers the lifecycle's requests off it.
@@ -40,6 +41,14 @@ class CardExt:
   @property
   def stock_ecu_state(self) -> StockEcuState:
     return getattr(self.controller, "stock_ecu_state", StockEcuState.NOT_NEEDED)
+
+  def fill_cylinder_deactivation(self, CS_SP) -> None:
+    # The Mazda port computes the cylinder status from MORE_GAS; publish it next to
+    # cruiseSession the same way. Only Mazda's CarState carries it, so hold the
+    # all-cylinder default everywhere else (the stock_ecu_state pattern above).
+    cyl = CS_SP.zoompilot.cylinderDeactivation
+    cyl.state = str(getattr(self.CI.CS, "cyl_state", "normal"))
+    cyl.entryProgress = float(getattr(self.CI.CS, "cyl_entry_progress", 0.0))
 
   def controls_update(self, CS, CC, CC_SP: structs.CarControlSP) -> structs.CarControlSP:
     """Runs just before CI.apply on the converted CarControlSP struct, which it may edit."""
