@@ -20,3 +20,29 @@ if [ -z "$AGNOS_VERSION" ]; then
 fi
 
 export STAGING_ROOT="/data/safe_staging"
+
+# optional per-device overrides: KEY=VALUE lines, fixed allowlist below.
+# the file must be owned by the launcher user (comma on devices), with mode
+# 600, 640, or 644, or it is ignored with a note in the launch log.
+# it lives outside /data/openpilot, so updates do not remove it.
+env_file=/data/openpilot.env
+if [ -f "$env_file" ]; then
+  if [ -O "$env_file" ]; then
+    case "$(stat -c %a "$env_file" 2>/dev/null)" in
+      600|640|644)
+        while IFS='=' read -r key value; do
+          value="${value%$'\r'}"
+          case "$key" in
+            API_HOST|ATHENA_HOST) [ -n "$value" ] && export "$key=$value" ;;
+          esac
+        done < "$env_file"
+        ;;
+      *)
+        echo "ignoring $env_file: want mode 600, 640, or 644"
+        ;;
+    esac
+  else
+    echo "ignoring $env_file: not owned by $(id -un)"
+  fi
+fi
+unset env_file key value
