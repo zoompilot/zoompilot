@@ -1,14 +1,25 @@
+import io
 import os
+import tempfile
 import threading
 import logging
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from openpilot.common.hardware.hw import Paths
 
 from openpilot.common.swaglog import cloudlog
+import openpilot.system.loggerd.uploader as uploader
+from openpilot.common.api.backend import COMMA_BACKEND, KONIK_BACKEND
 from openpilot.system.loggerd.uploader import clear_locks, main, Uploader, UPLOAD_ATTR_NAME, UPLOAD_ATTR_VALUE
 
 from openpilot.system.loggerd.tests.loggerd_tests_common import UploaderTestCase
+
+
+# OpenpilotTestCase resolves fixtures from module-level functions
+def tmp_path():
+  with tempfile.TemporaryDirectory() as d:
+    yield Path(d)
 
 
 class FakeLogHandler(logging.Handler):
@@ -179,3 +190,213 @@ class TestUploader(UploaderTestCase):
     for f_path in f_paths:
       lock_path = f_path.with_suffix(f_path.suffix + ".lock")
       assert not lock_path.is_file(), "File lock not cleared on startup"
+
+  def test_lock_after_construction_uses_konik_only(self, monkeypatch):
+    calls = []
+
+    class Api:
+      def __init__(self, config, dongle_id):
+        self.config = config
+        self.dongle_id = dongle_id
+
+      def get_token(self):
+        calls.append((self.config.name, "token"))
+        return "token"
+
+      def get(self, *args, **kwargs):
+        calls.append((self.config.name, "get"))
+        return SimpleNamespace(status_code=200, text='{"url": "https://storage.example/upload", "headers": {}}')
+
+    clients = {
+      COMMA_BACKEND: Api(COMMA_BACKEND, "comma-id"),
+      KONIK_BACKEND: Api(KONIK_BACKEND, "konik-id"),
+    }
+    monkeypatch.setattr(uploader, "connect_client", lambda params: (KONIK_BACKEND, clients[KONIK_BACKEND]))
+    monkeypatch.setattr(uploader, "backend_config", lambda params: KONIK_BACKEND)
+    monkeypatch.setattr(uploader, "fake_upload", True)
+
+    Uploader("comma-id", str(Paths.log_root())).do_upload("route/qlog", __file__)
+    assert calls == [("konik", "token"), ("konik", "get")]
+
+  def test_backend_change_while_minting_token_aborts_before_signed_url(self, monkeypatch):
+    state = {"config": COMMA_BACKEND}
+
+    class Api:
+      dongle_id = "comma-id"
+
+      def get_token(self):
+        state["config"] = KONIK_BACKEND
+        return "comma-token"
+
+      def get(self, *args, **kwargs):
+        raise AssertionError("signed URL request must not run")
+
+    monkeypatch.setattr(uploader, "connect_client", lambda params: (COMMA_BACKEND, Api()))
+    monkeypatch.setattr(uploader, "backend_config", lambda params: state["config"])
+
+    assert Uploader("comma-id", str(Paths.log_root())).do_upload("route/qlog", __file__) is None
+
+  def test_backend_change_after_signed_url_aborts_before_put(self, monkeypatch, tmp_path):
+    state = {"config": COMMA_BACKEND}
+    monkeypatch.setattr(uploader.requests, "put", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("PUT must not run")))
+
+    class Api:
+      dongle_id = "comma-id"
+
+      def get_token(self):
+        return "token"
+
+      def get(self, *args, **kwargs):
+        state["config"] = KONIK_BACKEND
+        return SimpleNamespace(status_code=200, text='{"url": "https://storage.example/upload", "headers": {}}')
+
+    monkeypatch.setattr(uploader, "connect_client", lambda params: (COMMA_BACKEND, Api()))
+    monkeypatch.setattr(uploader, "backend_config", lambda params: state["config"])
+    monkeypatch.setattr(uploader, "fake_upload", False)
+    fn = tmp_path / "qlog"
+    fn.write_bytes(b"route")
+
+    assert Uploader("comma-id", str(tmp_path)).do_upload("route/qlog", str(fn)) is None
+
+  def test_backend_change_with_ignored_response_keeps_file_for_retry(self, monkeypatch, tmp_path):
+    state = {"config": COMMA_BACKEND}
+
+    class Api:
+      dongle_id = "comma-id"
+
+      def get_token(self):
+        return "token"
+
+      def get(self, *args, **kwargs):
+        state["config"] = KONIK_BACKEND
+        return SimpleNamespace(status_code=412)
+
+    monkeypatch.setattr(uploader, "connect_client", lambda params: (COMMA_BACKEND, Api()))
+    monkeypatch.setattr(uploader, "backend_config", lambda params: state["config"])
+    fn = tmp_path / "qlog"
+    fn.write_bytes(b"route")
+
+    assert Uploader("comma-id", str(tmp_path)).upload("qlog", "route/qlog", str(fn), 1, False) is False
+    assert UPLOAD_ATTR_NAME not in os.listxattr(fn)
+
+  def test_failed_transition_retries_file_through_konik_cdn(self, monkeypatch, tmp_path):
+    state = {"config": COMMA_BACKEND, "switch_during_get": True}
+    requests_seen = []
+    puts = []
+
+    class Api:
+      def __init__(self, config):
+        self.config = config
+        self.dongle_id = f"{config.name}-id"
+
+      def get_token(self):
+        return f"{self.config.name}-token"
+
+      def get(self, endpoint, **kwargs):
+        requests_seen.append((self.config.name, endpoint, kwargs["access_token"]))
+        if state["switch_during_get"]:
+          state["config"] = KONIK_BACKEND
+          state["switch_during_get"] = False
+        return SimpleNamespace(status_code=200, text=json.dumps({
+          "url": f"https://{self.config.name}-cdn.example/upload", "headers": {},
+        }))
+
+    monkeypatch.setattr(uploader, "connect_client", lambda params: (state["config"], Api(state["config"])))
+    monkeypatch.setattr(uploader, "backend_config", lambda params: state["config"])
+    monkeypatch.setattr(uploader.requests, "put", lambda url, **kwargs: puts.append(url) or SimpleNamespace(
+      status_code=200, request=SimpleNamespace(headers={"Content-Length": "5"})))
+    monkeypatch.setattr(uploader, "fake_upload", False)
+    fn = tmp_path / "qlog"
+    fn.write_bytes(b"route")
+    instance = Uploader("comma-id", str(tmp_path))
+
+    assert instance.upload("qlog", "route/qlog", str(fn), 1, False) is False
+    assert UPLOAD_ATTR_NAME not in os.listxattr(fn)
+    assert instance.upload("qlog", "route/qlog", str(fn), 1, False) is True
+    assert os.getxattr(fn, UPLOAD_ATTR_NAME) == UPLOAD_ATTR_VALUE
+    assert requests_seen == [
+      ("comma", "v1.4/comma-id/upload_url/", "comma-token"),
+      ("konik", "v1.4/konik-id/upload_url/", "konik-token"),
+    ]
+    assert puts == ["https://konik-cdn.example/upload"]
+
+  def test_backend_change_while_opening_stream_keeps_file_for_retry(self, monkeypatch, tmp_path):
+    state = {"config": COMMA_BACKEND}
+
+    class Api:
+      dongle_id = "comma-id"
+
+      def get_token(self):
+        return "comma-token"
+
+      def get(self, *args, **kwargs):
+        return SimpleNamespace(status_code=200, text='{"url": "https://storage.example/upload", "headers": {}}')
+
+    def get_upload_stream(*args, **kwargs):
+      state["config"] = KONIK_BACKEND
+      return io.BytesIO(b"route"), 5
+
+    monkeypatch.setattr(uploader, "connect_client", lambda params: (COMMA_BACKEND, Api()))
+    monkeypatch.setattr(uploader, "backend_config", lambda params: state["config"])
+    monkeypatch.setattr(uploader, "get_upload_stream", get_upload_stream)
+    monkeypatch.setattr(uploader.requests, "put", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("PUT must not run")))
+    monkeypatch.setattr(uploader, "fake_upload", False)
+    fn = tmp_path / "qlog"
+    fn.write_bytes(b"route")
+
+    assert Uploader("comma-id", str(tmp_path)).upload("qlog", "route/qlog", str(fn), 1, False) is False
+    assert UPLOAD_ATTR_NAME not in os.listxattr(fn)
+
+  def test_backend_change_during_put_keeps_file_for_retry(self, monkeypatch, tmp_path):
+    state = {"config": COMMA_BACKEND}
+
+    class Api:
+      dongle_id = "comma-id"
+
+      def get_token(self):
+        return "comma-token"
+
+      def get(self, *args, **kwargs):
+        return SimpleNamespace(status_code=200, text='{"url": "https://storage.example/upload", "headers": {}}')
+
+    def put(*args, **kwargs):
+      state["config"] = KONIK_BACKEND
+      return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr(uploader, "connect_client", lambda params: (COMMA_BACKEND, Api()))
+    monkeypatch.setattr(uploader, "backend_config", lambda params: state["config"])
+    monkeypatch.setattr(uploader.requests, "put", put)
+    monkeypatch.setattr(uploader, "fake_upload", False)
+    fn = tmp_path / "qlog"
+    fn.write_bytes(b"route")
+
+    assert Uploader("comma-id", str(tmp_path)).upload("qlog", "route/qlog", str(fn), 1, False) is False
+    assert UPLOAD_ATTR_NAME not in os.listxattr(fn)
+
+  def test_backend_change_after_success_status_keeps_file_for_retry(self, monkeypatch, tmp_path):
+    checks = 0
+
+    class Api:
+      dongle_id = "comma-id"
+
+      def get_token(self):
+        return "comma-token"
+
+      def get(self, *args, **kwargs):
+        return SimpleNamespace(status_code=200, text='{"url": "https://storage.example/upload", "headers": {}}')
+
+    def config(_):
+      nonlocal checks
+      checks += 1
+      return COMMA_BACKEND if checks <= 5 else KONIK_BACKEND
+
+    monkeypatch.setattr(uploader, "connect_client", lambda params: (COMMA_BACKEND, Api()))
+    monkeypatch.setattr(uploader, "backend_config", config)
+    monkeypatch.setattr(uploader.requests, "put", lambda *args, **kwargs: SimpleNamespace(
+      status_code=200, request=SimpleNamespace(headers={"Content-Length": "5"})))
+    monkeypatch.setattr(uploader, "fake_upload", False)
+    fn = tmp_path / "qlog"
+    fn.write_bytes(b"route")
+
+    assert Uploader("comma-id", str(tmp_path)).upload("qlog", "route/qlog", str(fn), 1, False) is False
+    assert UPLOAD_ATTR_NAME not in os.listxattr(fn)

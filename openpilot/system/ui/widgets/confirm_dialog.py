@@ -28,6 +28,7 @@ class ConfirmDialog(Widget):
     self._confirm_button = Button(confirm_text, self._confirm_button_callback, button_style=ButtonStyle.PRIMARY)
     self._rich = rich
     self._callback = callback
+    self._result: DialogResult | None = None
     self._cancel_text = cancel_text
     self._scroller = Scroller([self._html_renderer], line_separator=False, spacing=0)
 
@@ -38,14 +39,25 @@ class ConfirmDialog(Widget):
       self._html_renderer.parse_html_content(text)
 
   def _cancel_button_callback(self):
-    gui_app.pop_widget()
-    if self._callback:
-      self._callback(DialogResult.CANCEL)
+    self._finish(DialogResult.CANCEL)
 
   def _confirm_button_callback(self):
+    self._finish(DialogResult.CONFIRM)
+
+  def _finish(self, result: DialogResult):
+    if self._result is not None:
+      return
+    self._result = result
     gui_app.pop_widget()
     if self._callback:
-      self._callback(DialogResult.CONFIRM)
+      self._callback(result)
+
+  def hide_event(self):
+    super().hide_event()
+    if self._result is None:
+      self._result = DialogResult.CANCEL
+      if self._callback:
+        self._callback(DialogResult.CANCEL)
 
   def _render(self, rect: rl.Rectangle):
     dialog_x = OUTER_MARGIN if not self._rich else RICH_OUTER_MARGIN

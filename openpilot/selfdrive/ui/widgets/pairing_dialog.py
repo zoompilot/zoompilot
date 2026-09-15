@@ -1,7 +1,7 @@
 import pyray as rl
 import time
 
-from openpilot.common.api import Api
+from openpilot.common.api.backend import connect_client, use_konik
 from openpilot.common.qrcode import make_texture
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
@@ -27,20 +27,29 @@ class PairingDialog(Widget):
     self._close_btn = IconButton(gui_app.texture("icons/close.png", 80, 80))
     self._close_btn.set_click_callback(gui_app.pop_widget)
 
-  def _get_pairing_url(self) -> str:
+  def _get_pairing_url(self) -> str | None:
     try:
-      dongle_id = self.params.get("DongleId") or ""
-      token = Api(dongle_id).get_token({'pair': True})
+      config, api = connect_client(self.params)
+      token = api.get_token({'pair': True})
+      if not token:
+        raise RuntimeError("empty pairing token")
+      return f"{config.pairing_host}/?pair={token}"
     except Exception:
       cloudlog.exception("Failed to get pairing token")
-      token = ""
-    return f"https://connect.comma.ai/?pair={token}"
+      return None
 
   def _generate_qr_code(self) -> None:
+    pairing_url = self._get_pairing_url()
+    if pairing_url is None:
+      if self.qr_texture and self.qr_texture.id != 0:
+        rl.unload_texture(self.qr_texture)
+      self.qr_texture = None
+      return
+
     try:
       if self.qr_texture and self.qr_texture.id != 0:
         rl.unload_texture(self.qr_texture)
-      self.qr_texture = make_texture(self._get_pairing_url())
+      self.qr_texture = make_texture(pairing_url)
     except Exception:
       cloudlog.exception("QR code generation failed")
       self.qr_texture = None
@@ -73,7 +82,7 @@ class PairingDialog(Widget):
     y += close_size + 40
 
     # Title
-    title = tr("Pair your device to your comma account")
+    title = tr("Pair your device to Konik Stable Connect" if use_konik(self.params) else "Pair your device to your comma account")
     title_font = gui_app.font(FontWeight.NORMAL)
     left_width = int(content_rect.width * 0.5 - 15)
 
@@ -97,11 +106,18 @@ class PairingDialog(Widget):
     return -1
 
   def _render_instructions(self, rect: rl.Rectangle) -> None:
-    instructions = [
-      tr("Go to https://connect.comma.ai on your phone"),
-      tr("Click \"add new device\" and scan the QR code on the right"),
-      tr("Bookmark connect.comma.ai to your home screen to use it like an app"),
-    ]
+    if use_konik(self.params):
+      instructions = [
+        tr("Go to https://stable.konik.ai on your phone"),
+        tr("Add this device and scan the QR code on the right"),
+        tr("Bookmark stable.konik.ai to your home screen to use it like an app"),
+      ]
+    else:
+      instructions = [
+        tr("Go to https://connect.comma.ai on your phone"),
+        tr("Click \"add new device\" and scan the QR code on the right"),
+        tr("Bookmark connect.comma.ai to your home screen to use it like an app"),
+      ]
 
     font = gui_app.font(FontWeight.BOLD)
     y = rect.y
