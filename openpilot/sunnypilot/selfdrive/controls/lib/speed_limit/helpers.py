@@ -41,9 +41,13 @@ def set_speed_limit_assist_availability(CP: car.CarParams, CP_SP: custom.CarPara
   is_release = params.get_bool("IsReleaseSpBranch")
   disallow_in_release = CP.brand == "tesla" and is_release
   always_disallow = CP.brand == "rivian"
+  # Mazda alpha-long is the one pcm-op-long port whose setpoint stays on the car: the pcm
+  # machine's fixed required-max can never match the cluster, so preActive alone holds the
+  # plan at the resolved limit with a prompt the driver cannot clear.
+  disallow_mazda_op_long = CP.brand == "mazda" and CP.openpilotLongitudinalControl
   allowed = True
 
-  if disallow_in_release or always_disallow:
+  if disallow_in_release or always_disallow or disallow_mazda_op_long:
     allowed = False
 
   if not CP.openpilotLongitudinalControl and CP_SP.pcmCruiseSpeed:
