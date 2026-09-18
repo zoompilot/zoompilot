@@ -12,10 +12,10 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import set_speed_limit_assist_availability
 
 
-def car_params(brand: str, openpilot_longitudinal_control: bool) -> structs.CarParams:
+def car_params(brand: str, openpilot_longitudinal_control: bool, pcm_cruise: bool = True) -> structs.CarParams:
   CP = structs.CarParams.new_message()
   CP.brand = brand
-  CP.pcmCruise = True
+  CP.pcmCruise = pcm_cruise
   CP.openpilotLongitudinalControl = openpilot_longitudinal_control
   return CP
 
@@ -43,6 +43,11 @@ class TestSetSpeedLimitAssistAvailability:
 
   def test_mazda_stock_long_denied(self):
     assert not set_speed_limit_assist_availability(car_params("mazda", False), car_params_sp(True), self.params)
+
+  def test_mazda_op_long_without_pcm_allowed(self):
+    # The card-side session machinery (arbiter, assist mirror) runs for op-long ports
+    # without pcmCruise and must keep its own availability.
+    assert set_speed_limit_assist_availability(car_params("mazda", True, pcm_cruise=False), car_params_sp(True), self.params)
 
   def test_toyota_op_long_allowed(self):
     assert set_speed_limit_assist_availability(car_params("toyota", True), car_params_sp(True), self.params)
