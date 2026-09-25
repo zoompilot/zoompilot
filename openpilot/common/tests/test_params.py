@@ -144,3 +144,12 @@ class TestParams(OpenpilotTestCase):
     now = datetime.datetime.now(datetime.UTC)
     self.params.put("InstallDate", now, block=True)
     assert self.params.get("InstallDate") == now
+
+  def test_all_keys_by_flag(self):
+    persistent = self.params.all_keys(ParamKeyFlag.PERSISTENT)
+    assert b"DongleId" in persistent
+    assert b"AccessToken" not in persistent
+    assert len(set(persistent)) == len(persistent)
+    # regression: the buffers aliased a freed vector and one shared thread_local string
+    assert all(k.decode().isascii() and k.decode().isidentifier() for k in persistent)
+    assert set(persistent) <= set(self.params.all_keys())
