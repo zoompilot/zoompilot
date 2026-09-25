@@ -249,7 +249,7 @@ def make_model_state(cam_w: int, cam_h: int, small=None):
     _present_early(link)
     cached = spec_cache.load()
     if cached is not None:
-      img_h, img_w = cached.input_shapes['img'][2:]
+      img_h, img_w = cached.model_hw
       geometry = (img_w * 2, img_h * 2)
     else:
       geometry = warp_cache.device_geometry()[2:]
@@ -264,7 +264,7 @@ def make_model_state(cam_w: int, cam_h: int, small=None):
 
   def build(client, spec):
     from openpilot.sunnypilot.accelerators.jetlink.model_state import JetlinkModelState
-    img_h, img_w = spec.input_shapes['img'][2:]
+    img_h, img_w = spec.model_hw
     warp = ready.get('warp') if ready.get('geometry') == (img_w * 2, img_h * 2) else None
     if warp is None:
       raise RuntimeError('no prepared warp for the server model geometry')

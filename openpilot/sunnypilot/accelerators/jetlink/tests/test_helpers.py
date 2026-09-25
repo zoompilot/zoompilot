@@ -5,8 +5,11 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+import json
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -259,10 +262,11 @@ class TestResolvePointer(unittest.TestCase):
     return r
 
   def test_fetches_once_and_records_it(self):
+    from jetlink.registry.lfs import POINTER_URL
     with mock.patch.object(helpers, '_get', return_value=dict(POINTERS)), \
-         mock.patch.object(helpers.urllib.request, 'urlopen', return_value=self.response(self.POINTER.encode())) as urlopen:
+         mock.patch.object(urllib.request, 'urlopen', return_value=self.response(self.POINTER.encode())) as urlopen:
       self.assertEqual(helpers.resolve_pointer(REF_C), ('3' * 64, 766040736))
-    self.assertEqual(urlopen.call_args.args[0], helpers.POINTER_URL.format(ref=REF_C))
+    self.assertEqual(urlopen.call_args.args[0], POINTER_URL.format(ref=REF_C))
     written = self.params.return_value.put.call_args.args[1]
     self.assertEqual(written[REF_C], {'oid': '3' * 64, 'size': 766040736})
     self.assertEqual(written[REF_A], POINTERS[REF_A])
@@ -270,16 +274,38 @@ class TestResolvePointer(unittest.TestCase):
 
   def test_a_known_pointer_needs_no_fetch(self):
     with mock.patch.object(helpers, '_get', return_value=dict(POINTERS)), \
-         mock.patch.object(helpers.urllib.request, 'urlopen') as urlopen:
+         mock.patch.object(urllib.request, 'urlopen') as urlopen:
       self.assertEqual(helpers.resolve_pointer(REF_A), ('1' * 64, 766_000_000))
     urlopen.assert_not_called()
 
   def test_a_miss_raises_and_records_nothing(self):
+    from jetlink.registry.catalog import RegistryError
     for failure in ({'side_effect': OSError('offline')}, {'return_value': self.response(b'<html>not found</html>')}):
       with self.subTest(failure), mock.patch.object(helpers, '_get', return_value={}), \
-           mock.patch.object(helpers.urllib.request, 'urlopen', **failure), self.assertRaises((OSError, ValueError)):
+           mock.patch.object(urllib.request, 'urlopen', **failure), self.assertRaises(RegistryError):
         helpers.resolve_pointer(REF_C)
     self.params.return_value.put.assert_not_called()
+
+  def test_a_precompiled_commit_resolves_to_the_export_it_names(self):
+    """Cinque Terre V3's commit has no ONNX; its subject names the export."""
+    from jetlink.registry.lfs import COMMIT_PATCH_URL, DRIVING_MODELS_TREE_URL, POINTER_URL
+    folder = 'f78ed37d-afad-4dbc-8050-40ea885eedde'
+    routes = {
+      COMMIT_PATCH_URL.format(ref=REF_C): b"From x\nSubject: [PATCH] Use f78ed37d for the precompiled eGPU driving model\n\n",
+      DRIVING_MODELS_TREE_URL: json.dumps([{'type': 'directory', 'path': folder}]).encode(),
+      f"{DRIVING_MODELS_TREE_URL}/{folder}?recursive=true": json.dumps([
+        {'type': 'file', 'path': f"{folder}/12864/big_driving_supercombo.onnx",
+         'lfs': {'oid': '4' * 64, 'size': 766354845}}]).encode(),
+    }
+
+    def urlopen(url, timeout=None):
+      if url == POINTER_URL.format(ref=REF_C):
+        raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
+      return self.response(routes[url])
+
+    with mock.patch.object(helpers, '_get', return_value={}), mock.patch.object(urllib.request, 'urlopen', side_effect=urlopen):
+      self.assertEqual(helpers.resolve_pointer(REF_C), ('4' * 64, 766354845))
+    self.assertEqual(self.params.return_value.put.call_args.args[1][REF_C], {'oid': '4' * 64, 'size': 766354845})
 
 
 class TestSelectedModel(unittest.TestCase):

@@ -25,10 +25,11 @@ from openpilot.common.swaglog import cloudlog
 
 LFS_MEDIA_TYPE = 'application/vnd.git-lfs+json'
 # comma's LFS is on GitLab, not GitHub: GitHub's LFS API and
-# media.githubusercontent both 404 these. Both serve anonymously
+# media.githubusercontent both 404 these. All serve anonymously
 COMMA_ENDPOINTS = (
   'https://gitlab.com/commaai/openpilot-lfs.git/info/lfs',      # every object, older and PR-branch models included
   'https://huggingface.co/commaai/openpilot-lfs.git/info/lfs',  # where comma is moving them (openpilot PR 38824); the current ones
+  'https://huggingface.co/commaai/openpilot_driving_models.git/info/lfs',  # the exports behind a precompiled pkl
 )
 CONNECT_TIMEOUT = 30.0
 CHUNK = 4 << 20

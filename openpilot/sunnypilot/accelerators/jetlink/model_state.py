@@ -15,6 +15,10 @@ The split is at `run_policy`. The warp stays on the comma's GPU: its input is a
 anyway. The history queues live on the Jetson, shipping them would cost ~10 MB
 a frame instead of ~0.5 MB. Upstream fused warp and policy into one JIT, so
 scons compiles a standalone warp at build time; see warp_cache.
+
+A model that keeps its own history (openpilot #38916, Cinque Terre V3 on)
+takes the same warped frame and the same scalars; its hidden state never
+leaves the Jetson, so there is no prev_feat to send back. The spec says which.
 """
 from __future__ import annotations
 
@@ -67,15 +71,16 @@ class JetlinkModelState(ModelStateBase):
     self.chestnut = True
 
     # make_warp is sized in NV12 pixels and the model input after deinterleave,
-    # so img (1, 12, 128, 256) is a 512x256 warp, MEDMODEL_INPUT_SIZE
-    img_h, img_w = spec.input_shapes['img'][2:]
+    # so a 128x256 model frame is a 512x256 warp, MEDMODEL_INPUT_SIZE
+    img_h, img_w = spec.model_hw
     # a warm warp is handed in when there is one: the first call costs ~2 s and
     # this can run on modeld's frame thread (warp_cache.warm)
     self.warp = warp if warp is not None else warp_cache.load_warp(cam_w, cam_h, img_w * 2, img_h * 2)
 
     self.input_shapes = spec.input_shapes
     self.output_slices = spec.output_slices
-    self.vision_input_names = [k for k in spec.input_shapes if 'img' in k]
+    # the camera buffers modeld hands over, whatever the graph calls its inputs
+    self.vision_input_names = ['img', 'big_img']
     # from the spec, not ModelConstants: the server derives its history stride
     # from the same field
     self.frame_skip = spec.frame_skip
@@ -87,7 +92,7 @@ class JetlinkModelState(ModelStateBase):
     self.warp_inputs = {k: Tensor(v, device='NPY').realize() for k, v in self.npy.items()}
 
     # compile_modeld.make_input_queues' packed_npy_inputs, minus the GPU queues
-    # the server owns
+    # the server owns; for a stateful graph, minus prev_feat too
     self.packed = np.zeros(spec.packed_nelem, dtype=np.float32)
     views = np.split(self.packed, np.cumsum(spec.packed_sizes[:-1]))
     self.npy.update({k: v.reshape(s) for (k, s), v in
@@ -170,7 +175,8 @@ class JetlinkModelState(ModelStateBase):
     # the non-finite check runs on the server (Status.NOT_FINITE -> LinkError),
     # so modeld's big->small failover fires as it does for a chestnut
     outputs_dict = self.parser.parse_outputs(self.slice_outputs(model_output, self.output_slices))
-    self.npy['prev_feat'][:] = model_output[self.output_slices['hidden_state']]
+    if 'prev_feat' in self.npy:
+      self.npy['prev_feat'][:] = model_output[self.output_slices['hidden_state']]
     if SEND_RAW_PRED:
       outputs_dict['raw_pred'] = model_output.copy()
     return outputs_dict

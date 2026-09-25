@@ -11,14 +11,15 @@ chestnut runs from (see ModelManagerSP._fetch_big_model_files). Its bundles
 are tinygrad pkls for a GPU the Jetson does not have, but each one names the
 comma commit it was compiled from, and that commit's ONNX in comma's LFS is
 what the Jetson runs. The catalog says what exists, the slot says which one,
-the pointer at the commit says which bytes.
+the pointer at the commit says which bytes. A commit that ships a precompiled
+pkl instead names its export, and jetlink's registry follows that to comma's
+model repo; see jetlink.registry.lfs.
 """
 from __future__ import annotations
 
 import os
 import re
 import time
-import urllib.request
 from pathlib import Path
 
 from openpilot.sunnypilot.accelerators.jetlink import gadget
@@ -162,10 +163,6 @@ P_POINTERS = "JetlinkModelPointers"  # ref -> {oid, size}; a commit's tree never
 # models.fetcher.ModelFetcher.MODEL_SOURCES['chestnut']'s
 CATALOG_PARAM = "ModelManager_ModelsCache_Chestnut"
 
-# comma overwrites this one file, so the commit is the only name a big model's
-# ONNX has. GitHub's raw host serves the LFS pointer for any commit it holds,
-# merged or not, and the pointer is the oid and size the Jetson is asked for
-POINTER_URL = 'https://raw.githubusercontent.com/commaai/openpilot/{ref}/openpilot/selfdrive/modeld/models/big_driving_supercombo.onnx'
 POINTER_TIMEOUT = 10.0
 _REF = re.compile(r'[0-9a-f]{40}')
 # the index and the slot are JSON params, and the UI names the active model
@@ -201,14 +198,12 @@ def pointers() -> dict[str, dict]:
 
 
 def fetch_pointer(ref: str) -> tuple[str, int]:
-  """The oid and size of the ONNX at a comma commit."""
-  from openpilot.sunnypilot.accelerators.jetlink import lfs
-  with urllib.request.urlopen(POINTER_URL.format(ref=ref), timeout=POINTER_TIMEOUT) as response:
-    text = response.read(4096).decode()
-  parsed = lfs.parse_pointer_text(text)
-  if parsed is None:
-    raise ValueError(f"{ref[:10]} did not serve an lfs pointer")
-  return parsed
+  """The oid and size of the ONNX a comma commit names, in its tree or, for a
+  precompiled-pkl commit, in comma's model repo. The Jetson's registry does
+  the same lookup, so the two ends agree on every model's identity."""
+  from jetlink.registry.lfs import fetch_pointer as registry_fetch_pointer
+  pointer = registry_fetch_pointer(ref, timeout=POINTER_TIMEOUT)
+  return pointer.oid, pointer.size
 
 
 def resolve_pointer(ref: str) -> tuple[str, int]:
