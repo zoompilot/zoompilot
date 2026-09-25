@@ -17,6 +17,7 @@ from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import DECEL_OVERSHOOT_PARAMS
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
 
 SL_MODE_LABELS = [tr("off"), tr("info"), tr("warn"), tr("assist")]
 SL_SOURCE_LABELS = [tr("car"), tr("map"), tr("car-first"), tr("map-first"), tr("combined")]
@@ -105,7 +106,7 @@ class CruiseLayoutMici(NavScroller):
     cp_ready = ui_state.CP is not None and ui_state.CP_SP is not None
     has_long = cp_ready and ui_state.has_longitudinal_control
     offroad = ui_state.is_offroad()
-    icbm_available = cp_ready and ui_state.CP_SP.intelligentCruiseButtonManagementAvailable and not has_long
+    icbm_available = cp_ready and icbm_applicable(ui_state.CP, ui_state.CP_SP)
     # Read live toggle state to avoid the five-second params refresh delay.
     has_icbm = icbm_available and self._icbm_toggle._checked
     # decel overshoot drives the stock ACC through ICBM; needs a measured per-brand plant map

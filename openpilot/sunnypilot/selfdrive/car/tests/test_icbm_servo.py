@@ -278,3 +278,28 @@ class TestRestoreResponsiveness:
     assert all(s == SendButtonState.none for s in quiet), "servo restored over the driver's SET-"
     assert any(s in (SendButtonState.increase, SendButtonState.increaseHold) for s in resumed), \
       "restore never resumed after the grace window"
+
+
+class TestOpenpilotLongitudinal:
+  """Under openpilot longitudinal the planner executes curve targets itself: the servo keeps
+  the dash on the arbiter's setpoint through a curve, still follows a speed limit session,
+  and never builds a decel-overshoot gap (that drives a stock ACC, not openpilot)."""
+
+  def test_curve_target_does_not_move_the_dash(self):
+    icbm = make_icbm(op_long=True)
+    run_frames(icbm, 45, 45, n=60, v_cruise_mph=45)
+    sends = run_frames(icbm, 30, 45, n=200, source='sccVision', v_cruise_mph=45)
+    assert all(s == SendButtonState.none for s in sends)
+    assert icbm.state == State.holding
+
+  def test_speed_limit_session_still_walks_the_dash(self):
+    icbm = make_icbm(op_long=True)
+    run_frames(icbm, 45, 45, n=60, v_cruise_mph=45)
+    sends = run_frames(icbm, 35, 45, n=200, source='speedLimitAssist', v_cruise_mph=35)
+    assert any(s == SendButtonState.decrease for s in sends)
+
+  def test_no_decel_overshoot(self):
+    icbm = make_icbm(brand='mazda', op_long=True)
+    run_frames(icbm, 45, 45, n=60, v_cruise_mph=45)
+    run_frames(icbm, 35, 45, n=100, source='speedLimitAssist', v_cruise_mph=35, v_ego_mph=45, a_target=-0.5, overshoot=True)
+    assert icbm.overshoot_mph == 0.

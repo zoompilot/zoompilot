@@ -14,6 +14,7 @@ from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_s
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
 
 OpenpilotState = log.SelfdriveState.OpenpilotState
 MADSState = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -228,9 +229,9 @@ class UIStateSP:
       self.params.remove("ExperimentalMode")
       self.params.remove("DynamicExperimentalControl")
 
-    # ICBM: clear if not available or if full longitudinal control is active
+    # ICBM: clear where the buttons have no set speed to move (icbm_applicable)
     if self.CP_SP is not None:
-      if not self.CP_SP.intelligentCruiseButtonManagementAvailable or has_long:
+      if not icbm_applicable(self.CP, self.CP_SP):
         self.params.remove("IntelligentCruiseButtonManagement")
         self.has_icbm = False
     else:

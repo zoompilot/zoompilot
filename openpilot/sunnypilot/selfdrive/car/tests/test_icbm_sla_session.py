@@ -196,3 +196,25 @@ class TestPressTimingSweeps:
       f"offset {offset}: diverged (dash {loop.ecu.dash}, setpoint {loop.v_cruise_mph})"
     if abs(dash_at_press - 45) > 3:
       assert loop.ecu.dash == 60, f"offset {offset}: baseline not restored from {dash_at_press}: {loop.ecu.dash}"
+
+
+class TestAlphaLong:
+  """Mazda alpha long: openpilot brakes, the body keeps the setpoint. The speed limit
+  session walks the dash exactly as under stock cruise; a curve does not touch the dash
+  because the planner slows the car itself."""
+
+  def test_confirm_sticks_and_dash_reaches_limit(self):
+    loop = Loop(baseline_mph=60, seed=3, op_long=True)
+    TestSlaSession()._confirm_lower(loop, limit=45)
+    states = set()
+    loop.run(10.0, assert_each=lambda lo: states.add(lo.sla.state))
+    assert loop.ecu.dash == 45, f"dash never reached the limit: {loop.ecu.dash}"
+    assert states == {SlaState.active}, f"SLA flickered: {states}"
+    assert loop.v_cruise_mph == 60, f"baseline corrupted: {loop.v_cruise_mph}"
+
+  def test_curve_leaves_the_dash_alone(self):
+    loop = Loop(baseline_mph=60, seed=1, op_long=True)
+    loop.scc_dip_mph = 45
+    loop.run(8.0)
+    assert loop.ecu.dash == 60, f"the dash followed a curve under openpilot longitudinal: {loop.ecu.dash}"
+    assert loop.v_cruise_mph == 60
