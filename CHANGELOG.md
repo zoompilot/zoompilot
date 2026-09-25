@@ -25,6 +25,7 @@ zoompilot v2026.09.25-15
   * Auto high beams work again.
   * Speed Limit Assist and ICBM now work. With ICBM on, the dash follows speed limits as under stock cruise: one press confirms, the set speed drops to the limit and returns after the zone. Curves no longer move the set speed.
   * The dash distance bars match the gap you picked.
+  * Both wheel distance buttons work: closer steps toward aggressive, farther steps toward relaxed.
 
 zoompilot v2026.09.12-14
 ========================

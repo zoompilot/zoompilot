@@ -534,6 +534,11 @@ class SelfdriveD(CruiseHelper):
           self.params.put('LongitudinalPersonality', self.personality)
           self.events.add(EventName.personalityChanged)
         self.experimental_mode_switched = False
+      elif self.distance_farther_released(self.sm['carStateSP']):
+        # the wheel's second distance button steps the other way (sunnypilot CruiseHelper)
+        self.personality = (self.personality + 1) % 3
+        self.params.put('LongitudinalPersonality', self.personality)
+        self.events.add(EventName.personalityChanged)
 
     self.icbm.run(CS, self.sm['carControl'], self.sm['longitudinalPlanSP'], self.is_metric)
 
