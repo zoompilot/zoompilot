@@ -1,9 +1,9 @@
 zoompilot v2026.09.25-16
 ========================
 Jetlink: Cinque Terre V3 and the models after it
-* Cinque Terre V3 is in the big-model list. It is the first of comma's models that keeps its own driving history inside the model; the Jetson now feeds that history back to it every frame, on the GPU, so the link carries the same per-frame data as before.
+* With a Jetson, Cinque Terre V3 is in the big-model list. It is the first of comma's models that keeps its own driving history inside the model; the Jetson now feeds that history back to it every frame, on the GPU, so the link carries the same per-frame data as before.
+* New big models appear on their own. With the link on and no chestnut fitted, the list also checks sunnypilot's newer model catalogs, so a model published after this release can be picked without an update. A chestnut sees sunnypilot's list, unchanged.
 * Models whose commit ships only a precompiled file are found and downloaded from comma's model repository, on the comma and with `jetlink-models fetch` on the Jetson alike.
-* New big models appear on their own. With the link on and no chestnut fitted, the list also checks sunnypilot's newer model catalogs, so a model published after this release can be picked without an update.
 * Needs the Jetson on a jetlink server with this support. An older one cannot prepare these models, and the small model keeps driving.
 
 zoompilot v2026.09.11-15

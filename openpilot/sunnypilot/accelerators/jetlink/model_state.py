@@ -79,8 +79,6 @@ class JetlinkModelState(ModelStateBase):
 
     self.input_shapes = spec.input_shapes
     self.output_slices = spec.output_slices
-    # the camera buffers modeld hands over, whatever the graph calls its inputs
-    self.vision_input_names = ['img', 'big_img']
     # from the spec, not ModelConstants: the server derives its history stride
     # from the same field
     self.frame_skip = spec.frame_skip
@@ -103,6 +101,8 @@ class JetlinkModelState(ModelStateBase):
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
     self.parser = Parser()
     self.frame_buf_params = {k: get_nv12_info(cam_w, cam_h) for k in ('img', 'big_img')}
+    # the camera buffers modeld hands over, whatever the graph calls its inputs
+    self.vision_input_names = list(self.frame_buf_params)
     self.full_frames: dict[str, Tensor] = {}
     self._blob_cache: dict[tuple[str, int], Tensor] = {}
     self._need_reset = True

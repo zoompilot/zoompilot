@@ -44,21 +44,6 @@ class FakeResponse:
     return False
 
 
-class TestParsePointer(unittest.TestCase):
-  def test_reads_oid_and_size(self):
-    # what the raw host serves for a commit, straight from the response
-    assert lfs.parse_pointer_text(POINTER) == (OID, SIZE)
-
-  def test_something_else_is_not_a_pointer(self):
-    assert lfs.parse_pointer_text('<html>404</html>') is None
-
-  def test_incomplete_pointer_is_rejected(self):
-    assert lfs.parse_pointer_text('version x\noid sha256:abc\n') is None
-
-  def test_non_numeric_size_is_rejected(self):
-    assert lfs.parse_pointer_text(f'oid sha256:{OID}\nsize huge\n') is None
-
-
 class TestEndpoints(unittest.TestCase):
   def setUp(self):
     self.root = Path(tempfile.mkdtemp())

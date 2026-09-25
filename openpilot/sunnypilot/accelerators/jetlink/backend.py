@@ -351,10 +351,11 @@ def big_catalog(catalog: dict, url: str) -> dict:
     if chestnut_present():
       return catalog
     from jetlink.registry.catalog import merge_catalogs, newer_catalogs
+    from openpilot.sunnypilot.models.helpers import REQUIRED_JSON_VERSION
     newer = newer_catalogs(url)
     if not newer:
       return catalog
-    merged = merge_catalogs([catalog, *newer])
+    merged = merge_catalogs([catalog, *newer], selector=REQUIRED_JSON_VERSION)
     added = len(merged.get('bundles', [])) - len(catalog.get('bundles', []))
     cloudlog.warning("jetlink: %d newer catalog(s) checked, %d model(s) only they list", len(newer), max(added, 0))
     return merged

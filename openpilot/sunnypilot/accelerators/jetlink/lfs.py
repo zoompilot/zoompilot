@@ -21,39 +21,17 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
+from jetlink.registry.lfs import LFS_ENDPOINTS as COMMA_ENDPOINTS  # the Jetson asks the same servers
+
 from openpilot.common.swaglog import cloudlog
 
 LFS_MEDIA_TYPE = 'application/vnd.git-lfs+json'
-# comma's LFS is on GitLab, not GitHub: GitHub's LFS API and
-# media.githubusercontent both 404 these. All serve anonymously
-COMMA_ENDPOINTS = (
-  'https://gitlab.com/commaai/openpilot-lfs.git/info/lfs',      # every object, older and PR-branch models included
-  'https://huggingface.co/commaai/openpilot-lfs.git/info/lfs',  # where comma is moving them (openpilot PR 38824); the current ones
-  'https://huggingface.co/commaai/openpilot_driving_models.git/info/lfs',  # the exports behind a precompiled pkl
-)
 CONNECT_TIMEOUT = 30.0
 CHUNK = 4 << 20
 
 
 class LfsError(Exception):
   pass
-
-
-def parse_pointer_text(text: str) -> tuple[str, int] | None:
-  """The oid and size in a git-lfs pointer's text, or None if it is not one."""
-  oid = size = None
-  for line in text.splitlines():
-    key, _, value = line.partition(' ')
-    if key == 'oid':
-      oid = value.removeprefix('sha256:').strip()
-    elif key == 'size':
-      try:
-        size = int(value)
-      except ValueError:
-        return None
-  if not oid or size is None:
-    return None
-  return oid, size
 
 
 def lfsconfig_endpoint(repo_root: Path) -> str | None:

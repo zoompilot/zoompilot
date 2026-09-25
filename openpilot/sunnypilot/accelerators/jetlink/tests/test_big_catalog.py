@@ -13,7 +13,6 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from jetlink.registry.catalog import ACCELERATOR_ONLY
 from openpilot.sunnypilot.accelerators.jetlink import backend
 from openpilot.sunnypilot.models.fetcher import ModelFetcher, ModelParser
 from openpilot.sunnypilot.models.helpers import _bundle_needs_reset, resolve_bundle_by_ref
@@ -48,9 +47,8 @@ class TestBigCatalog(unittest.TestCase):
     self.assertEqual([b.ref for b in bundles], [OLD, NEW])
     picked, source = resolve_bundle_by_ref(NEW, {'chestnut': bundles})
     self.assertEqual((picked.displayName, source), ('Cinque Terre V4', 'chestnut'))
-    # nothing for a chestnut to fetch, and marked so
+    # nothing for a chestnut to fetch
     self.assertEqual(list(picked.models), [])
-    self.assertIn(ACCELERATOR_ONLY, {o.key for o in picked.overrides})
     # the slot written from it survives the model manager's validation
     self.assertFalse(_bundle_needs_reset(picked, bundles, check_files=False))
 

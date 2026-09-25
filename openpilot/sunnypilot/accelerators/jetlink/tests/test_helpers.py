@@ -5,10 +5,8 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-import json
 import tempfile
 import unittest
-import urllib.error
 import urllib.request
 from pathlib import Path
 from unittest import mock
@@ -286,26 +284,13 @@ class TestResolvePointer(unittest.TestCase):
         helpers.resolve_pointer(REF_C)
     self.params.return_value.put.assert_not_called()
 
-  def test_a_precompiled_commit_resolves_to_the_export_it_names(self):
-    """Cinque Terre V3's commit has no ONNX; its subject names the export."""
-    from jetlink.registry.lfs import COMMIT_PATCH_URL, DRIVING_MODELS_TREE_URL, POINTER_URL
-    folder = 'f78ed37d-afad-4dbc-8050-40ea885eedde'
-    routes = {
-      COMMIT_PATCH_URL.format(ref=REF_C): b"From x\nSubject: [PATCH] Use f78ed37d for the precompiled eGPU driving model\n\n",
-      DRIVING_MODELS_TREE_URL: json.dumps([{'type': 'directory', 'path': folder}]).encode(),
-      f"{DRIVING_MODELS_TREE_URL}/{folder}?recursive=true": json.dumps([
-        {'type': 'file', 'path': f"{folder}/12864/big_driving_supercombo.onnx",
-         'lfs': {'oid': '4' * 64, 'size': 766354845}}]).encode(),
-    }
-
-    def urlopen(url, timeout=None):
-      if url == POINTER_URL.format(ref=REF_C):
-        raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
-      return self.response(routes[url])
-
-    with mock.patch.object(helpers, '_get', return_value={}), mock.patch.object(urllib.request, 'urlopen', side_effect=urlopen):
+  def test_the_lookup_is_the_registry_s(self):
+    """One resolver for both ends; the precompiled-pkl commits are tested there."""
+    from jetlink.registry.lfs import Pointer
+    with mock.patch.object(helpers, '_get', return_value={}), \
+         mock.patch('jetlink.registry.lfs.fetch_pointer', return_value=Pointer('4' * 64, 766354845)) as fetch:
       self.assertEqual(helpers.resolve_pointer(REF_C), ('4' * 64, 766354845))
-    self.assertEqual(self.params.return_value.put.call_args.args[1][REF_C], {'oid': '4' * 64, 'size': 766354845})
+    fetch.assert_called_once_with(REF_C, timeout=helpers.POINTER_TIMEOUT)
 
 
 class TestSelectedModel(unittest.TestCase):
