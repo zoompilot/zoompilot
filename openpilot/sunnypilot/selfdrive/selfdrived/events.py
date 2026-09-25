@@ -73,9 +73,11 @@ def speed_limit_pre_active_alert(CP: car.CarParams, CS: car.CarState, sm: messag
   alert_1_str = ""
   alert_size = AlertSize.small
 
-  # the arbiter publishes its own session while it prompts; the planner machine never does
-  arbiter_prompting = sm['carStateSP'].zoompilot.cruiseSession.state == AssistState.preActive
-  if CP.openpilotLongitudinalControl and CP.pcmCruise and not arbiter_prompting:
+  # the arbiter publishes its session only where it owns SLA (never disabled while long is
+  # enabled past its guard); the planner machine never publishes it. One hop old, so key on
+  # the session existing rather than on its exact state.
+  arbiter_owns = sm['carStateSP'].zoompilot.cruiseSession.state != AssistState.disabled
+  if CP.openpilotLongitudinalControl and CP.pcmCruise and not arbiter_owns:
     # PCM long: the driver moves the cluster to the required max
     cst_low, cst_high = PCM_LONG_REQUIRED_MAX_SET_SPEED[metric]
     pcm_long_required_max = cst_low if speed_limit_final_last_conv < CONFIRM_SPEED_THRESHOLD[metric] else cst_high
@@ -249,17 +251,6 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Steering Blocked by Panda Safety",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.steerRequired, AudibleAlert.prompt, .5),
-  },
-
-  # The stock camera's TJA/CTS stayed armed through openpilot's presses on the camera bus. The
-  # panda drops its 0x243 and the EPS follows ours, so the camera never sees its command
-  # executed. One press of the TJA button turns the stock system off; openpilot keeps steering.
-  EventNameSP.mazdaStockCtsActive: {
-    ET.WARNING: Alert(
-      "Stock CTS Is Still On",
-      "Press the TJA button to switch it off",
-      AlertStatus.userPrompt, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 4.),
   },
 
   # The three stock ECU alerts are PERMANENT, not the *AlertOnly WARNING convention: WARNING

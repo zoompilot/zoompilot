@@ -212,9 +212,29 @@ class TestAlphaLong:
     assert states == {SlaState.active}, f"SLA flickered: {states}"
     assert loop.v_cruise_mph == 60, f"baseline corrupted: {loop.v_cruise_mph}"
 
-  def test_curve_leaves_the_dash_alone(self):
+  @pytest.mark.parametrize("lookahead", [None, 30])
+  def test_curve_leaves_the_dash_alone(self, lookahead):
     loop = Loop(baseline_mph=60, seed=1, op_long=True)
     loop.scc_dip_mph = 45
+    loop.lookahead_mph = lookahead
     loop.run(8.0)
     assert loop.ecu.dash == 60, f"the dash followed a curve under openpilot longitudinal: {loop.ecu.dash}"
+    assert loop.v_cruise_mph == 60
+
+  @pytest.mark.parametrize("lookahead", [None, 30])
+  def test_curve_inside_a_zone_holds_the_limit(self, lookahead):
+    # the production case: SCC Vision's lookahead sees the curve, the zone cap must hold
+    loop = Loop(baseline_mph=60, seed=3, op_long=True)
+    TestSlaSession()._confirm_lower(loop, limit=45)
+    loop.run(10.0)
+    assert loop.ecu.dash == 45
+    loop.scc_dip_mph = 30
+    loop.lookahead_mph = lookahead
+    dashes = set()
+    loop.run(8.0, assert_each=lambda lo: dashes.add(lo.ecu.dash))
+    assert dashes == {45}, f"the dash left the zone cap during a curve: {sorted(dashes)}"
+    loop.scc_dip_mph = 0.
+    loop.lookahead_mph = None
+    loop.run(4.0)
+    assert loop.ecu.dash == 45
     assert loop.v_cruise_mph == 60

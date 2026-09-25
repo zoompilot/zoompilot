@@ -12,6 +12,7 @@ from opendbc.car.structs import car
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import V_CRUISE_UNSET
 
 SessionState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
@@ -44,6 +45,7 @@ def run_frames(icbm, target_mph, cluster_mph, n=1, source='sccVision', is_metric
     LP_SP.aTarget = float(a_target)
     LP_SP.smartCruiseControl.vision.vAheadMin = float(v_ahead_min_mph * CV.MPH_TO_MS)
     LP_SP.speedLimit.assist.state = session_state
+    LP_SP.speedLimit.assist.vTarget = V_CRUISE_UNSET  # the mirror's idle value
     icbm.run(CS, CC, LP_SP, is_metric=is_metric)
     sends.append(icbm.cruise_button)
   return sends

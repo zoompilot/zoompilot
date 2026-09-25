@@ -20,6 +20,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import CRUISE_BUTTON_TIMER, update_manual_button_timers
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import V_CRUISE_UNSET
 
 ButtonType = car.CarState.ButtonEvent.Type
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
@@ -149,9 +150,11 @@ class IntelligentCruiseButtonManagement:
 
     v_target_ms = LP_SP.vTarget
     if self.CP.openpilotLongitudinalControl and LP_SP.longitudinalPlanSource in OP_LONG_PLANNER_SOURCES:
-      # openpilot brakes for curves itself: the dash keeps the arbiter's setpoint (the
-      # driver's, or the adopted limit) and never walks down to a curve target
-      v_target_ms = CS.vCruise * CV.KPH_TO_MS
+      # openpilot brakes for curves itself: the dash keeps the driver's setpoint, or the
+      # session's cap inside a zone (the mirror publishes it, V_CRUISE_UNSET when idle), and
+      # never walks down to a curve target nor back up over the cap during one
+      session_cap = LP_SP.speedLimit.assist.vTarget
+      v_target_ms = min(CS.vCruise * CV.KPH_TO_MS, session_cap if session_cap > 0. else V_CRUISE_UNSET)
     overshoot_ms = self.update_decel_overshoot(CS, LP_SP) * CV.MPH_TO_MS
     if overshoot_ms > 0:
       # Command relative to actual speed while keeping the plan target as the upper bound.
