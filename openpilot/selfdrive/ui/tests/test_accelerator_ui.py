@@ -295,6 +295,19 @@ class TestTiciModelsPanel:
     finally:
       ui_state.accelerator_view, ui_state.chestnut_present = saved
 
+  def test_a_chestnut_hides_the_link_toggle(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.accelerator_link import link_toggle_meaningful
+    ui_state = ui_state_module().ui_state
+    saved = ui_state.chestnut_present
+    try:
+      with accelerator(present=True, selected='Cinque Terre'):
+        ui_state.chestnut_present = False
+        assert link_toggle_meaningful()
+        ui_state.chestnut_present = True
+        assert not link_toggle_meaningful()
+    finally:
+      ui_state.chestnut_present = saved
+
   def test_panel_renders(self, params):
     import pyray as rl
     with accelerator(present=True, selected='Cinque Terre'):

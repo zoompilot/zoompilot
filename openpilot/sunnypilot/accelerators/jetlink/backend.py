@@ -180,8 +180,24 @@ def _connect_patiently(link: _Link):
     time.sleep(CONNECT_DELAY)
 
 
+# the chestnut runs the big model natively and the link stays off beside it,
+# whatever the toggle says. Cached: the UI asks five times a second and the
+# answer is a walk of the USB bus
+CHESTNUT_TTL = 2.0
+_chestnut: tuple[float, bool] | None = None
+
+
+def _chestnut_fitted() -> bool:
+  global _chestnut
+  now = time.monotonic()
+  if _chestnut is None or now - _chestnut[0] > CHESTNUT_TTL:
+    from openpilot.selfdrive.modeld.helpers import chestnut_present
+    _chestnut = (now, chestnut_present())
+  return _chestnut[1]
+
+
 def enabled() -> bool:
-  return helpers.enabled()
+  return helpers.enabled() and not _chestnut_fitted()
 
 
 def installed() -> bool:
@@ -194,7 +210,7 @@ def present() -> bool:
 
 def ready() -> bool:
   # params only, no link IO: jetlinkd has already recorded the answer
-  if not helpers.enabled() or helpers.gadget_error() is not None:
+  if not enabled() or helpers.gadget_error() is not None:
     return False
   spec = spec_cache.load()
   selected = helpers.selected_model()
@@ -203,7 +219,7 @@ def ready() -> bool:
 
 
 def unavailable_reason() -> str | None:
-  return helpers.gadget_alert()
+  return helpers.gadget_alert() if enabled() else None
 
 
 def prepare() -> bool:

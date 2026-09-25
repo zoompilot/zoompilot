@@ -192,6 +192,14 @@ def longitudinal_maneuver_alert(CP: car.CarParams, CS: car.CarState, sm: messagi
                Priority.LOW, VisualAlert.none, audible_alert, 0.2)
 
 
+def big_model_failed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  # a chestnut's only retry is a restart, as upstream says; an accelerator on its
+  # own power reconnects mid-drive, and bigModelLinkLost beside this says so
+  if sm['deviceState'].chestnutPresent:
+    return NormalPermanentAlert("Big Model Failed ", "Restart the car to retry,\nsmall model is still available", duration=20.)
+  return NormalPermanentAlert("Big Model Failed ", "Small model is still available", duration=20.)
+
+
 def personality_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
   personality = str(personality).title()
   return NormalPermanentAlert(f"Driving Personality: {personality}", duration=1.5)
@@ -235,9 +243,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventName.bigModelFailed: {
     ET.SOFT_DISABLE: soft_disable_alert("Big Model Failed"),
-    # no "restart the car to retry": an accelerator on its own power reconnects
-    # mid-drive, and this fires beside bigModelLinkLost, which says so
-    ET.PERMANENT: NormalPermanentAlert("Big Model Failed ", "Small model is still available", duration=20.),
+    ET.PERMANENT: big_model_failed_alert,
   },
 
   EventName.lateralManeuver: {

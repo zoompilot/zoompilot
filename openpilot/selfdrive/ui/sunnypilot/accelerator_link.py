@@ -34,10 +34,13 @@ def set_link_enabled(enabled: bool) -> None:
 
 def link_toggle_meaningful() -> bool:
   """Offered wherever the package is checked out, as the chestnut slot is offered
-  whether or not a board is fitted. Hidden only on a device with nothing of ours:
-  no package, nothing attached, nothing set, no complaint. present() cannot be the
+  whether or not a board is fitted, except beside a chestnut, which runs the big
+  model itself. Otherwise hidden only on a device with nothing of ours: no
+  package, nothing attached, nothing set, no complaint. present() cannot be the
   gate on its own: with the link off there is no gadget for a Jetson to enumerate,
   so the toggle that turns it on would wait for the thing it enables."""
+  if ui_state.chestnut_present:
+    return False
   return (accelerators.installed() or accelerators.present() or accelerators.ready() or link_enabled()
           or accelerators.unavailable_reason() is not None)
 

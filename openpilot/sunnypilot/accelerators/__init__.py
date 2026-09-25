@@ -107,7 +107,9 @@ def make_status_publisher(pm, model):
 
 
 def enabled() -> bool:
-  """Has the user turned the link on? Configuration only, never link state or ready()."""
+  """Has the user turned the link on, with no chestnut fitted? Configuration only,
+  never link state or ready(). A chestnut runs the big model natively and the link
+  stays off beside it, so jetlinkd never takes the USB controller from it."""
   return _backend().enabled()
 
 

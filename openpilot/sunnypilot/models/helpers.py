@@ -136,7 +136,26 @@ def get_active_bundle(params: Params | None = None, *, chestnut: bool | None = N
   # no cross-slot fallback: an empty active slot means the hardware default, which
   # only stock modeld can run - modeld_v2 requires a real bundle
   params = params or Params()
-  return get_selected_bundle(params, get_active_source(chestnut=chestnut))
+  source = get_active_source(chestnut=chestnut)
+  bundle = get_selected_bundle(params, source)
+  if source == "chestnut" and bundle is not None and not _big_files_ready(params, bundle):
+    return None
+  return bundle
+
+
+def _big_files_ready(params: Params, bundle: custom.ModelManagerSP.ModelBundle) -> bool:
+  """A chestnut pick whose files are not all here, or are being fetched again,
+  runs as the Default big model until the manager has them
+  (ModelManagerSP._fetch_big_model_files). Upstream resets the pick instead;
+  keeping it and driving the Default meanwhile loses neither. Existence only:
+  this is asked every manager tick, and the manager hashes them once per ref."""
+  downloading = params.get("ModelManager_DownloadRef")
+  if isinstance(downloading, bytes):
+    downloading = downloading.decode()
+  if downloading == bundle.ref:
+    return False
+  model_root = Paths.model_root()
+  return all(os.path.isfile(os.path.join(model_root, name)) for name, _ in _bundle_artifacts(bundle))
 
 
 def resolve_bundle_by_ref(

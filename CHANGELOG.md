@@ -5,6 +5,8 @@ Jetlink: Cinque Terre V3 and the models after it
 * New big models appear on their own. With the link on and no chestnut fitted, the list also checks sunnypilot's newer model catalogs, so a model published after this release can be picked without an update. A chestnut sees sunnypilot's list, unchanged.
 * Models whose commit ships only a precompiled file are found and downloaded from comma's model repository, on the comma and with `jetlink-models fetch` on the Jetson alike.
 * Needs the Jetson on a jetlink server with this support. An older one cannot prepare these models, and the small model keeps driving.
+* A chestnut works as it does in sunnypilot: its own model list, "Restart the car to retry" when the big model fails, and no Accelerator Link beside it. One improvement: if a picked big model's files go missing, the pick is kept, the files are fetched again offroad, and the Default big model drives meanwhile.
+* A chestnut installed from source fetches the big model at build time; other installs still leave it out.
 
 zoompilot v2026.09.11-15
 ========================
