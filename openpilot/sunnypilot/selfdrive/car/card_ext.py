@@ -25,6 +25,7 @@ class CardExt:
     # silences a stock ECU under openpilot longitudinal exposes `stock_ecu_state`; nothing
     # brand-specific is read here. The hand-back server answers the lifecycle's requests off it.
     self.controller = CI.CC
+    self.car_state = CI.CS
     self.handback = StockEcuHandBackServer(params)
 
   def update_v_cruise_post(self, CS, CS_SP) -> None:
@@ -36,6 +37,8 @@ class CardExt:
     helper.cruise_arbiter.fill_msg(CS_SP)
     # the driver's view of the stock ECU, for the engage-press alert (stockEcuNotReady)
     CS_SP.zoompilot.stockEcu = str(self.stock_ecu_state)
+    # a second, opposite-direction distance button, on the brands whose carstate exposes one
+    CS_SP.zoompilot.distanceFarther = bool(getattr(self.car_state, "distance_more_button", 0))
 
   @property
   def stock_ecu_state(self) -> StockEcuState:

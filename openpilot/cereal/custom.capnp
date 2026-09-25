@@ -551,6 +551,9 @@ struct CarStateZP @0xc879af11c43cb400 {
   # at carState rate: the driver's view of the ECU openpilot stands in for. ready is the
   # vehicle's own silence guard, never a session acknowledgement.
   stockEcu @1 :StockEcuState;
+  # The wheel's "farther" distance button, level. Upstream's one gapAdjustCruise button type
+  # cycles the personality one way; selfdrived steps it the other way on this release.
+  distanceFarther @2 :Bool;
 
   enum StockEcuState {
     notNeeded @0;

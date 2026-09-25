@@ -24,6 +24,7 @@ class CruiseHelper:
     self.button_frame_counts = {ButtonType.gapAdjustCruise: 0}
     self._experimental_mode = False
     self.experimental_mode_switched = False
+    self.distance_farther_prev = False
 
   def update(self, CS, events, experimental_mode) -> None:
     if self.CP.openpilotLongitudinalControl:
@@ -32,6 +33,14 @@ class CruiseHelper:
 
         # toggle experimental mode once on distance button hold
         self.update_experimental_mode(events, experimental_mode)
+
+  def distance_farther_released(self, CS_SP) -> bool:
+    """The release edge of the wheel's "farther" distance button (carStateSP.zoompilot), the
+    opposite direction to upstream's gapAdjustCruise cycle. False on cars without one."""
+    pressed = bool(CS_SP.zoompilot.distanceFarther)
+    released = self.distance_farther_prev and not pressed
+    self.distance_farther_prev = pressed
+    return released
 
   def update_button_frame_counts(self, CS) -> None:
     for button in self.button_frame_counts:

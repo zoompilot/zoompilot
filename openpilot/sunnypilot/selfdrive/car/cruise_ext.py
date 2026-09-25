@@ -148,7 +148,7 @@ class VCruiseHelperSP:
     if not pressed and self.reconcile_frames <= 0:
       return
 
-    dash_kph = CS.cruiseState.speed * CV.MS_TO_KPH
+    dash_kph = CS.cruiseState.speedCluster * CV.MS_TO_KPH  # the displayed number, what the buttons step
     if pressed:
       if any(self.enable_button_timers[b] == 1 for b in RECONCILE_BUTTONS):
         # verdict per press start, before the press's own ECU effect lands; the arbiter's
