@@ -16,6 +16,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimen
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.assist_mirror import SpeedLimitAssistMirror
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import pcm_machine_owns_sla
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
@@ -31,9 +32,10 @@ class LongitudinalPlannerSP:
     self.dec = DynamicExperimentalController(CP, mpc)
     self.scc = SmartCruiseControl(CP)
     self.resolver = SpeedLimitResolver(CP)
-    # pcm-op-long cars run the SLA machine here; non-pcm cars run it in card (the
-    # cruise arbiter, next to the buttons and the setpoint) and get mirrored
-    if CP.openpilotLongitudinalControl and CP.pcmCruise:
+    # cars whose setpoint only the driver can move run the SLA machine here; everywhere
+    # else it runs in card (the cruise arbiter, next to the buttons and the setpoint) and
+    # gets mirrored (speed_limit.helpers.pcm_machine_owns_sla)
+    if pcm_machine_owns_sla(CP, CP_SP):
       self.sla = SpeedLimitAssist(CP, CP_SP)
     else:
       self.sla = SpeedLimitAssistMirror(CP, CP_SP)

@@ -180,3 +180,11 @@ additionally vetoes emission with same-frame state (`cruise-arbiter.md`).
 - Restoring on target stillness when a vision lookahead is available. Restored between
   bends and fed the next apex (route 126, 3 of 8 over-ceiling apexes).
 - An immediate walk-back after a genuine driver press. Reads as a fight (route 126 t=341).
+
+## Under openpilot longitudinal (Mazda alpha long)
+
+The servo runs wherever the car's ECU keeps the setpoint (`icbm_applicable`), including alpha
+long, where the body still owns the cluster set speed. There it follows speed limit sessions
+only: curve targets are executed by the planner directly, so the dash holds the arbiter's
+setpoint through them (`OP_LONG_PLANNER_SOURCES`), and decel overshoot is off. See
+mazda-longitudinal.md, "Speed Limit Assist and ICBM under alpha long".

@@ -275,17 +275,36 @@ until the radar has been silenced once; the teardown gate already waits out a st
 The deeper fix is carstate not reporting a stock engagement as `cruiseState.enabled` under op-long
 at all, which needs an audit of every enabled consumer first.
 
-### Speed Limit Assist
+### Speed Limit Assist and ICBM under alpha long
 
-Alpha long makes the car pcm-op-long (`openpilotLongitudinalControl` with `pcmCruise`), so the
-sunnypilot SLA machine runs in plannerd. That machine confirms through a fixed required-max set
-speed (70/80 mph), which the Mazda cluster can never show while the driver sets a real speed:
-with any resolved limit it sits in preActive, and the planner takes its published target as the
-plan cap. A 2025 CX-5 release-build capture (2026-09-12) shows the plan source flipping to
-speedLimitAssist at 11.18 m/s in a 25 mph zone with the set speed at 56 kph, re-arming on every
-re-engagement: the zone limit overrode the driver's set speed with a prompt that could not be
-cleared. `set_speed_limit_assist_availability` demotes Mazda alpha long to warning mode, matching
-the ICBM-class exclusion.
+Alpha long changes who commands acceleration, not who keeps the set speed: the body still owns
+the cluster setpoint and the wheel buttons still move it. So the same machinery as stock cruise
+owns the speed limit session, the card-side cruise arbiter with the ICBM servo walking the dash,
+and plannerd mirrors it. Nothing Mazda-specific decides this; two predicates do:
+
+- `icbm_applicable(CP, CP_SP)` (intelligent_cruise_button_management/helpers.py): ICBM applies
+  where the platform declares it and the car's ECU keeps the setpoint, which is every
+  button-actuated car under stock cruise and, under openpilot longitudinal, only `pcmCruise`
+  ports. With the toggle on it clears `pcmCruiseSpeed`; the ICBM toggle stays available under
+  alpha long.
+- `pcm_machine_owns_sla(CP, CP_SP)` (speed_limit/helpers.py): the plannerd SLA machine, which
+  confirms through the driver setting the required-max cluster speed (70/80 mph), keeps only the
+  cars whose setpoint nobody but the driver can move: `openpilotLongitudinalControl` and
+  `pcmCruise` and `pcmCruiseSpeed`. The planner, the arbiter's `applicable` and the pre-active
+  alert text all read it.
+
+Under alpha long the servo differs in two ways (`OP_LONG_PLANNER_SOURCES`): a curve target from
+Smart Cruise never walks the dash, because the planner slows the car itself and the dash keeps
+the arbiter's setpoint (the driver's, or the adopted limit); and decel overshoot is off, since
+the gap trick drives a stock ACC's own deceleration. A speed limit session walks the dash
+exactly as under stock cruise. Tests: `TestAlphaLong` in test_icbm_sla_session.py,
+`TestOpenpilotLongitudinal` in test_icbm_servo.py, the applicability matrix in
+test_cruise_arbiter.py and test_speed_limit_availability.py.
+
+Without the ICBM toggle, alpha long is an ordinary pcm-op-long car: the plannerd machine and its
+required-max confirm, as on Toyota. The 2026-09-12 capture (2025 CX-5, release build, set speed
+56 kph in a 25 mph zone, plan capped at the limit with the confirm prompt up) is that machine
+doing what upstream designed; ICBM is the way to have the dash follow the limit instead.
 
 ### Gas override
 

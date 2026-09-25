@@ -16,14 +16,14 @@ from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.con
 SessionState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
 
-def make_icbm(brand=""):
-  return IntelligentCruiseButtonManagement(car.CarParams(pcmCruise=True, brand=brand),
+def make_icbm(brand="", op_long=False):
+  return IntelligentCruiseButtonManagement(car.CarParams(pcmCruise=True, brand=brand, openpilotLongitudinalControl=op_long),
                                            custom.CarParamsSP(pcmCruiseSpeed=False))
 
 
 def run_frames(icbm, target_mph, cluster_mph, n=1, source='sccVision', is_metric=False,
                v_ego_mph=None, a_target=0., overshoot=False, session_state=SessionState.disabled,
-               v_ahead_min_mph=0., button_events=None):
+               v_ahead_min_mph=0., button_events=None, v_cruise_mph=None):
   """Run the servo for n frames against a fixed plan target and dash; returns the sends."""
   # the toggle is a param the servo re-reads on its own cadence; set both so a flip takes
   # effect on this call's first frame
@@ -34,6 +34,8 @@ def run_frames(icbm, target_mph, cluster_mph, n=1, source='sccVision', is_metric
     CS = car.CarState(cruiseState={"speedCluster": cluster_mph * CV.MPH_TO_MS})
     if v_ego_mph is not None:
       CS.vEgo = float(v_ego_mph * CV.MPH_TO_MS)
+    if v_cruise_mph is not None:
+      CS.vCruise = float(v_cruise_mph * CV.MPH_TO_KPH)
     if button_events and i == 0:
       CS.buttonEvents = button_events
     CC = car.CarControl(enabled=True)

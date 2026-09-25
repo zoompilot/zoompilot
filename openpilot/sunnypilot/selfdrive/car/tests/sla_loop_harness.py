@@ -137,7 +137,7 @@ class Loop:
   selfdrived->card (carControlSP) hops keep their one-cycle transport delay, and the
   mirror consumes the session snapshot from the previous frame, as plannerd would."""
 
-  def __init__(self, baseline_mph=60, seed=0, forged_mode='taps', is_metric=False):
+  def __init__(self, baseline_mph=60, seed=0, forged_mode='taps', is_metric=False, op_long=False):
     # display units throughout: mph, or kph when is_metric (the *_mph names stay; the
     # ECU integrator, the limits and the setpoint all step in whichever unit the dash shows)
     self.is_metric = is_metric
@@ -149,7 +149,9 @@ class Loop:
     params.put_bool("IsMetric", is_metric, block=True)
     params.put_bool("CustomAccIncrementsEnabled", False)
 
-    CP = car.CarParams(pcmCruise=True, brand="mazda")
+    # op_long: Mazda alpha long, openpilot commands acceleration but the body keeps the
+    # setpoint, so the same arbiter, mirror and servo own the session
+    CP = car.CarParams(pcmCruise=True, brand="mazda", openpilotLongitudinalControl=op_long)
     CP_SP = custom.CarParamsSP(pcmCruiseSpeed=False)
     self.helper = VCruiseHelper(CP, CP_SP)
     self.sla = self.helper.cruise_arbiter  # 100 Hz session truth; .state as before
@@ -186,6 +188,7 @@ class Loop:
                                    "speedCluster": self.ecu.dash * self.u_ms})
     v_ego_mph = self.v_ego_mph if self.v_ego_mph is not None else self.helper.v_cruise_kph / self.u_kph
     CS.vEgo = float(v_ego_mph * self.u_ms)
+    CS.vCruise = float(self.helper.v_cruise_kph)  # card's own, as published to the servo
     CS.buttonEvents = button_events or []
     return CS
 

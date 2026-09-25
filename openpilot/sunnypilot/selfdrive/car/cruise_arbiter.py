@@ -23,7 +23,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES, V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import compare_cluster_target, confirm_needed_for_change
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import compare_cluster_target, confirm_needed_for_change, pcm_machine_owns_sla
 
 ButtonType = car.CarState.ButtonEvent.Type
 SessionState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
@@ -54,8 +54,9 @@ class _Press:
 
 class CruiseArbiter:
   def __init__(self, CP, CP_SP):
-    # Only pcmCruise platforms with openpilot longitudinal keep the planner-side machine.
-    self.applicable = not (CP.openpilotLongitudinalControl and CP.pcmCruise)
+    # The planner-side machine keeps only the cars whose setpoint nobody but the driver can
+    # move; a reachable setpoint (openpilot's own, or the ICBM buttons) is arbitrated here.
+    self.applicable = not pcm_machine_owns_sla(CP, CP_SP)
     # ICBM platforms adopt the ECU setpoint; non-pcm openpilot longitudinal writes it here.
     self.op_owns_setpoint = not CP.pcmCruise
 

@@ -22,6 +22,7 @@ VisualAlert = car.CarControl.HUDControl.VisualAlert
 AudibleAlert = car.CarControl.HUDControl.AudibleAlert
 AudibleAlertSP = custom.SelfdriveStateSP.AudibleAlert
 EventNameSP = custom.OnroadEventSP.EventName
+AssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
 
 # get event name from enum
@@ -81,8 +82,10 @@ def speed_limit_pre_active_alert(CP: car.CarParams, CS: car.CarState, sm: messag
   alert_1_str = ""
   alert_size = AlertSize.small
 
-  if CP.openpilotLongitudinalControl and CP.pcmCruise:
-    # PCM long
+  # the arbiter publishes its own session while it prompts; the planner machine never does
+  arbiter_prompting = sm['carStateSP'].zoompilot.cruiseSession.state == AssistState.preActive
+  if CP.openpilotLongitudinalControl and CP.pcmCruise and not arbiter_prompting:
+    # PCM long: the driver moves the cluster to the required max
     cst_low, cst_high = PCM_LONG_REQUIRED_MAX_SET_SPEED[metric]
     pcm_long_required_max = cst_low if speed_limit_final_last_conv < CONFIRM_SPEED_THRESHOLD[metric] else cst_high
     pcm_long_required_max_set_speed_conv = round(pcm_long_required_max * speed_conv)

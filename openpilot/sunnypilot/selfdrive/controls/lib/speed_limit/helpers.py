@@ -34,6 +34,15 @@ def confirm_needed_for_change(cluster_conv: int, target_conv: int, is_metric: bo
   return target_conv < cst
 
 
+def pcm_machine_owns_sla(CP: car.CarParams, CP_SP: custom.CarParamsSP) -> bool:
+  """The plannerd SLA machine runs where openpilot commands acceleration, the car's ECU keeps
+  the setpoint on its cluster, and nothing can move that setpoint but the driver: it confirms
+  through the driver setting the required-max speed. Everywhere else the setpoint is
+  reachable, by openpilot writing it (non-pcmCruise) or by the ICBM buttons (pcmCruiseSpeed
+  off, which is also Mazda alpha long), and the card-side cruise arbiter owns the session."""
+  return bool(CP.openpilotLongitudinalControl and CP.pcmCruise and CP_SP.pcmCruiseSpeed)
+
+
 def set_speed_limit_assist_availability(CP: car.CarParams, CP_SP: custom.CarParamsSP, params: Params | None = None) -> bool:
   if params is None:
     params = Params()
@@ -41,13 +50,9 @@ def set_speed_limit_assist_availability(CP: car.CarParams, CP_SP: custom.CarPara
   is_release = params.get_bool("IsReleaseSpBranch")
   disallow_in_release = CP.brand == "tesla" and is_release
   always_disallow = CP.brand == "rivian"
-  # Mazda alpha-long is the one pcm-op-long port whose setpoint stays on the car: the pcm
-  # machine's fixed required-max can never match the cluster, so preActive alone holds the
-  # plan at the resolved limit with a prompt the driver cannot clear.
-  disallow_mazda_op_long = CP.brand == "mazda" and CP.openpilotLongitudinalControl and CP.pcmCruise
   allowed = True
 
-  if disallow_in_release or always_disallow or disallow_mazda_op_long:
+  if disallow_in_release or always_disallow:
     allowed = False
 
   if not CP.openpilotLongitudinalControl and CP_SP.pcmCruiseSpeed:

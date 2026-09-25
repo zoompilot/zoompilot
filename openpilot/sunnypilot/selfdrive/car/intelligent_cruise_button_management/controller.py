@@ -57,6 +57,9 @@ DECEL_OVERSHOOT_RISE = 10.  # mph/s
 DECEL_OVERSHOOT_RELEASE = 3.  # mph/s
 DECEL_OVERSHOOT_SOURCES = (LongitudinalPlanSource.sccVision, LongitudinalPlanSource.sccMap,
                            LongitudinalPlanSource.speedLimitAssist)
+# Under openpilot longitudinal the planner executes these targets directly; the servo only
+# keeps the dash on the speed limit session (Mazda alpha long).
+OP_LONG_PLANNER_SOURCES = (LongitudinalPlanSource.sccVision, LongitudinalPlanSource.sccMap)
 
 # A 10 Hz hold stream registers as paced one-unit presses. Use taps for the final steps to
 # avoid overshoot from in-flight stream frames.
@@ -122,7 +125,9 @@ class IntelligentCruiseButtonManagement:
     p = self.overshoot_params
     want = 0.0
     # Do not accumulate a gap while button emission is blocked.
-    if (self.decel_overshoot_enabled and self.is_ready and not self.prompt_frozen
+    # the gap trick drives a stock ACC's own deceleration; openpilot longitudinal brakes itself
+    if (self.decel_overshoot_enabled and not self.CP.openpilotLongitudinalControl
+        and self.is_ready and not self.prompt_frozen
         and self.down_grace_timer <= 0
         and LP_SP.longitudinalPlanSource in DECEL_OVERSHOOT_SOURCES
         and LP_SP.aTarget < -p['min_decel'] and CS.vEgo > LP_SP.vTarget):
@@ -143,6 +148,10 @@ class IntelligentCruiseButtonManagement:
     self.limiter_active = LP_SP.longitudinalPlanSource != LongitudinalPlanSource.cruise
 
     v_target_ms = LP_SP.vTarget
+    if self.CP.openpilotLongitudinalControl and LP_SP.longitudinalPlanSource in OP_LONG_PLANNER_SOURCES:
+      # openpilot brakes for curves itself: the dash keeps the arbiter's setpoint (the
+      # driver's, or the adopted limit) and never walks down to a curve target
+      v_target_ms = CS.vCruise * CV.KPH_TO_MS
     overshoot_ms = self.update_decel_overshoot(CS, LP_SP) * CV.MPH_TO_MS
     if overshoot_ms > 0:
       # Command relative to actual speed while keeping the plan target as the upper bound.

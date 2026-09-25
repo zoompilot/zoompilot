@@ -26,7 +26,8 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits imp
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES, ENABLED_STATES, \
   PCM_LONG_REQUIRED_MAX_SET_SPEED, CONFIRM_SPEED_THRESHOLD, V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import confirm_needed_for_change, set_speed_limit_assist_availability
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import confirm_needed_for_change, pcm_machine_owns_sla, \
+  set_speed_limit_assist_availability
 
 EventNameSP = custom.OnroadEventSP.EventName
 SpeedLimitAssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
@@ -85,7 +86,7 @@ class SpeedLimitAssist:
     self._distance = 0.
     self.state = SpeedLimitAssistState.disabled
     self._state_prev = SpeedLimitAssistState.disabled
-    self.pcm_op_long = CP.openpilotLongitudinalControl and CP.pcmCruise
+    self.pcm_op_long = pcm_machine_owns_sla(CP, CP_SP)
 
     # Solution functions mapped to respective states
     self.acceleration_solutions = {
