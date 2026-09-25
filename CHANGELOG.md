@@ -4,6 +4,9 @@ zoompilot v2026.09.25-15
 * Lane-keep off at the dash button now disables steering only, with a "Lateral Disabled, LKAS is off" alert. Cruise keeps working. With MADS off it disables everything, as before.
 * Fixed a false "Steering Assist Temporarily Unavailable" while lane-keep is off.
 * Upstream sunnypilot: refresh and clear-cache buttons on the models panel, a UI freeze fix, a camera offset fix.
+* CX-5 and CX-9 built for export markets (JM7 VINs) are recognized.
+* New Zealand and Australian clusters: the set speed zoompilot shows now matches the dash, and speed limits land on the displayed number.
+* Fixed sunnylink backup and restore reading garbage setting names.
 * TJA button as the MADS switch
   * Pressing TJA no longer leaves MRCC armed. If cruise was off, zoompilot turns it back off. If it was on, it stays on.
   * A white steering wheel shows on the cluster while zoompilot steers with cruise off.
@@ -11,6 +14,7 @@ zoompilot v2026.09.25-15
 * Alpha longitudinal only
   * Auto high beams work again.
   * Speed Limit Assist and ICBM now work. With ICBM on, the dash follows speed limits as under stock cruise: one press confirms, the set speed drops to the limit and returns after the zone. Curves no longer move the set speed.
+  * The dash distance bars match the gap you picked.
 
 zoompilot v2026.09.12-14
 ========================
