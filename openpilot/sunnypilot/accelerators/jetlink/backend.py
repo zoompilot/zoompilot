@@ -337,6 +337,32 @@ def make_status_publisher(pm, model):
   return JetlinkStatus(pm, model)
 
 
+def big_catalog(catalog: dict, url: str) -> dict:
+  """The big-model catalog with every newer one sunnypilot has published folded
+  in, when the Jetson runs the big model. It runs the commit's ONNX, so a model
+  sunnypilot only builds for its next runtime is still one it can run; see
+  jetlink.registry.catalog.merge_catalogs. With a chestnut fitted, or the link
+  off, the catalog is the model manager's as fetched. Never raises: a probe
+  that fails leaves the catalog as it was."""
+  if not helpers.enabled():
+    return catalog
+  try:
+    from openpilot.selfdrive.modeld.helpers import chestnut_present
+    if chestnut_present():
+      return catalog
+    from jetlink.registry.catalog import merge_catalogs, newer_catalogs
+    newer = newer_catalogs(url)
+    if not newer:
+      return catalog
+    merged = merge_catalogs([catalog, *newer])
+    added = len(merged.get('bundles', [])) - len(catalog.get('bundles', []))
+    cloudlog.warning("jetlink: %d newer catalog(s) checked, %d model(s) only they list", len(newer), max(added, 0))
+    return merged
+  except Exception:
+    cloudlog.exception("jetlink: could not check for newer catalogs")
+    return catalog
+
+
 def selected_model_name() -> str | None:
   """What the accelerator will run: the big-model slot's pick, or the default."""
   selected = helpers.selected_model()

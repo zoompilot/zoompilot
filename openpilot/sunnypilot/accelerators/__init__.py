@@ -111,6 +111,12 @@ def enabled() -> bool:
   return _backend().enabled()
 
 
+def big_catalog(catalog: dict, url: str) -> dict:
+  """The big-model catalog the model manager fetched from `url`, with the models
+  newer catalogs list folded in when an accelerator runs the big model."""
+  return _backend().big_catalog(catalog, url)
+
+
 def selected_model_name() -> str | None:
   """The big model the accelerator will run: the model manager's big-model pick, or the default."""
   return _backend().selected_model_name()
