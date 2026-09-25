@@ -24,18 +24,19 @@ returns nothing. Model line is VIN positions 4 and 5 (`vin.vds[0:2]`), model yea
 | WMI | Meaning |
 | --- | --- |
 | JM1 | Japan-built passenger cars |
-| JM3 | Japan-built crossovers |
+| JM3 | Japan-built crossovers, North America |
+| JM7 | Japan-built crossovers, export markets (Latin America and others). Same chassis and year fields as JM3, listed beside it on every crossover platform |
 | 3MZ | Mazda de Mexico (Mazda 3) |
 | JM0 | Export markets (Australia, New Zealand). Carries no model year field, never decodes through the platform table, and is the only WMI the swap fallback accepts |
 
 | Platform | WMIs | Chassis | Year codes | Model years |
 | --- | --- | --- | --- | --- |
-| MAZDA_CX5 | JM3 | KF | H J K L M | 2017-21 |
-| MAZDA_CX9 | JM3 | TC | G H J K L | 2016-20 |
+| MAZDA_CX5 | JM3, JM7 | KF | H J K L M | 2017-21 |
+| MAZDA_CX9 | JM3, JM7 | TC | G H J K L | 2016-20 |
 | MAZDA_3 | JM1, 3MZ | BN | H J | 2017-18 |
 | MAZDA_6 | JM1 | GL | H J K L M | 2017-21 |
-| MAZDA_CX9_2021 | JM3 | TC | M N P | 2021-23 |
-| MAZDA_CX5_2022 | JM3 | KF | N P R S | 2022-25 |
+| MAZDA_CX9_2021 | JM3, JM7 | TC | M N P | 2021-23 |
+| MAZDA_CX5_2022 | JM3, JM7 | KF | N P R S | 2022-25 |
 
 MAZDA_CX8_2023 (chassis KG, 2023) has no row: Japan-market cars carry a chassis number, not a
 VIN, and Australian JM0 VINs have no model-year field, so it fingerprints by firmware alone.
