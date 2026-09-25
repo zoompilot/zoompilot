@@ -6,15 +6,17 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 
-from openpilot.cereal import custom
+from openpilot.cereal import custom, log
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.mads.state import StateMachine, SOFT_DISABLE_TIME
 from openpilot.selfdrive.selfdrived.events import ET, NormalPermanentAlert, Events
+from openpilot.selfdrive.selfdrived.state import StateMachine as SelfdriveStateMachine
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP, EVENTS_SP
 from openpilot.common.test import OpenpilotTestCase
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
 EventNameSP = custom.OnroadEventSP.EventName
+EventName = log.OnroadEvent.EventName
 
 # The event types that maintain the current state
 MAINTAIN_STATES = {State.enabled: (None,), State.disabled: (None,), State.softDisabling: (ET.SOFT_DISABLE,),
@@ -149,3 +151,28 @@ class TestMADSStateMachine(OpenpilotTestCase):
         self.state_machine.update()
         assert self.state_machine.state == state
         self.clear_events()
+
+
+class TestStockLkasOffLateralOnly(OpenpilotTestCase):
+  """Mazda's stockLkasOff: the selfdrive engages while the MADS machine alone refuses lateral."""
+
+  def setup_method(self):
+    mocker = self._fixture("mocker")
+    self.mads = MockMADS(mocker)
+    self.mads_machine = StateMachine(self.mads)
+    self.events = self.mads.selfdrive.events
+    self.events_sp = self.mads.selfdrive.events_sp
+
+  def test_lka_off_engages_selfdrive_but_not_lateral(self):
+    self.events.add(EventName.pcmEnable)
+    self.events_sp.add(EventNameSP.stockLkasOff)
+    enabled, _ = SelfdriveStateMachine().update(self.events)
+    assert enabled
+    self.mads_machine.update()
+    assert self.mads_machine.state == State.disabled
+
+  def test_lka_off_drops_an_enabled_lateral(self):
+    self.mads_machine.state = State.enabled
+    self.events_sp.add(EventNameSP.stockLkasOff)
+    self.mads_machine.update()
+    assert self.mads_machine.state == State.disabled

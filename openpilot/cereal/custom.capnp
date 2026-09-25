@@ -368,6 +368,11 @@ struct OnroadEventSP @0xda96579883444c35 {
     stockEcuNotReady @29;
     stockEcuInitializing @30;
     stockEcuReady @31;
+    # 32 and 33 are stockEcuInitializing and stockEcuReady on the jetson-trt line;
+    # reserved here so the lines can converge without a renumber.
+    reserved32 @32;
+    reserved33 @33;
+    stockLkasOff @34;
   }
 }
 
