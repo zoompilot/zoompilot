@@ -237,6 +237,16 @@ class ModularAssistiveDrivingSystem:
     self.events.remove(EventName.pedalPressed)
     self.events.remove(EventName.wrongCruiseMode)
 
+    # The strips above land after the standard machine's transition but before alert
+    # creation, so a declared MADS button silences the longitudinal engage and disable
+    # chimes with them. Mirror the already-computed selfdrive transition as a PERMANENT
+    # SP event: sound-only, and no state machine reads PERMANENT.
+    if self.button_owns_lateral:
+      if self.selfdrive.enabled and not self.selfdrive.enabled_prev:
+        self.events_sp.add(EventNameSP.longitudinalEnableChime)
+      elif not self.selfdrive.enabled and self.selfdrive.enabled_prev:
+        self.events_sp.add(EventNameSP.longitudinalDisableChime)
+
   def update(self, CS: structs.CarState):
     if not self.enabled_toggle:
       return

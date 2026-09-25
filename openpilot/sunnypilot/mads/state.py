@@ -26,6 +26,7 @@ GEARS_ALLOW_PAUSED = [EventName.wrongGear, EventName.reverseGear, EventName.brak
 
 class StateMachine:
   def __init__(self, mads):
+    self.mads = mads
     self.selfdrive = mads.selfdrive
     self.ss_state_machine = mads.selfdrive.state_machine
     self._events = mads.selfdrive.events
@@ -36,6 +37,15 @@ class StateMachine:
   def add_current_alert_types(self, alert_type):
     if not self.selfdrive.enabled:
       self.ss_state_machine.current_alert_types.append(alert_type)
+
+  def add_enable_alert_type(self):
+    # With a declared MADS button owning lateral (Mazda TJA), an explicit LKAS/TJA enable
+    # still chimes while longitudinal selfdrive is already active; silent resumes stay
+    # silent. Every other car keeps upstream's rule: no enable alert while already enabled.
+    audible_lkas_enable = (self.mads.button_owns_lateral and self._events_sp.has(EventNameSP.lkasEnable) and
+                           not self._events_sp.has(EventNameSP.silentLkasEnable))
+    if audible_lkas_enable or not self.selfdrive.enabled:
+      self.ss_state_machine.current_alert_types.append(ET.ENABLE)
 
   def check_contains(self, event_type: str) -> bool:
     return bool(self._events.contains(event_type) or self._events_sp.contains(event_type))
@@ -98,7 +108,7 @@ class StateMachine:
                 self.state = State.overriding
               else:
                 self.state = State.enabled
-              self.add_current_alert_types(ET.ENABLE)
+              self.add_enable_alert_type()
 
         # OVERRIDING
         elif self.state == State.overriding:
@@ -125,7 +135,7 @@ class StateMachine:
             self.state = State.overriding
           else:
             self.state = State.enabled
-          self.add_current_alert_types(ET.ENABLE)
+          self.add_enable_alert_type()
 
     # check if MADS is engaged and actuators are enabled
     enabled = self.state in ENABLED_STATES

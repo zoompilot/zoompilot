@@ -275,6 +275,18 @@ until the radar has been silenced once; the teardown gate already waits out a st
 The deeper fix is carstate not reporting a stock engagement as `cruiseState.enabled` under op-long
 at all, which needs an audit of every enabled consumer first.
 
+### Speed Limit Assist
+
+Alpha long makes the car pcm-op-long (`openpilotLongitudinalControl` with `pcmCruise`), so the
+sunnypilot SLA machine runs in plannerd. That machine confirms through a fixed required-max set
+speed (70/80 mph), which the Mazda cluster can never show while the driver sets a real speed:
+with any resolved limit it sits in preActive, and the planner takes its published target as the
+plan cap. A 2025 CX-5 release-build capture (2026-09-12) shows the plan source flipping to
+speedLimitAssist at 11.18 m/s in a 25 mph zone with the set speed at 56 kph, re-arming on every
+re-engagement: the zone limit overrode the driver's set speed with a prompt that could not be
+cleared. `set_speed_limit_assist_availability` demotes Mazda alpha long to warning mode, matching
+the ICBM-class exclusion.
+
 ### Gas override
 
 The CRZ_INFO engaged bits follow `CC.enabled` the way Honda drives ACC_CONTROL's CONTROL_ON: a gas

@@ -6,15 +6,17 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 
-from openpilot.cereal import custom
+from openpilot.cereal import custom, log
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.mads.state import StateMachine, SOFT_DISABLE_TIME
 from openpilot.selfdrive.selfdrived.events import ET, NormalPermanentAlert, Events
+from openpilot.selfdrive.selfdrived.state import StateMachine as SelfdriveStateMachine
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP, EVENTS_SP
 from openpilot.common.test import OpenpilotTestCase
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
 EventNameSP = custom.OnroadEventSP.EventName
+EventName = log.OnroadEvent.EventName
 
 # The event types that maintain the current state
 MAINTAIN_STATES = {State.enabled: (None,), State.disabled: (None,), State.softDisabling: (ET.SOFT_DISABLE,),
@@ -43,6 +45,7 @@ class MockMADS:
     self.selfdrive.state_machine = mocker.MagicMock()
     self.selfdrive.events = Events()
     self.selfdrive.events_sp = EventsSP()
+    self.button_owns_lateral = False
 
 
 class TestMADSStateMachine(OpenpilotTestCase):
@@ -141,6 +144,41 @@ class TestMADSStateMachine(OpenpilotTestCase):
     assert self.state_machine.state == State.enabled
     self.clear_events()
 
+  def test_explicit_lkas_enable_alert_while_selfdrive_enabled(self):
+    # a declared MADS button (Mazda TJA) owning lateral: the explicit enable still chimes
+    self.mads.button_owns_lateral = True
+    self.mads.selfdrive.enabled = True
+    self.mads.selfdrive.state_machine.current_alert_types = []
+    self.events_sp.add(EventNameSP.lkasEnable)
+
+    self.state_machine.update()
+
+    assert self.state_machine.state == State.enabled
+    assert ET.ENABLE in self.mads.selfdrive.state_machine.current_alert_types
+
+  def test_lkas_enable_stays_silent_while_selfdrive_enabled_on_every_other_car(self):
+    # upstream's rule for toyota, hyundai and the rest: no enable alert while already enabled
+    self.mads.selfdrive.enabled = True
+    self.mads.selfdrive.state_machine.current_alert_types = []
+    self.events_sp.add(EventNameSP.lkasEnable)
+
+    self.state_machine.update()
+
+    assert self.state_machine.state == State.enabled
+    assert ET.ENABLE not in self.mads.selfdrive.state_machine.current_alert_types
+
+  def test_silent_lkas_enable_remains_silent_while_selfdrive_enabled(self):
+    self.mads.button_owns_lateral = True
+    self.mads.selfdrive.enabled = True
+    self.mads.selfdrive.state_machine.current_alert_types = []
+    self.events_sp.add(EventNameSP.lkasEnable)
+    self.events_sp.add(EventNameSP.silentLkasEnable)
+
+    self.state_machine.update()
+
+    assert self.state_machine.state == State.enabled
+    assert ET.ENABLE not in self.mads.selfdrive.state_machine.current_alert_types
+
   def test_maintain_states(self):
     for state in ALL_STATES:
       for et in MAINTAIN_STATES[state]:
@@ -149,3 +187,28 @@ class TestMADSStateMachine(OpenpilotTestCase):
         self.state_machine.update()
         assert self.state_machine.state == state
         self.clear_events()
+
+
+class TestStockLkasOffLateralOnly(OpenpilotTestCase):
+  """Mazda's stockLkasOff: the selfdrive engages while the MADS machine alone refuses lateral."""
+
+  def setup_method(self):
+    mocker = self._fixture("mocker")
+    self.mads = MockMADS(mocker)
+    self.mads_machine = StateMachine(self.mads)
+    self.events = self.mads.selfdrive.events
+    self.events_sp = self.mads.selfdrive.events_sp
+
+  def test_lka_off_engages_selfdrive_but_not_lateral(self):
+    self.events.add(EventName.pcmEnable)
+    self.events_sp.add(EventNameSP.stockLkasOff)
+    enabled, _ = SelfdriveStateMachine().update(self.events)
+    assert enabled
+    self.mads_machine.update()
+    assert self.mads_machine.state == State.disabled
+
+  def test_lka_off_drops_an_enabled_lateral(self):
+    self.mads_machine.state = State.enabled
+    self.events_sp.add(EventNameSP.stockLkasOff)
+    self.mads_machine.update()
+    assert self.mads_machine.state == State.disabled

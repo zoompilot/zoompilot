@@ -30,7 +30,7 @@ class CarSpecificEventsSP:
     self.low_speed_alert = False
     self.stock_ecu_prev = StockEcuState.notNeeded
 
-  def update(self, CS: structs.CarState, events: Events, CS_SP):
+  def update(self, CS: structs.CarState, events: Events, CS_SP, mads_enabled_toggle: bool = False):
     events_sp = EventsSP()
 
     if self.CP.brand == 'chrysler':
@@ -69,6 +69,13 @@ class CarSpecificEventsSP:
         # steering (the panda blocks the camera's command).
         events.remove(EventName.stockLkas)
         events_sp.add(EventNameSP.mazdaStockCtsActive)
+      if mads_enabled_toggle and CS.invalidLkasSetting:
+        # MADS on: the car's own lane-keep setting off (CAM_SETTINGS or LANE_LINES 0) is the
+        # driver's choice about steering, not about cruise. The selfdrive machine still
+        # engages on the stock cruise; the MADS machine alone refuses lateral. With MADS off
+        # upstream's no-entry stands.
+        events.remove(EventName.invalidLkasSetting)
+        events_sp.add(EventNameSP.stockLkasOff)
 
     # A SET/RES press before the stock ECU openpilot stands in for is owned lands on a body
     # that will not engage (Mazda route 0000020d: six presses, nothing shown): name what the
