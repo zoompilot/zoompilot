@@ -209,6 +209,7 @@ class Loop:
       LP_SP.smartCruiseControl.vision.vAheadMin = float(self.lookahead_mph * self.u_ms)
     LP_SP.aTarget = float(self.a_target)
     LP_SP.speedLimit.assist.state = self.mirror.state
+    LP_SP.speedLimit.assist.vTarget = float(self.mirror.output_v_target)
     LP_SP.speedLimit.resolver.speedLimit = self.limit_mph * self.u_ms
     LP_SP.speedLimit.resolver.speedLimitFinalLast = self.limit_mph * self.u_ms
     LP_SP.speedLimit.resolver.speedLimitLastValid = self.limit_mph > 0

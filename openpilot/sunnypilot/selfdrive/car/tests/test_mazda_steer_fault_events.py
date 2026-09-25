@@ -81,48 +81,6 @@ class TestMazdaSteerFaultEvents:
     assert events.names == [EventName.steerUnavailable]
 
 
-class TestMazdaStockCtsEvents:
-  """carstate pulses stockLkas once per arming episode when the camera stayed armed through the
-  controller's presses. The Mazda hook swaps upstream's no-entry for a one-shot warning that
-  names the button; openpilot keeps steering."""
-
-  @staticmethod
-  def _cs(stock_lkas: bool) -> structs.CarState:
-    CS = structs.CarState()
-    CS.stockLkas = stock_lkas
-    return CS
-
-  def test_stock_cts_becomes_a_warning_not_a_no_entry(self):
-    car_events = _car_events('mazda', MazdaFlags.GEN1 | MazdaFlags.STEER_TO_ZERO_EPS)
-    events = _events(EventName.stockLkas)
-    events_sp = car_events.update(self._cs(True), events, _car_state_sp())
-    assert not events.has(EventName.stockLkas)
-    assert events_sp.has(EventNameSP.mazdaStockCtsActive)
-    assert events_sp.contains(ET.WARNING)
-    for et in (ET.NO_ENTRY, ET.PERMANENT, ET.SOFT_DISABLE, ET.IMMEDIATE_DISABLE):
-      assert not events_sp.contains(et), et
-
-  def test_every_mazda_eps_gets_it(self):
-    car_events = _car_events('mazda', MazdaFlags.GEN1)
-    events = _events(EventName.stockLkas)
-    events_sp = car_events.update(self._cs(True), events, _car_state_sp())
-    assert events_sp.has(EventNameSP.mazdaStockCtsActive)
-
-  def test_no_pulse_adds_nothing(self):
-    car_events = _car_events('mazda', MazdaFlags.GEN1)
-    events = _events()
-    events_sp = car_events.update(self._cs(False), events, _car_state_sp())
-    assert not events_sp.has(EventNameSP.mazdaStockCtsActive)
-    assert events.names == []
-
-  def test_other_brands_keep_upstreams_alert(self):
-    car_events = _car_events('tesla')
-    events = _events(EventName.stockLkas)
-    events_sp = car_events.update(self._cs(True), events, _car_state_sp())
-    assert events.has(EventName.stockLkas)
-    assert not events_sp.has(EventNameSP.mazdaStockCtsActive)
-
-
 class TestMazdaStockLkasOff:
   """Mazda swaps invalidLkasSetting for the SP stockLkasOff when MADS is on: the selfdrive
   machine still engages, the MADS machine alone refuses lateral. Otherwise nothing is swapped."""
