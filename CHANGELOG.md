@@ -8,6 +8,33 @@ Jetlink: Cinque Terre V3 and the models after it
 * A chestnut works as it does in sunnypilot: its own model list, "Restart the car to retry" when the big model fails, and no Accelerator Link beside it. One improvement: if a picked big model's files go missing, the pick is kept, the files are fetched again offroad, and the Default big model drives meanwhile.
 * A chestnut installed from source fetches the big model at build time; other installs still leave it out.
 
+zoompilot v2026.09.25-15
+========================
+* Fixed steering silently stopping after a TJA press. zoompilot was pressing the camera's TJA button, which is the car's lane-keep switch, so the EPS ignored zoompilot with no warning. The press is gone.
+* Lane-keep off at the dash button now disables steering only, with a "Lateral Disabled, LKAS is off" alert. Cruise keeps working. With MADS off it disables everything, as before.
+* Fixed a false "Steering Assist Temporarily Unavailable" while lane-keep is off.
+* Upstream sunnypilot: refresh and clear-cache buttons on the models panel, a UI freeze fix, a camera offset fix.
+* TJA button as the MADS switch
+  * Pressing TJA no longer leaves MRCC armed. If cruise was off, zoompilot turns it back off. If it was on, it stays on.
+  * A white steering wheel shows on the cluster while zoompilot steers with cruise off.
+  * Cruise engage and disengage chimes are back.
+* Alpha longitudinal only
+  * Auto high beams work again.
+  * Speed Limit Assist and ICBM now work. With ICBM on, the dash follows speed limits as under stock cruise: one press confirms, the set speed drops to the limit and returns after the zone. Curves no longer move the set speed.
+
+zoompilot v2026.09.12-14
+========================
+* adjustments to address LKAS errors.
+* On cars with TJA/CTS, zoompilot now switches off TJA fully so it doesn't take over when you disengage zoompilot. This also addresses related "Front Camera System Malfunction" errors.
+* Added 2023 CX-8 support and 2012-16 CX-5 alpha longitudinal support with a compatible steering rack swap. Older Mazdas now appear in the car picker.
+* You can now change the "TJA button" setting through sunnylink.
+* Alpha longitudinal only
+  * Fixes for not being able to engage after a restart or force offroad.
+  * Change the alpha longitudinal toggle to offroad only to avoid cruise lockouts and dash errors.
+  * A new startup alert tells you when alpha longitudinal is ready.
+  * If you pull away before setup finishes, it will try to enable again at the next stop.
+  * Added support for older G46L radars with a compatible steering rack swap. Lead detection uses the camera.
+
 zoompilot v2026.09.11-15
 ========================
 * Option to select different tune versions for small and big models. small defaults to v2 and big defaults to v1
