@@ -373,6 +373,8 @@ struct OnroadEventSP @0xda96579883444c35 {
     reserved32 @32;
     reserved33 @33;
     stockLkasOff @34;
+    longitudinalEnableChime @35;
+    longitudinalDisableChime @36;
   }
 }
 

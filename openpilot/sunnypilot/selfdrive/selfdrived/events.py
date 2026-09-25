@@ -9,7 +9,7 @@ from openpilot.cereal import log, custom
 from opendbc.car.structs import car
 from openpilot.common.constants import CV
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
-  NoEntryAlert, ImmediateDisableAlert, SoftDisableAlert, EngagementAlert, NormalPermanentAlert, AlertCallbackType, EmptyAlert, \
+  NoEntryAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, AlertCallbackType, EmptyAlert, \
   wrong_car_mode_alert
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import PCM_LONG_REQUIRED_MAX_SET_SPEED, CONFIRM_SPEED_THRESHOLD
 from openpilot.common.hardware import HARDWARE
@@ -147,6 +147,17 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Manual Speed Control Required",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, 1.),
+  },
+
+  # Sound-only mirrors of the longitudinal selfdrive transitions while a declared MADS
+  # button owns lateral. PERMANENT carries no state-machine meaning, so the chime cannot
+  # enable or disable anything.
+  EventNameSP.longitudinalEnableChime: {
+    ET.PERMANENT: EngagementAlert(AudibleAlert.engage),
+  },
+
+  EventNameSP.longitudinalDisableChime: {
+    ET.PERMANENT: EngagementAlert(AudibleAlert.disengage),
   },
 
   EventNameSP.silentLkasEnable: {

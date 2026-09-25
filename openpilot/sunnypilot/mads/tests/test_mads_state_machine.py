@@ -45,6 +45,7 @@ class MockMADS:
     self.selfdrive.state_machine = mocker.MagicMock()
     self.selfdrive.events = Events()
     self.selfdrive.events_sp = EventsSP()
+    self.button_owns_lateral = False
 
 
 class TestMADSStateMachine(OpenpilotTestCase):
@@ -142,6 +143,41 @@ class TestMADSStateMachine(OpenpilotTestCase):
     self.state_machine.update()
     assert self.state_machine.state == State.enabled
     self.clear_events()
+
+  def test_explicit_lkas_enable_alert_while_selfdrive_enabled(self):
+    # a declared MADS button (Mazda TJA) owning lateral: the explicit enable still chimes
+    self.mads.button_owns_lateral = True
+    self.mads.selfdrive.enabled = True
+    self.mads.selfdrive.state_machine.current_alert_types = []
+    self.events_sp.add(EventNameSP.lkasEnable)
+
+    self.state_machine.update()
+
+    assert self.state_machine.state == State.enabled
+    assert ET.ENABLE in self.mads.selfdrive.state_machine.current_alert_types
+
+  def test_lkas_enable_stays_silent_while_selfdrive_enabled_on_every_other_car(self):
+    # upstream's rule for toyota, hyundai and the rest: no enable alert while already enabled
+    self.mads.selfdrive.enabled = True
+    self.mads.selfdrive.state_machine.current_alert_types = []
+    self.events_sp.add(EventNameSP.lkasEnable)
+
+    self.state_machine.update()
+
+    assert self.state_machine.state == State.enabled
+    assert ET.ENABLE not in self.mads.selfdrive.state_machine.current_alert_types
+
+  def test_silent_lkas_enable_remains_silent_while_selfdrive_enabled(self):
+    self.mads.button_owns_lateral = True
+    self.mads.selfdrive.enabled = True
+    self.mads.selfdrive.state_machine.current_alert_types = []
+    self.events_sp.add(EventNameSP.lkasEnable)
+    self.events_sp.add(EventNameSP.silentLkasEnable)
+
+    self.state_machine.update()
+
+    assert self.state_machine.state == State.enabled
+    assert ET.ENABLE not in self.mads.selfdrive.state_machine.current_alert_types
 
   def test_maintain_states(self):
     for state in ALL_STATES:
