@@ -97,9 +97,9 @@ class TestMazdaTorqueDefaultsSeed:
 
 
 class TestMazdaTorqueTuneSeed:
-  """manager_init writes the declared default to disk at boot (0.0 before 2026-09-11, 2.0
-  since), so the seed cannot key on "unset". It keys on the MazdaTorqueTuneSeeded marker
-  instead, independent of the toggle marker, and moves devices that materialized 0.0."""
+  """TorqueControlTune keeps upstream's 0.0 default in params_keys.h, and manager_init writes
+  that default to disk at boot, so the seed cannot key on "unset". It keys on the
+  MazdaTorqueTuneSeeded marker instead, independent of the toggle marker."""
 
   def test_unset_tune_is_seeded_to_v2(self):
     params = FakeParams()

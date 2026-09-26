@@ -40,8 +40,7 @@ def _seed_mazda_torque_defaults(CP: structs.CarParams, params: Params | None = N
   survives to here. The three toggles are seeded once behind MazdaTorqueDefaultsApplied. The
   tune is seeded once per value of MAZDA_STEER_TO_ZERO_TORQUE_TUNE, recorded in
   MazdaTorqueTuneSeeded, so a later bump moves everyone again while a choice made after the
-  seed is kept. The declared default is 2.0 now, so the seed only moves devices that
-  materialized the earlier 0.0.
+  seed is kept. TorqueControlTune's declared default stays 0.0 for every other brand.
   """
   if params is None:
     params = Params()

@@ -18,11 +18,12 @@ Mazda seed).
 |---|---|---|
 | v0 | sunnypilot's `latcontrol_torque_v0.py`: setpoint == the live request, error corrected in lateral-accel space, the extension owning the feedforward params. Byte-identical to sunnypilot's; the only change it sees is the corrected `steer_limited_by_safety` flag from the classifier. | `TorqueControlTune = 0.0`, and any torque car with Enforce Torque Control off (`torque_tune.resolved_tune_versions`) |
 | v1 | sunnypilot's current `LatControlTorque` (the `lac` controlsd built), untouched | `TorqueControlTune = 1.0` |
-| v2 | v0 plus the four mechanisms below | `TorqueControlTune = 2.0`, the declared default; also seeded on steer-to-zero Mazdas by `_seed_mazda_torque_defaults` (`MAZDA_STEER_TO_ZERO_TORQUE_TUNE = 2.0`) for devices that materialized the earlier 0.0 |
+| v2 | v0 plus the four mechanisms below | `TorqueControlTune = 2.0`; seeded on steer-to-zero Mazdas by `_seed_mazda_torque_defaults` (`MAZDA_STEER_TO_ZERO_TORQUE_TUNE = 2.0`) |
 
-`TorqueControlTune` is the small-model tune, declared default v2. `TorqueControlTuneBig` picks
-the tune for a big model (chestnut or jetlink), declared default v1 (2026-09-11: v1 drove the
-big models better, v2 the small ones). `controlsd_ext.initialize_lateral_control` builds one
+`TorqueControlTune` is the small-model tune, declared default v0 (v2 on the seeded Mazdas).
+`TorqueControlTuneBig` picks the tune for a big model (chestnut or jetlink), declared default
+v1 for every brand (2026-09-11: v1 drove the big models better, v2 the small ones); with
+Enforce Torque Control off both run v0. `controlsd_ext.initialize_lateral_control` builds one
 controller per size at startup and `select_lateral_control` swaps `self.LaC` at the end of
 any frame whose `modelV2.big` differs from the running controller's, resetting the incoming
 one. That is safe by construction: a promotion only happens disengaged, where controlsd resets

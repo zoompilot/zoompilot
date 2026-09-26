@@ -48,7 +48,7 @@ def label_for(version: float, versions: dict[str, float]) -> str | None:
 
 
 def stored_tune_versions(params) -> dict[bool, float]:
-  """What the selectors store per size, unset resolved through the declared defaults (v2
+  """What the selectors store per size, unset resolved through the declared defaults (v0
   small, v1 big): a bare params.get() returns None for an unset param, and float(None) raises."""
   return {big: float(params.get(key, return_default=True)) for big, key in TUNE_PARAM_BY_SIZE.items()}
 

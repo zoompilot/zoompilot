@@ -9,9 +9,9 @@ See the LICENSE.md file in the root directory for more details.
 # dropping `return_default=True` from the params read: params_keys.h declares a default, but
 # a bare params.get() returns None for an unset param, and float(None) raises, or, guarded,
 # can otherwise fall through to the upstream controller without an explicit error.
-# The declared defaults are v2 for the small model and v1 for a big one (2026-09-11); the
-# steer-to-zero Mazdas are also seeded to 2.0 by _seed_mazda_torque_defaults, which moves
-# devices that materialized the earlier 0.0 default.
+# The small model's declared default is upstream's 0.0; the steer-to-zero Mazdas are seeded to
+# 2.0 by _seed_mazda_torque_defaults instead, so other brands never inherit a tune fitted to
+# that EPS. A big model's is v1 for every brand.
 #
 # The v0 constructor is patched out: these tests pin the branch that gets taken, not the
 # controller's behavior, and building the real one pulls in NNLC model loading.
@@ -85,8 +85,9 @@ def swap(controls, big: bool):
 
 class TestTorqueTuneSelection:
   def test_declared_defaults(self):
-    """v2 for the small model, v1 for a big one."""
-    assert declared_default("TorqueControlTune") == 2.0
+    """Upstream's v0 for the small model, so other brands never inherit the Mazda tune through
+    the default (the Mazdas are seeded, test_torque_defaults_seed.py); v1 for a big one."""
+    assert declared_default("TorqueControlTune") == 0.0
     assert declared_default("TorqueControlTuneBig") == 1.0
 
   def test_unset_selects_the_declared_default(self, ctx):
