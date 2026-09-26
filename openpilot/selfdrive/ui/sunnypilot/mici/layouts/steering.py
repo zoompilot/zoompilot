@@ -230,7 +230,7 @@ class SteeringLayoutMici(NavScroller):
     else:
       # set_badges hides entries whose value is "off".
       self._torque_settings_btn.set_badges([(tr("enabled"), _on_off(enforce_torque)), (tr("jerk-aware"), _on_off(jerk_aware)),
-                                            (tr("self-tune"), _on_off(self_tune_on)), (tr("custom-tuning"), _on_off(custom_on))])
+                                            (tr("self-tune"), _on_off(self_tune_on)), (tr("custom"), _on_off(custom_on))])
     self._nnlc_toggle.set_enabled(torque_allowed and offroad and not enforce_torque and not jerk_aware)
 
     self._update_mads_state()
