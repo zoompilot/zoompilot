@@ -188,3 +188,16 @@ class TestTorqueTuneSelection:
     assert shown in set(versions_by_label().values()), \
       "the declared default must be a version the selectors offer"
     assert BY_VERSION[shown] == select(controls)
+
+  @pytest.mark.parametrize(("small", "big", "enforce", "expected"), [
+    (2.0, 2.0, True, False), (2.0, 1.0, True, True), (0.0, 2.0, True, True), (2.0, 2.0, False, True)])
+  def test_jerk_aware_has_effect_unless_every_size_runs_v2(self, ctx, small, big, enforce, expected):
+    """v2 forces the jerk-aware controller off, so its toggle only locks when both sizes run
+    v2; with Enforce Torque Control off both run v0."""
+    from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import jerk_aware_has_effect
+
+    params, _ = ctx
+    params.put_bool("EnforceTorqueControl", enforce, block=True)
+    params.put("TorqueControlTune", small, block=True)
+    params.put("TorqueControlTuneBig", big, block=True)
+    assert jerk_aware_has_effect(params) is expected

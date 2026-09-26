@@ -350,6 +350,21 @@ class TestJerkAwareToggle:
     render(layout._tq_view)
     assert layout._jerk_aware_toggle.enabled
 
+  def test_jerk_aware_locked_while_every_model_size_runs_v2(self, params):
+    """v2 forces the jerk-aware controller off; one size on another tune keeps it meaningful."""
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
+
+    params.put_bool("EnforceTorqueControl", True, block=True)
+    params.put("TorqueControlTune", 2.0, block=True)
+    params.put("TorqueControlTuneBig", 2.0, block=True)
+    layout = SteeringLayoutMici()
+    render(layout._tq_view)
+    assert not layout._jerk_aware_toggle.enabled
+
+    params.put("TorqueControlTuneBig", 1.0, block=True)
+    render(layout._tq_view)
+    assert layout._jerk_aware_toggle.enabled
+
   def test_nnlc_locked_while_jerk_aware_on(self, params):
     from opendbc.car.structs import car
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici

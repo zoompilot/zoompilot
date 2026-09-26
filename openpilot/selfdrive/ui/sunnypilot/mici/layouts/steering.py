@@ -20,7 +20,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, get_mads_limited_brands, offroad_brand
 from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AUTO_LANE_CHANGE_TIMER, AutoLaneChangeMode
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import LEVEL_OFF, read_level
-from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import TUNE_PARAM_BY_SIZE, versions_by_label
+from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import TUNE_PARAM_BY_SIZE, jerk_aware_has_effect, versions_by_label
 from openpilot.system.ui.lib.application import gui_app
 
 MADS_STEERING_MODE_LABELS = [tr("remain"), tr("pause"), tr("disengage")]
@@ -119,10 +119,12 @@ class SteeringLayoutMici(NavScroller):
                                     not ui_state.params.get_bool("NeuralNetworkLateralControl"))
 
     # Jerk-aware control is independent of EnforceTorqueControl on torque-native cars.
-    # NNLC uses the same controller path, so it disables this option.
+    # NNLC and the v2 tune use the same controller path, so they disable this option
+    # (v2 only when every model size runs it; see torque_tune.jerk_aware_has_effect).
     self._jerk_aware_toggle = BigParamControl(tr("jerk aware"), "LateralJerkTorqueController")
     self._jerk_aware_toggle.set_enabled(lambda: ui_state.is_offroad() and
-                                        not ui_state.params.get_bool("NeuralNetworkLateralControl"))
+                                        not ui_state.params.get_bool("NeuralNetworkLateralControl") and
+                                        jerk_aware_has_effect(ui_state.params))
 
     # An unset version resolves through the param default. Keep a fallback for unreadable metadata.
     tq_versions = versions_by_label() or {tr("default"): 2.0}
