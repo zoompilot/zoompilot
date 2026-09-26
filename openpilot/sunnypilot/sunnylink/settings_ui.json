@@ -704,6 +704,7 @@
               "key": "IntelligentCruiseButtonManagement",
               "widget": "toggle",
               "title": "Intelligent Cruise Button Management (ICBM) (Alpha)",
+              "description": "Presses the cruise buttons to move the car's set speed. With stock ACC it carries Smart Cruise and Speed Limit Assist; with alpha longitudinal control, only Speed Limit Assist.",
               "visibility": [
                 {
                   "type": "capability",
@@ -716,12 +717,9 @@
                   "type": "offroad_only"
                 },
                 {
-                  "type": "not",
-                  "condition": {
-                    "type": "capability",
-                    "field": "has_longitudinal_control",
-                    "equals": true
-                  }
+                  "type": "capability",
+                  "field": "icbm_applicable",
+                  "equals": true
                 }
               ]
             }
@@ -1102,7 +1100,7 @@
               "key": "SmartCruiseDecelOvershoot",
               "widget": "toggle",
               "title": "Deceleration Overshoot (Alpha)",
-              "description": "Temporarily set the cruise speed below the Smart Cruise target during slowdowns so the stock ACC delivers the requested deceleration, then restore it as the car slows. Only available on vehicles with a measured ACC response curve.",
+              "description": "Temporarily set the cruise speed below the Smart Cruise target during slowdowns so the stock ACC delivers the requested deceleration, then restore it as the car slows. Only available with stock ACC on vehicles with a measured ACC response curve.",
               "visibility": [
                 {
                   "type": "all",
@@ -1135,6 +1133,14 @@
                       "equals": "mazda"
                     }
                   ]
+                },
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "capability",
+                    "field": "has_longitudinal_control",
+                    "equals": true
+                  }
                 }
               ]
             }

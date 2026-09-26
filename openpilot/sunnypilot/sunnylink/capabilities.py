@@ -14,6 +14,7 @@ from opendbc.sunnypilot.car.tesla.values import TeslaFlagsSP
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware import HARDWARE
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
 
 
 # Wire-protocol version for the capabilities payload. Bump on breaking changes
@@ -27,6 +28,7 @@ CAPABILITY_FIELDS = (
   "has_longitudinal_control",
   "has_icbm",
   "icbm_available",
+  "icbm_applicable",
   "torque_allowed",
   "brand",
   "pcm_cruise",
@@ -49,6 +51,7 @@ CAPABILITY_LABELS: dict[str, str] = {
   "has_longitudinal_control": "sunnypilot longitudinal control",
   "has_icbm": "ICBM enabled",
   "icbm_available": "ICBM available",
+  "icbm_applicable": "ICBM available with the current longitudinal control",
   "torque_allowed": "torque steering (not available for angle steering vehicles)",
   "brand": "Vehicle brand",
   "pcm_cruise": "PCM cruise",
@@ -173,6 +176,8 @@ def generate_capabilities(params: Params | None = None) -> dict:
       CP_SP = messaging.log_from_bytes(CP_SP_bytes, custom.CarParamsSP)
       caps["icbm_available"] = bool(CP_SP.intelligentCruiseButtonManagementAvailable)
       caps["has_icbm"] = bool(CP_SP.intelligentCruiseButtonManagementAvailable) and params.get_bool("IntelligentCruiseButtonManagement")
+      if CP is not None:
+        caps["icbm_applicable"] = icbm_applicable(CP, CP_SP)
       caps["tesla_has_vehicle_bus"] = bool(CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS)
     except Exception:
       cloudlog.exception("capabilities: failed to deserialize CarParamsSPPersistent")

@@ -89,3 +89,28 @@ class TestCapabilitiesShape(OpenpilotTestCase):
     assert isinstance(caps["brand"], str)
     assert isinstance(caps["steer_control_type"], str)
     assert isinstance(caps["device_type"], str)
+
+
+class TestIcbmApplicable(OpenpilotTestCase):
+  """sunnylink's ICBM enablement reads this field, so it must be the device's own icbm_applicable."""
+
+  def _caps(self, op_long: bool, pcm_cruise: bool):
+    from opendbc.car.structs import car
+    from openpilot.cereal import custom
+    from openpilot.common.params import Params
+    params = Params()
+    params.put("CarParamsPersistent", car.CarParams.new_message(
+      openpilotLongitudinalControl=op_long, pcmCruise=pcm_cruise).to_bytes(), block=True)
+    params.put("CarParamsSPPersistent", custom.CarParamsSP.new_message(
+      intelligentCruiseButtonManagementAvailable=True).to_bytes(), block=True)
+    return generate_capabilities(params)
+
+  def test_alpha_long_on_a_pcm_cruise_car(self):
+    # Mazda alpha long: the body still keeps the set speed, so the buttons have something to move
+    assert self._caps(op_long=True, pcm_cruise=True)["icbm_applicable"]
+
+  def test_openpilot_owns_the_set_speed(self):
+    assert not self._caps(op_long=True, pcm_cruise=False)["icbm_applicable"]
+
+  def test_stock_cruise(self):
+    assert self._caps(op_long=False, pcm_cruise=True)["icbm_applicable"]

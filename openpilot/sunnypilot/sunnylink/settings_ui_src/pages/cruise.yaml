@@ -46,17 +46,17 @@ sections:
   - key: IntelligentCruiseButtonManagement
     widget: toggle
     title: Intelligent Cruise Button Management (ICBM) (Alpha)
+    description: Presses the cruise buttons to move the car's set speed. With stock ACC it carries Smart Cruise
+      and Speed Limit Assist; with alpha longitudinal control, only Speed Limit Assist.
     visibility:
     - type: capability
       field: icbm_available
       equals: true
     enablement:
     - $ref: '#/macros/offroad'
-    - type: not
-      condition:
-        type: capability
-        field: has_longitudinal_control
-        equals: true
+    - type: capability
+      field: icbm_applicable
+      equals: true
 - id: custom_acc_increments
   title: Custom ACC Speed Intervals
   description: ''
@@ -272,7 +272,7 @@ sections:
     title: Deceleration Overshoot (Alpha)
     description: Temporarily set the cruise speed below the Smart Cruise target during slowdowns
       so the stock ACC delivers the requested deceleration, then restore it as the car slows.
-      Only available on vehicles with a measured ACC response curve.
+      Only available with stock ACC on vehicles with a measured ACC response curve.
     visibility:
     - type: all
       conditions:
@@ -291,3 +291,9 @@ sections:
       - type: capability
         field: brand
         equals: mazda
+    # longitudinal control brakes itself and ignores the setting
+    - type: not
+      condition:
+        type: capability
+        field: has_longitudinal_control
+        equals: true
