@@ -54,8 +54,10 @@ if arch == 'comma_arm64' and jetlink_installed():
   ]
 
   # no tinygrad flags, unlike dm_warp: the bare-environment warp is what the
-  # parity and timing numbers were measured against
-  cmd = (f'python3 {jetlink_dir}/compile_warp.py '
+  # parity and timing numbers were measured against. '-' ignores the exit status:
+  # every device builds this, link on or not, so a failed compile must not fail
+  # the build. It leaves no pickle, and jetlinkd compiles one offroad (warp_cache.ensure)
+  cmd = (f'-python3 {jetlink_dir}/compile_warp.py '
          f'--camera-resolution {cam_w}x{cam_h} --model-size {model_w}x{model_h} '
          f'--output {pkl}')
   lenv.Command(pkl, tinygrad_files + script_files, Action(cmd, "  [JETLINK WARP] $TARGET"))
