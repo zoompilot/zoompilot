@@ -13,7 +13,7 @@ zoompilot v2026.09.25-15
 * Fixed steering silently stopping after a TJA press. zoompilot was pressing the camera's TJA button, which is the car's lane-keep switch, so the EPS ignored zoompilot with no warning. The press is gone.
 * Lane-keep off at the dash button now disables steering only, with a "Lateral Disabled, LKAS is off" alert. Cruise keeps working. With MADS off it disables everything, as before.
 * Fixed a false "Steering Assist Temporarily Unavailable" while lane-keep is off.
-* CX-5 and CX-9 built for export markets (JM7 VINs) are recognized.
+* CX-5 and CX-9 built for export markets (JM7 VINs) are recognized, including the 2025 CX-9.
 * New Zealand and Australian clusters: the set speed zoompilot shows now matches the dash, and speed limits land on the displayed number.
 * Fixed sunnylink backup and restore reading garbage setting names.
 * Upstream sunnypilot: refresh and clear-cache buttons on the models panel, a fix for the UI freezing on the models screen, a camera offset fix.
