@@ -1,149 +1,147 @@
 zoompilot v2026.09.25-16
 ========================
-Jetlink: Cinque Terre V3 and the models after it
-* With a Jetson, Cinque Terre V3 is in the big-model list. It is the first of comma's models that keeps its own driving history inside the model; the Jetson now feeds that history back to it every frame, on the GPU, so the link carries the same per-frame data as before.
-* New big models appear on their own. With the link on and no chestnut fitted, the list also checks sunnypilot's newer model catalogs, so a model published after this release can be picked without an update. A chestnut sees sunnypilot's list, unchanged.
-* Models whose commit ships only a precompiled file are found and downloaded from comma's model repository, on the comma and with `jetlink-models fetch` on the Jetson alike.
-* Needs the Jetson on a jetlink server with this support. An older one cannot prepare these models, and the small model keeps driving.
-* A chestnut works as it does in sunnypilot: its own model list, "Restart the car to retry" when the big model fails, and no Accelerator Link beside it. One improvement: if a picked big model's files go missing, the pick is kept, the files are fetched again offroad, and the Default big model drives meanwhile.
-* A chestnut installed from source fetches the big model at build time; other installs still leave it out.
+* UPDATE TO JETLINK v0.4.0+
+* Jetlink
+  * Supports Cinque Terre V3
+  * New big models show up without an update
+  * Downloads models that ship only a precompiled file
+* Chestnut
+  * Works as in sunnypilot: its own model list, no Accelerator Link
+  * Missing big model files re-download offroad; Default drives meanwhile
+  * Source installs fetch the big model at build time
 
 zoompilot v2026.09.25-15
 ========================
-* Fixed steering silently stopping after a TJA press. zoompilot was pressing the camera's TJA button, which is the car's lane-keep switch, so the EPS ignored zoompilot with no warning. The press is gone.
-* Lane-keep off at the dash button now disables steering only, with a "Lateral Disabled, LKAS is off" alert. Cruise keeps working. With MADS off it disables everything, as before.
-* Fixed a false "Steering Assist Temporarily Unavailable" while lane-keep is off.
-* CX-5 and CX-9 built for export markets (JM7 VINs) are recognized, including the 2025 CX-9.
-* New Zealand and Australian clusters: the set speed zoompilot shows now matches the dash, and speed limits land on the displayed number.
-* Fixed sunnylink backup and restore reading garbage setting names.
-* Upstream sunnypilot: refresh and clear-cache buttons on the models panel, a fix for the UI freezing on the models screen, a camera offset fix.
-* TJA button as the MADS switch
-  * Pressing TJA no longer leaves MRCC armed. If cruise was off, zoompilot turns it back off. If it was on, it stays on.
-  * A white steering wheel shows on the cluster while zoompilot steers with cruise off.
-  * Cruise engage and disengage chimes are back. Turning steering on with TJA while cruise is active also chimes.
+* Fixed steering silently stopping after a TJA press
+* LKAS off at the dash disables steering only, with a "Lateral Disabled, LKAS is off" alert. With MADS off it disables everything
+* Fixed false "Steering Assist Temporarily Unavailable" with LKAS off
+* Recognizes export CX-5 and CX-9 (JM7 VINs), including the 2025 CX-9
+* NZ and AU clusters: set speed and speed limits match the dash
+* Fixed sunnylink backup and restore
+* Upstream sunnypilot: model panel refresh and clear-cache buttons, models screen freeze fix, camera offset fix
+* TJA button as MADS switch
+  * TJA no longer leaves MRCC armed
+  * White steering wheel on the cluster while steering with cruise off
+  * Cruise engage and disengage chimes are back
 * Alpha longitudinal only
-  * Auto high beams work again.
-  * Speed Limit Assist and ICBM now work. With ICBM on, the dash follows speed limits as under stock cruise: one press confirms, the set speed drops to the limit and returns after the zone. Curves no longer move the set speed, and the set speed stays at the limit through a curve inside a zone.
-  * The ICBM toggle is available under alpha longitudinal.
-  * The dash distance bars match the gap you picked.
-  * Both wheel distance buttons work: closer steps toward aggressive, farther steps toward relaxed.
+  * Auto high beams work again
+  * Speed Limit Assist and ICBM work. One press confirms a limit; curves no longer move the set speed
+  * ICBM toggle available
+  * Dash distance bars match your gap
+  * Both distance buttons work
 
 zoompilot v2026.09.12-14
 ========================
-* adjustments to address LKAS errors.
-* On cars with TJA/CTS, zoompilot now switches off TJA fully so it doesn't take over when you disengage zoompilot. This also addresses related "Front Camera System Malfunction" errors.
-* Added 2023 CX-8 support and 2012-16 CX-5 alpha longitudinal support with a compatible steering rack swap. Older Mazdas now appear in the car picker.
-* You can now change the "TJA button" setting through sunnylink.
+* Adjustments to address LKAS errors
+* Cars with TJA/CTS: TJA switches fully off so it can't take over when you disengage. Fixes related "Front Camera System Malfunction" errors
+* 2023 CX-8 support
+* 2012-16 CX-5 alpha longitudinal with a compatible steering rack swap; older Mazdas appear in the car picker
+* "TJA button" setting in sunnylink
 * Alpha longitudinal only
-  * Fixes for not being able to engage after a restart or force offroad.
-  * Change the alpha longitudinal toggle to offroad only to avoid cruise lockouts and dash errors.
-  * A new startup alert tells you when alpha longitudinal is ready.
-  * If you pull away before setup finishes, it will try to enable again at the next stop.
-  * Added support for older G46L radars with a compatible steering rack swap. Lead detection uses the camera.
+  * Fixed not engaging after a restart or force offroad
+  * Toggle is offroad only, avoiding cruise lockouts and dash errors
+  * Startup alert when alpha longitudinal is ready
+  * Pulling away before setup finishes retries at the next stop
+  * Older G46L radars with a compatible steering rack swap; lead detection uses the camera
 
 zoompilot v2026.09.11-15
 ========================
-* Option to select different tune versions for small and big models. small defaults to v2 and big defaults to v1
+* Separate tune versions for small and big models (small v2, big v1 by default)
 
 zoompilot v2026.09.10-14
 ========================
-Jetlink: models build while you drive, a lighter footprint, and a link that stays up
-* Large models build onroad. A model that is not built yet no longer waits for a parked car. The small model drives, the Jetson builds, the panel counts it down, and the large model joins at the first stop with cruise off. For anyone whose Jetson only powers up with the ignition, this is the difference between building and never building.
-* Jetlink costs the comma less. The process that holds the USB link is about 10 MB and almost no CPU while driving. Everything heavy, the download, the upload and the TensorRT build, now runs only while it is working and exits when it is done.
-* The link stays up across engage, disengage and the offroad and onroad edges. The comma holds one connection to the Jetson for as long as the link is enabled instead of dropping and reopening it at every transition, so the icon no longer blinks and the large model no longer has to rejoin mid-drive.
+* Jetlink
+  * Big models build while you drive and join at the first stop with cruise off
+  * Lighter on the comma: the link process is ~10 MB and almost no CPU while driving
+  * Link stays up across engage, disengage and onroad/offroad; no icon blinking or mid-drive rejoin
 
 zoompilot v2026.09.07-13
 ========================
-* Fixes bugs
-  * Fixes the install for comma 3X users. Upstream sunnypilot stopped prebuilding the camera warps for the 3X during the Chestnut changes.
+* Fixed install on comma 3X (upstream stopped prebuilding its camera warps)
 
 zoompilot v2026.09.07-12
 ========================
-* Fixes bugs
-  * Enables the full zoompilot steering enhancements for users without a steer-to-zero EPS.
-  * Fixes the "Posenet Speed Invalid" error some users had on new installs. This is an upstream sunnypilot bug.
-  * Upstream sunnypilot Chestnut fixes.
-  * Fixes the "Controls Mismatch: Lateral" error when enabling alpha longitudinal with brake pedal presses.
+* Full steering enhancements without a steer-to-zero EPS
+* Fixed "Posenet Speed Invalid" on new installs (upstream bug)
+* Upstream Chestnut fixes
+* Fixed "Controls Mismatch: Lateral" when enabling alpha longitudinal with brake presses
 
 zoompilot v2026.09.05-11
 ========================
-New steering tune, Smart Cruise reimplemented, Alpha Longitudinal stop-and-go fixed
-* Speed-dependent torque tune v2 is the default. Rewritten on the v0 base. It turns in earlier for curves and reduces oscillations and micro-adjustments on the highway. v0 and v1 are unchanged if you prefer them.
-* Mazda torque limits in openpilot. The controller follows the EPS's measured torque ceiling at each speed and winds down at the rate the EPS accepts. More torque at low speed, steadier steering on the highway.
-* Lane Change Smoothing. New toggle under Steering settings. Lane changes are slower and smoother, with a configurable pace. Off by default.
-* Smart Cruise Vision reimplemented. A new solver plans the slowdown for the whole curve from the model path and the map. It slows earlier, reaches the target speed at the apex more accurately, and returns to your set speed sooner. It also corrects the model's under-read of curves far ahead and no longer commits to false slowdowns on highway bends.
-* Deceleration Overshoot front-loaded. The extra deceleration is requested at curve entry, where the stock cruise is slowest to respond.
-* ICBM restores your set speed sooner. After a curve or a speed zone the dash is walked back within about a second. A press of yours hands control back at once, and a speed limit prompt can no longer bank an overshoot.
-* TJA button as the MADS switch. New toggle under Steering, MADS. When on, the wheel's TJA button is the only steering switch and MRCC main only controls cruise. Off by default.
-* Fixed the camera's LKAS error. Pushing against the wheel at low speed could get the torque command rejected by the panda until the EPS gave up and the camera faulted. The controller and panda now agree on the limits.
-* Fixed steering engaging on its own at startup. MADS armed lateral before the panda did, which also dropped steering for two seconds with an LKAS error. Both arm on the same frame now, steering disengages when MRCC main is turned off, and you get a warning if the panda has not armed.
-* Fixed the false "Steering Assist Temporarily Unavailable" on launch. A brisk pull-away from a stop no longer trips the alert.
+* Torque tune v2 is the default: turns in earlier for curves, fewer oscillations on the highway. v0 and v1 unchanged
+* Mazda torque limits: follows the EPS's torque ceiling at each speed. More torque at low speed, steadier on the highway
+* Lane Change Smoothing toggle under Steering: slower, smoother lane changes at a set pace. Off by default
+* Smart Cruise Vision rewritten: slows earlier for curves, hits apex speed more accurately, resumes sooner, fewer false slowdowns on highway bends
+* Deceleration Overshoot applies at curve entry
+* ICBM restores set speed within ~1 s after a curve or zone; your press takes over at once
+* TJA button as MADS switch toggle under Steering > MADS. Off by default
+* Fixed camera LKAS error when pushing against the wheel at low speed
+* Fixed steering engaging on its own at startup; steering disengages when MRCC main is off
+* Fixed false "Steering Assist Temporarily Unavailable" on brisk launches
 * Alpha longitudinal only
-  * Stop-and-go resumes on its own. Two root causes fixed. The car reported a stock cruise standstill under openpilot longitudinal, which pinned the controller in stopping forever, and the resume pulse carried a bad checksum that faulted the camera every time. The car now pulls away when the lead departs, without the SCBS warnings afterwards.
-  * Smoother acceleration. Throttle builds at close to the stock rate, lifts off gently, and uses the same ceiling as stock at each speed. The harsh push-off is gone, and the pull-away from a hold is gentler.
-  * Cruise arms on a driver button only. openpilot no longer arms cruise by itself after the radar hand-back.
-  * The toggle applies at a standstill. Flipping alpha longitudinal or force offroad while rolling used to take the device offroad under a moving car.
-  * Stock camera frames pass through when disengaged. The dash behaves like stock while openpilot is off.
-  * Offered on any Mazda with the 2022+ CX-5 EPS. Not just the CX-9 swap. The pre-2021 CX-9 is excluded.
-  * A full review of the longitudinal stack: radar hand-back, hold release and fault handling are all more robust.
+  * Stop-and-go resumes on its own, without SCBS warnings
+  * Smoother acceleration, closer to stock
+  * Cruise arms on a driver button only
+  * Toggle applies at a standstill only
+  * Stock camera frames pass through when disengaged
+  * Offered on any Mazda with the 2022+ CX-5 EPS, except the pre-2021 CX-9
+  * More robust radar hand-back, hold release and fault handling
 * Device
-  * Fingerprinting is VIN-first. Export VINs fall back to the engine and EPS firmware.
-  * Steering Arc and Display Turn Signals are hidden on the comma 4, where they do nothing.
-  * Force offroad follows upstream again, and a noisy ignition signal no longer flickers the device on and off road.
-  * The torque pickers show the value that is actually set.
-  * No more offline update nags.
-* Synced sunnypilot as of 2026-09-03. See the sunnypilot docs at https://docs.sunnypilot.ai
-  * Initial support for Chestnut and big models. The eGPU's big model downloads and runs next to the on-device model, with a fallback to the small model when the big one is not ready, an alert when it is, and an eGPU icon in the sidebar and on the home screen.
-  * Model Selector upgrades. Your selection is kept per catalog when Chestnut is plugged or unplugged.
-  * Downloaded maps can be deleted from sunnylink.
-  * The sunnylink pill moved and was restyled in comma 4 settings.
-  * Scrolling labels run at the right speed on non-60 Hz screens.
-  * Two openpilot syncs: UI cleanups and Chestnut power fault logging.
+  * VIN-first fingerprinting; export VINs fall back to engine and EPS firmware
+  * Steering Arc and Display Turn Signals hidden on comma 4
+  * Force offroad follows upstream; a noisy ignition no longer flickers on and offroad
+  * Torque pickers show the value actually set
+  * No more offline update nags
+* Synced sunnypilot as of 2026-09-03 (https://docs.sunnypilot.ai)
+  * Initial Chestnut and big model support, with small model fallback and eGPU icons
+  * Model Selector keeps your pick per catalog
+  * Delete downloaded maps from sunnylink
+  * Restyled sunnylink pill on comma 4
+  * Scrolling labels fixed on non-60 Hz screens
+  * Two openpilot syncs: UI cleanups, Chestnut power fault logging
 
 zoompilot v2026.08.25-8
 ========================
-* Fingerprint Mazdas on VIN and EPS. Supports more Mazda models more reliably by using the VIN for fingerprinting. EPS fingerprinting determines whether an EPS-swapped car can steer to zero. By @mzdnick.
-* zoompilot branding in the UI. By @mzdnick.
-* Speed-limit assist on metric cars. Fixed reading speed limits on cars set to km/h.
-* Updated speed-dependent torque seeds. Refreshed the seeds using my latest learned values. Self-tune may converge a little faster now.
-* Comma 4 toggles for new sunnypilot features. Screensaver and road edge lane change.
-* Synced sunnypilot as of 2026-08-24. See the sunnypilot docs at https://docs.sunnypilot.ai
-  * Block lane changes at road edge. Prevents a lane change from activating when the road's edge is detected.
-  * Jerk-aware steering. A torque controller that tries to solve for jerky steering. This doesn't seem to improve anything for Mazdas; it hurts performance because speed-dependent torque already solves for this.
-  * Support for comma's chestnut eGPU.
-  * The driving path changes color with what the car is doing and keeps its width when you override with gas or steering.
-  * The "openpilot unavailable" flash at startup is fixed.
-  * New screensaver function.
-  * Switching models no longer asks to reset calibration.
-  * AGNOS 19.6.
+* VIN and EPS fingerprinting for more Mazdas; the EPS decides whether a swapped car can steer to zero. By @mzdnick
+* zoompilot branding in the UI. By @mzdnick
+* Fixed speed-limit assist on km/h cars
+* Updated speed-dependent torque seeds; self-tune may converge faster
+* comma 4 toggles for screensaver and road edge lane change
+* Synced sunnypilot as of 2026-08-24 (https://docs.sunnypilot.ai)
+  * Block lane changes at road edge
+  * Jerk-aware steering (hurts Mazdas; speed-dependent torque already covers it)
+  * comma chestnut eGPU support
+  * Path color follows what the car is doing and keeps its width on override
+  * Fixed "openpilot unavailable" flash at startup
+  * New screensaver
+  * Switching models no longer asks to reset calibration
+  * AGNOS 19.6
 * Alpha longitudinal only
-  * Improved stop and go, but not totally fixed. Cruise may disengage after stopping for a lead car.
-  * The bogus "Cruise Fault: Restart the Car" on a cold start is gone. The fault alert now only fires when the radar genuinely drops out mid-drive.
-  * Fixed canceling cruise whilst braking. Thank you @mzdnick.
-  * Alpha longitudinal enabled on EPS-swapped models (CX-9).
+  * Better stop and go, not fully fixed; cruise may disengage after stopping behind a lead
+  * Fixed bogus "Cruise Fault: Restart the Car" on cold start
+  * Fixed canceling cruise while braking. Thanks @mzdnick
+  * Enabled on EPS-swapped models (CX-9)
 
 zoompilot v2026.08.02-5
 ========================
-Alpha longitudinal handoff
-* More reliable handoff when you override acceleration with the pedal, and more reliable stop and hold.
+* More reliable alpha longitudinal handoff on pedal override, and stop and hold
 
 zoompilot v2026.08.01-4
 ========================
-First release on the zoompilot channel
-* New home, new install URL. The fork lives at zoompilot/zoompilot and installs from zoompilot/main. If you are already running zoompilot you don't need to do anything: your device repoints itself on its next start.
-* Prebuilt releases. Every release is built ahead of time on a real comma device, so installing no longer means sitting through the better part of an hour of compiling.
-* Alpha longitudinal on the CX-5. openpilot can drive the gas and brakes on the 2022+ CX-5. It shuts the stock radar down, which takes automatic emergency braking and forward collision alerts with it.
-* Torque control out of the box. Fresh installs on 22+ EPS Mazdas arrive with torque control, self-tune, and speed-dependent self-tune already on.
-* Fresher steering seeds. The CX-5 2022 starting values come straight off my car's learned data, so a new install steers like a tuned car much sooner.
-* Cruise buttons, rebuilt. The speed you set is the speed you get back after every curve and speed zone, down to the exact number. Confirming a speed limit is one tap and the answer sticks. Press a button mid-adjustment and zoompilot hands control straight back. Big changes hold the button down the way you would.
-* Cruise features under one roof. Speed-limit assist and smart cruise now work the same way whether the stock radar or openpilot has the gas and brakes, and a speed limit prompt no longer nudges your set speed while you are still deciding.
-* Latest sunnypilot and openpilot. New alert sounds and softer driver monitoring nags. Lane changes arm right away if your blinker is already on. Map-based curve slowdowns are more accurate, map hiccups no longer trip false warnings, the false NO PANDA flash on screen wake is gone, and you can switch software branches from the device screen.
-* Leaner install. Setup no longer downloads a 1.8GB driving model the device never uses.
+* First release on the zoompilot channel
+* New home: zoompilot/zoompilot, installs from zoompilot/main. Existing installs repoint on their own
+* Prebuilt releases: no more hour-long compile on install
+* Alpha longitudinal on the 2022+ CX-5. Turns off the stock radar, and with it AEB and forward collision alerts
+* Torque control, self-tune and speed-dependent self-tune on by default for 22+ EPS Mazdas
+* CX-5 2022 steering seeds from learned data
+* Cruise buttons rebuilt: set speed comes back exactly after curves and zones, one tap confirms a speed limit, your press takes over at once
+* Speed-limit assist and smart cruise work the same under stock or openpilot longitudinal
+* Latest sunnypilot and openpilot: new alert sounds, softer driver monitoring nags, lane changes arm if the blinker is already on, better map curve slowdowns, no false NO PANDA flash, switch branches on the device
+* Setup no longer downloads an unused 1.8 GB model
 
 zoompilot 2026-07-04
 ========================
-Smart cruise and EPS swaps
-* Smart cruise decel overshoot. New alpha toggle. The Mazda ECU is slow to obey a lower set speed, so this asks for more than the model wants and gets the deceleration the curve needs.
-* ICBM fixes. Fixed set-speed desync with the stock ECU and the target-chasing oscillation. Button presses are suppressed while you press yours, and pacing adapts to how far the target is.
-* EPS swap support. 2022+ racks in older Mazdas fingerprint by the rack's firmware and steer to a stop.
-* Upstream sync. Merged sunnypilot master and the opendbc upstream into zoompilot.
+* Smart cruise decel overshoot (alpha toggle): asks for more deceleration so the Mazda ECU slows enough for curves
+* ICBM fixes: no set-speed desync or target chasing; waits while you press buttons
+* EPS swap support: 2022+ racks in older Mazdas fingerprint and steer to a stop
+* Synced sunnypilot master and opendbc
