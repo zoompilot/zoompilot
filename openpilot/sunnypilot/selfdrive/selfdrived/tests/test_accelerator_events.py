@@ -37,6 +37,12 @@ class TestAcceleratorEvents(unittest.TestCase):
     return (EventName.bigModelLoading in self.events.names, EventName.bigModelFailed in self.events.names,
             EventNameSP.bigModelLinkLost in self.events_sp.names)
 
+  def test_event_ordinals(self):
+    # logs store the ordinal, and 28-31 shipped before these existed
+    self.assertEqual(int(EventNameSP.stockEcuReady), 31)
+    self.assertEqual(int(EventNameSP.bigModelAvailable), 32)
+    self.assertEqual(int(EventNameSP.bigModelLinkLost), 33)
+
   def test_joining_blocks_only_while_modelv2_is_held_back(self):
     self.assertEqual(self.step(state='joining', alive=False), (True, False, False))
     self.assertEqual(self.step(state='joining', alive=False), (True, False, False))

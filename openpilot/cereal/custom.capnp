@@ -364,12 +364,12 @@ struct OnroadEventSP @0xda96579883444c35 {
     bigModelReady @25;
     controlsMismatchLateralWarning @26;
     silentPedalPressed @27;
-    bigModelAvailable @28;
-    bigModelLinkLost @29;
-    mazdaStockCtsActive @30;
-    stockEcuNotReady @31;
-    stockEcuInitializing @32;
-    stockEcuReady @33;
+    mazdaStockCtsActive @28;
+    stockEcuNotReady @29;
+    stockEcuInitializing @30;
+    stockEcuReady @31;
+    bigModelAvailable @32;
+    bigModelLinkLost @33;
     stockLkasOff @34;
     longitudinalEnableChime @35;
     longitudinalDisableChime @36;
