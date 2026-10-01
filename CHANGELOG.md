@@ -7,6 +7,7 @@ zoompilot vUNRELEASED
 **Big model, Accelerator Link**
 * Jetlink v0.7.2: one server on Jetson, Mac, Linux PC, iPhone and Android. Update the comma and Jetlink together.
 * Losing the big model no longer disengages. A 5 s "Big model lost, small model driving" warning shows and the small model keeps driving.
+* A big model that is only a little slow (an iPhone that has warmed up) now hands back the same way, instead of disengaging with "Driving Model Lagging".
 * The big model swaps in only while nothing is engaged, MADS included. "Big Model Active" chimes when you can engage again.
 * The torque tune follows the model that is steering and swaps after half a second of inactive steering, so a hand-back no longer steps the torque.
 * Fixed "Driving Model Lagging" for several seconds after a model switch.
