@@ -4,22 +4,17 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Cruise > Alpha Longitudinal: the alpha switch and the modes that run on openpilot longitudinal
-control. Toggles and Developer drop their copies of the first two (TogglesLayoutSP,
+The alpha switch and the modes that run on openpilot longitudinal control, at the top of the tizi
+Cruise panel. Toggles and Developer drop their copies of the first two (TogglesLayoutSP,
 DeveloperLayoutSP) so each switch appears once.
 """
-from collections.abc import Callable
-
-import pyray as rl
 from openpilot.selfdrive.ui.layouts.settings.developer import DESCRIPTIONS as DEVELOPER_DESCRIPTIONS
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp
-from openpilot.system.ui.widgets import DialogResult, Widget
+from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
-from openpilot.system.ui.widgets.network import NavButton
-from openpilot.system.ui.widgets.scroller_tici import Scroller
 
 # upstream's Toggles text (layouts/settings/toggles.py), shown again in the confirm dialog
 EXPERIMENTAL_MODE_DESCRIPTION = tr_noop(
@@ -35,12 +30,9 @@ EXPERIMENTAL_MODE_DESCRIPTION = tr_noop(
 )
 
 
-class AlphaLongitudinalSettingsLayout(Widget):
-  def __init__(self, back_btn_callback: Callable):
-    super().__init__()
-    self._back_button = NavButton(tr("Back"))
-    self._back_button.set_click_callback(back_btn_callback)
-
+class AlphaLongitudinalToggles:
+  """Not a panel: CruiseLayout lists `items` in its own scroller and drives the two hooks."""
+  def __init__(self):
     self._alpha_long_toggle = toggle_item_sp(
       title=lambda: tr("sunnypilot Longitudinal Control (Alpha)"),
       description=lambda: tr(DEVELOPER_DESCRIPTIONS["alpha_longitudinal"]),
@@ -69,19 +61,12 @@ class AlphaLongitudinalSettingsLayout(Widget):
       ("DynamicExperimentalControl", self._dec_toggle),
       ("ExperimentalModeSetSpeed", self._set_speed_toggle),
     )
-    self._scroller = Scroller([item for _, item in self._refresh_toggles], line_separator=True, spacing=0)
+    self.items = [item for _, item in self._refresh_toggles]
 
-    ui_state.add_offroad_transition_callback(self._refresh)
-    ui_state.add_engaged_transition_callback(self._refresh)
+    ui_state.add_offroad_transition_callback(self.refresh)
+    ui_state.add_engaged_transition_callback(self.refresh)
 
-  def show_event(self):
-    super().show_event()
-    self._scroller.show_event()
-    self._refresh()
-
-  def _update_state(self):
-    super()._update_state()
-
+  def update_state(self):
     CP = ui_state.CP
     has_long = CP is not None and ui_state.has_longitudinal_control
     self._alpha_long_toggle.set_visible(CP is not None and CP.alphaLongitudinalAvailable)
@@ -90,13 +75,7 @@ class AlphaLongitudinalSettingsLayout(Widget):
     # DEC decides the mode on its own, and the set-speed floor never acts under it
     self._set_speed_toggle.action_item.set_enabled(has_long and not self._dec_toggle.action_item.get_state())
 
-  def _render(self, rect):
-    self._back_button.set_position(self._rect.x, self._rect.y + 20)
-    self._back_button.render()
-    content_rect = rl.Rectangle(rect.x, rect.y + self._back_button.rect.height + 40, rect.width, rect.height - self._back_button.rect.height - 40)
-    self._scroller.render(content_rect)
-
-  def _refresh(self):
+  def refresh(self):
     for key, item in self._refresh_toggles:
       item.action_item.set_state(ui_state.params.get_bool(key))
 

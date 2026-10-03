@@ -4,7 +4,7 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Cruise's Alpha Longitudinal entry, shared by the tizi and mici layouts.
+The mici Cruise panel's Alpha Longitudinal entry.
 """
 from openpilot.system.ui.lib.multilang import tr
 
