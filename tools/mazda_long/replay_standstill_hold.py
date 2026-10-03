@@ -7,114 +7,113 @@ See the LICENSE.md file in the root directory for more details.
 
 Replay recorded stop-and-go episodes through the real CarController.
 
-Feeds each logged frame's plan output and car state into update_longitudinal and reports the
-CRZ_INFO command that would go on the wire, so a hold regression shows up as the command
-leaving the plan's brake while the car is still stopped.
+Feeds each logged frame's plan output and car state into update_longitudinal, with the body hold
+decoded from the log's own 0x79/0x228 frames by the rule carstate uses, and checks the CRZ_INFO
+that would go on the wire against stock's standstill grammar:
 
-Usage: .venv/bin/python3 tools/mazda_long/replay_standstill_hold.py <rlog...>
+  - stopped, plan braking, body not holding: STOPPING up and the command still braking
+  - body holding: STOPPING down and the command relaxed to raw -1, as stock does 0-40 ms after
+    EPB.HOLD_STATE goes HOLDING (43/43 stock holds, acc_hold_census.py)
+
+Open loop: the body's trace is what it did on that drive, so a release it answered to someone
+else's pulse shows up here as the body letting go early, and the controller must brake again.
+
+The inputs go through the opendbc test rig (conftest) onto a real CarState, so the replay tracks
+the controller instead of mocking it. The review_2026_08 replays share these helpers.
+
+Usage: .venv/bin/python3 tools/mazda_long/replay_standstill_hold.py <rlog> [<rlog> ...]
 """
+import functools
 import os
 import sys
-from types import SimpleNamespace
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "opendbc_repo"))
 
 from opendbc.can import CANParser
-from opendbc.car import Bus, structs
-from opendbc.car.mazda.carcontroller import CarController
-from opendbc.car.mazda.interface import CarInterface
-from opendbc.car.mazda.values import CAR
+from opendbc.car.mazda.carstate import body_holds
+from opendbc.car.mazda.tests.conftest import CRZ_INFO, car_control, car_control_sp, car_controller, car_params, \
+  car_params_sp, crz_info, frame, mazda_car_state, set_car_state
 from openpilot.tools.lib.logreader import LogReader
 
-LongCtrlState = structs.CarControl.Actuators.LongControlState
+EPB, GEAR = 0x79, 0x228
 
-
-def build_controller():
-  fp = {0: {}, 1: {}, 2: {}}
-  CP = CarInterface.get_params(CAR.MAZDA_CX5_2022, fp, [], alpha_long=True, is_release=False, docs=False)
-  CP_SP = CarInterface.get_params_sp(CP, CAR.MAZDA_CX5_2022, fp, [], True, False, False)
-  return CarController({Bus.pt: "mazda_2017"}, CP, CP_SP)
-
-
-def frames(path):
-  """Logged (t, plan, carstate) at the carControl rate, with GEAR.BRAKE_HOLD from raw CAN."""
-  cp = CANParser("mazda_2017", [("GEAR", float("nan"))], 0)
-  brake_hold = False
-  cs = None
-  out = []
-  for m in LogReader(path):
-    t = m.logMonoTime * 1e-9
-    w = m.which()
-    if w == "can":
-      cp.update([(m.logMonoTime, [(c.address, bytes(c.dat), c.src) for c in m.can])])
-      brake_hold = cp.vl["GEAR"]["BRAKE_HOLD"] == 1
-    elif w == "carState":
-      cs = m.carState
-    elif w == "carControl" and cs is not None:
-      cc = m.carControl
-      out.append((t, cc, cs, brake_hold))
-  return out
+# The alpha-long CX-5 2022 controller the test rig builds.
+build_controller = car_controller
 
 
 def decode_cmd(dat):
-  return (((dat[2] & 0x3) << 11) | (dat[3] << 3) | (dat[4] >> 5)) - 4096
+  return crz_info(dat)[0]
 
 
-def mock_inputs(cc, cs, brake_hold, lead=None):
-  """One logged (carControl, carState) frame as the inputs update_longitudinal reads;
+@functools.cache
+def _rig_car_state():
+  CP = car_params(alpha_long=True)
+  return mazda_car_state(CP, car_params_sp(CP, alpha_long=True))
+
+
+def frames(path):
+  """Logged (t, carControl, carState, body hold) at the carControl rate."""
+  cp = CANParser("mazda_2017", [(EPB, float("nan")), (GEAR, float("nan"))], 0)
+  body_hold = False
+  cs = None
+  out = []
+  for m in LogReader(path):
+    w = m.which()
+    if w == "can":
+      cp.update([(m.logMonoTime, [(c.address, bytes(c.dat), 0) for c in m.can if c.src == 0 and c.address in (EPB, GEAR)])])
+      body_hold = body_holds(cp.vl)
+    elif w == "carState":
+      cs = m.carState
+    elif w == "carControl" and cs is not None:
+      out.append((m.logMonoTime * 1e-9, m.carControl, cs, body_hold))
+  return out
+
+
+def mock_inputs(cc, cs, body_hold, lead=None):
+  """One logged (carControl, carState) frame as update_longitudinal's inputs, on a real CarState.
   lead is the (dRel, vRel) for CC_SP.leadOne, if the replay carries one."""
-  out = SimpleNamespace(standstill=cs.standstill, gasPressed=cs.gasPressed, brakePressed=cs.brakePressed,
-                        cruiseState=SimpleNamespace(available=cs.cruiseState.available,
-                                                    enabled=cs.cruiseState.enabled))
-  actuators = SimpleNamespace(accel=cc.actuators.accel, longControlState=cc.actuators.longControlState)
-  control = SimpleNamespace(enabled=cc.enabled, longActive=cc.longActive, actuators=actuators,
-                            cruiseControl=SimpleNamespace(resume=cc.cruiseControl.resume,
-                                                          override=cc.cruiseControl.override, cancel=False),
-                            hudControl=SimpleNamespace(leadVisible=cc.hudControl.leadVisible,
-                                                       leadDistanceBars=cc.hudControl.leadDistanceBars))
-  control_sp = SimpleNamespace(stockEcuHandBack=False,
-                               leadOne=SimpleNamespace(dRel=lead[0] if lead else 0.0,
-                                                       vRel=lead[1] if lead else 0.0))
-  carstate = SimpleNamespace(out=out, resume_button=0, brake_hold=brake_hold,
-                             stock_radar_alive=False, stock_radar_gone=True, fsc_settled=True, radar_session_refused=False)
+  carstate = set_car_state(_rig_car_state(), body_hold=body_hold, standstill=cs.standstill, gas=cs.gasPressed,
+                           brake_pressed=cs.brakePressed, v_ego=cs.vEgo, available=cs.cruiseState.available,
+                           cruise_engaged=cs.cruiseState.enabled)
+  act = cc.actuators
+  control = car_control(enabled=cc.enabled, long_active=cc.longActive, accel=act.accel, long_state=act.longControlState,
+                        resume=cc.cruiseControl.resume, lead_visible=cc.hudControl.leadVisible,
+                        gap=cc.hudControl.leadDistanceBars)
+  control_sp = car_control_sp(lead_d_rel=lead[0] if lead else 0.0, lead_v_rel=lead[1] if lead else 0.0)
   return control, control_sp, carstate
 
 
 def replay(path):
-  cc_ctrl = build_controller()
+  ctrl = build_controller()
   t0 = None
-  worst = None
-  rows = []
-  for t, cc, cs, brake_hold in frames(path):
-    if t0 is None:
-      t0 = t
-    control, control_sp, carstate = mock_inputs(cc, cs, brake_hold)
-    sends = cc_ctrl.update_longitudinal(control, control_sp, carstate)
-    cc_ctrl.frame += 1
-    dat = next((d for a, d, b in sends if a == 0x21b and b == 0), None)
-    if dat is None:
+  stopped = held = 0
+  bad = []
+  for t, cc, cs, body_hold in frames(path):
+    t0 = t if t0 is None else t0
+    sends = ctrl.update_longitudinal(*mock_inputs(cc, cs, body_hold))
+    ctrl.frame += 1
+    dat = frame(sends, CRZ_INFO)
+    if dat is None or not cs.standstill or not cc.longActive:
       continue
-    cmd = decode_cmd(dat)
-    rows.append((t - t0, cs.standstill, cc.actuators.accel, cmd, brake_hold))
-    # a hold regression: still stopped, plan still braking, but our command let go
-    if cs.standstill and cc.longActive and cc.actuators.accel < -0.1 and cmd > -100 and not brake_hold:
-      if worst is None:
-        worst = (t - t0, cc.actuators.accel, cmd)
+    cmd, stop, _ = crz_info(dat)
+    stopped += 1
+    held += body_hold
+    if ctrl.stop_and_go.holding:
+      if body_hold and (stop or cmd != -1):
+        bad.append((t - t0, f"body holds but we send stop={stop:d} cmd={cmd:+d}"))
+      elif not body_hold and cc.actuators.accel < -0.1 and (not stop or cmd > -100):
+        bad.append((t - t0, f"plan {cc.actuators.accel:+.2f}, body not holding, but we send stop={stop:d} cmd={cmd:+d}"))
 
-  held = [r for r in rows if r[1]]
-  print(f"\n{os.path.basename(os.path.dirname(path))}: {len(rows)} frames, {len(held)} at standstill")
-  if held:
-    cmds = sorted({r[3] for r in held})
-    print(f"  command while stopped: {cmds[:6]}{' ...' if len(cmds) > 6 else ''}")
-    print(f"  plan while stopped:    min={min(r[2] for r in held):+.3f} max={max(r[2] for r in held):+.3f}")
-    print(f"  car ever took the hold: {any(r[4] for r in held)}")
-  if worst:
-    print(f"  REGRESSION at {worst[0]:.2f}s: plan {worst[1]:+.3f} but we sent raw {worst[2]}")
-  else:
-    print("  OK: never released the brakes while stopped with the plan still braking")
-  return worst is None
+  print(f"\n{os.path.relpath(path)}: {stopped} engaged frames stopped, {held} with the body holding")
+  for t, why in bad[:10]:
+    print(f"  VIOLATION t+{t:.2f}: {why}")
+  if not bad:
+    print("  OK: braked until the body held, relaxed while it did")
+  return not bad
 
 
 if __name__ == "__main__":
-  ok = all(replay(p) for p in sys.argv[1:])
-  sys.exit(0 if ok else 1)
+  results = [replay(p) for p in sys.argv[1:]]  # every log reports, not just up to the first failure
+  sys.exit(0 if all(results) else 1)

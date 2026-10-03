@@ -275,6 +275,23 @@ until the radar has been silenced once; the teardown gate already waits out a st
 The deeper fix is carstate not reporting a stock engagement as `cruiseState.enabled` under op-long
 at all, which needs an audit of every enabled consumer first.
 
+### The cancel settle wait
+
+Upstream's controller waits 70 ms before its first CANCEL, but only while the brake is pressed,
+to keep a press of ours from landing after the car has already cancelled on the brake: a CANCEL
+with cruise off is the stock main-off. The wheel CANCEL is the same race without the brake.
+It disengages openpilot through MADS's `manualLongitudinalRequired` 60 to 90 ms before the radar
+answers the press, the car still reports cruise on in between, and controlsd raises
+`cruiseControl.cancel` for those 6 to 10 frames. Every one of the five wheel cancels on 2026-09-30
+(routes 00000260, 269, 26a, 26b) had our press go out in the same 10 ms as the radar going
+inactive. The two main-offs that day were the driver's own second press.
+
+The controller now waits `CANCEL_SETTLE_T` (0.2 s) of sustained request before any first press,
+whatever disengaged openpilot. A request the car answers itself never produces a press; a real
+desync, where openpilot has dropped out and the car keeps cruising, is cancelled 0.2 s later than
+before, which is the cost upstream already accepted under braking. Tests: `TestCancelSettle` in
+`test_mazda_buttons.py`; the golden capture moved one frame, the first press of its cancel phase.
+
 ### Speed Limit Assist and ICBM under alpha long
 
 Alpha long changes who commands acceleration, not who keeps the set speed: the body still owns
@@ -363,17 +380,32 @@ LongControl already parks at `CP.stopAccel` while stopping, which for this car i
 value: stock MRCC holds raw -1024 at a stop, so `stopAccel = -1.024` and the plan's value is sent
 as-is. Nothing in the machine latches; `holding` is recomputed every frame.
 
-### Body brake hold and the relax
+### Body hold and the relax
 
-GEAR.BRAKE_HOLD is the body ECU taking the standstill hold over and holding the brakes itself.
-Stock relaxes its standstill command the instant that happens, not on any schedule: across 13
-stock holds of 4.5 s or longer, the relax and GEAR.BRAKE_HOLD agreed to within +-0.02 s in all 9
-where both were visible, and the latch itself landed anywhere from 0.01 s to 7.6 s after
-standstill. `ACCEL_HOLD_LATCHED` (-0.001 m/s2, raw -1) is the relaxed value sent once the car has
-the brakes. Stock drops CRZ_CTRL.ACC_ACTIVE_2 together with the relax. If the latch never comes
-the port simply keeps braking at the plan's value. BRAKE_HOLD is the driver's Auto Hold feature;
-with Auto Hold off the latched family below is structurally unreachable, and the CX-9 body never
-sets it.
+Once STOPPING has held a stop for a few seconds, the body ECU takes the standstill hold over and
+holds the brakes itself. It says so in EPB.HOLD_STATE (0x79 byte 2, low nibble: 2 idle, 3
+holding, 5 releasing), and that is what stock relaxes on, not on any schedule: across 43 stock
+holds the radar dropped STOPPING and relaxed within 0 to 40 ms of HOLDING in every one. The body
+usually takes the hold 3.3 to 4.5 s after standstill (1.5 to 11 s across the corpus).
+`ACCEL_HOLD_LATCHED` (-0.001 m/s2, raw -1) is the relaxed value sent once the car has the brakes.
+Stock drops CRZ_CTRL.ACC_ACTIVE_2 together with the relax.
+
+GEAR.BRAKE_HOLD is Auto Hold. With Auto Hold armed it joins the body's hold 10 to 30 ms after
+HOLDING and lights HOLD on the dash; 15 of the 43 stock holds never had it, and stock relaxed and
+released those exactly the same way. So `CS.body_hold` is either signal: HOLD_STATE carries the
+handshake on every hold-capable body whatever the Auto Hold setting, and BRAKE_HOLD on its own is
+still a held car. If the body never takes the hold, the port keeps braking at the plan's value for
+as long as the stop lasts. That is all there is on the 2016.5 CX-5 KE, whose body has no
+standstill hold: HOLD_STATE stays 0 there, where the hold-capable bodies read 0x3 in the high
+nibble.
+
+Until 2026-10-01 the port keyed on BRAKE_HOLD alone, which broke every car with Auto Hold off. It
+kept STOPPING and hold-grade braking on the wire under a body that already held, then released on
+the never-latched path with no unlatch pulse, the one thing the body lets go on. The CX-9 that sat
+still under a positive command (route 09) has a hold-capable body and Auto Hold off (driver stops of
+up to 41 s in route 04, BRAKE_HOLD never set), which matches that failure; an rlog of a
+CX-9 stop would confirm it. `tools/mazda_long/acc_hold_census.py` reproduces the stock census and
+`tools/mazda_long/replay_standstill_hold.py` checks a drive against it.
 
 ### Release grammar
 
@@ -453,7 +485,7 @@ plan is braking the hold command is the plan's own, but the moment it turns posi
 freezes where it is: stock never lets ACCEL_CMD climb while STOPPING is asserted.
 
 A latched release does not start climbing until the body lets go: stock pins the command at
-raw -1 until GEAR.BRAKE_HOLD drops in every latched release of the corpus.
+raw -1 until the body releases in every latched release of the corpus.
 
 `ACCEL_RESUME_PULSE_MAX` (0.25 m/s2) is the ACCEL_CMD ceiling while a latched release's pulse
 plays: stock's latched releases peak at +0.24 to +0.25 m/s2 (raw +182 / +195) in the pulse tail,
@@ -507,9 +539,10 @@ was about +0.78, i.e. about +0.67 above its plan; stock's own latched breakaways
 reaching stock's p25 (+0.11 to a cap of +0.86) and the CX-9's +0.47 reaching +1.22, while a plan
 of +0.11 no longer climbs to +1.45.
 
-What the corpus does not settle is the CX-9 itself: its qlog carries no CAN, so GEAR.BRAKE_HOLD
-and the stop bits are unobservable there. A body brake latch invisible to us is still on the
-table, and would not be cured by asking harder. An rlog would settle it.
+What the corpus does not settle is the CX-9 itself: its qlog carries no CAN, so the body hold
+and the stop bits are unobservable there. The likelier cause is a body hold the port could not
+see (Body hold and the relax), which no amount of asking harder would cure. An rlog would settle
+it.
 
 ### Tried and rejected: a lead-distance cap on the breakaway
 
@@ -695,12 +728,13 @@ the dash lane indicators, so those two stay zeroed.
 | `RADAR_SESSION_LIMIT_T` | 10.0 s | per-episode UDS budget | design |
 | `MAZDA_ENGAGE_BTN_WINDOW` | 10 CRZ_BTNS frames | press 30 to 70 ms before ACC_ACTIVE, 104 engagements | corpus |
 | `CANCEL_CONTEXT_T` | 0.5 s | PEDALS lags the CAN_OFF press by a few frames | 7f9e3ff336 |
+| `CANCEL_SETTLE_T` | 0.2 s | the car answers its own cancels 60 to 90 ms after openpilot disengages on them; the request lasted 6 to 10 frames on all five wheel cancels | 00000260, 269, 26a, 26b |
 | `MAZDA_CANCEL_CONTEXT_FRAMES` | 25 PEDALS frames | `CANCEL_CONTEXT_T` on the 50 Hz PEDALS clock | derived |
 | `RESUME_UNLATCH_LATCHED_T` | 0.18 s (9 wire frames) | latched pulses 6 to 11 wire frames, mode 9 | 33-pulse census |
 | `RESUME_REPULSE_T` | 1.0 s | body answered all 10 pulses in 30 to 51 ms | 103, 115, 118, 11d, 12c, 132, 139, fe |
 | `RELEASE_DEBOUNCE_T` | 0.2 s | lead opening >= +0.31 m/s at all 23 stock latched pulses | corpus |
 | `LEAD_DEBOUNCE_T` | 0.5 s | 6 leadVisible toggles in 1.4 s on a 120 m lead | 6bb2dc61c4 |
-| `ACCEL_HOLD_LATCHED` | -0.001 m/s2 | relax and BRAKE_HOLD within +-0.02 s in 9 of 9 visible | 13 stock holds |
+| `ACCEL_HOLD_LATCHED` | -0.001 m/s2 | stock relaxes 0 to 40 ms after HOLD_STATE goes HOLDING, 43 of 43 | 43 stock holds |
 | `ACCEL_RESUME_PULSE_MAX` | 0.25 m/s2 | stock latched pulse tail +0.24 to +0.25, +0.34 worst | corpus |
 | `ACCEL_RELEASE_BAND` | -0.26 m/s2 | stock never-latched relax target -0.27 to -0.18 | corpus |
 | `ACCEL_RELEASE_RAMP` | 1.25 m/s3 | +25 raw per 50 Hz frame | corpus |

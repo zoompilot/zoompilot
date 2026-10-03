@@ -313,6 +313,16 @@ from 35.75 to 40 m/s (80 to 89 mph) did, learning 2.76 against 2.20 at 34.5 in b
 the whole corpus. The CX-9 2021 has no drive above 32 mph in the corpus (its one route reads
 2.29 at 16.4 m/s against the converted 2.30).
 
+Friction refit (2026-10-01). After a day on these seeds with the learner unfrozen (16 routes,
+about 36,000 points in the six bins up to 28 m/s, none above 31.25 m/s), a refit of the
+device's cached bin points reads friction 8 to 55% above them, and the older and newer half of
+each bin agree within 5%. The CX-5 2022's friction through 28 m/s now takes that fit: 0.232,
+0.155, 0.145, 0.147, 0.094, 0.091 (was 0.188, 0.143, 0.126, 0.095, 0.084, 0.080). The old
+0.095 at 16.4 m/s was a dip the data does not have, and stock's +-50% band around it stopped
+short of the car's 0.147. LAF stays: its halves land up to 20% either side of the seed (2.42 vs
+2.10 at 6.5 m/s, 2.11 vs 2.53 at 12), and 34.5 and 37 m/s have no new points. seed_version
+stays 2: the scale is the same, and a bump would drop every learned cache.
+
 ## Constants
 
 | name | value | measurement | route |
