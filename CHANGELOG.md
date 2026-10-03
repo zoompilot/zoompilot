@@ -22,7 +22,6 @@ zoompilot vUNRELEASED
 * **Export Mazdas:** CX-5 and CX-9 JM7 VINs recognised.
 * **NZ & AUS:** set speed matches the dash.
 * **Speed limit alerts:** show the speed, only when it changes.
-* **Cruise settings:** kept when alpha long or ICBM is off.
 * **Wheel cancel:** no longer turns cruise main off.
 * **Sunnylink:** backup/restore fixed.
 * **sunnypilot:** model refresh buttons, Models menu freeze and camera offset fixed.
@@ -35,6 +34,7 @@ zoompilot vUNRELEASED
 
 **Alpha longitudinal**
 * Alpha long, Experimental Mode and DEC are now under Cruise.
+* Remembers your cruise settings when you turn alpha long or ICBM off and on.
 * New: Experimental Mode Speed Assist, off by default. Experimental runs ~5 mph under set speed; this brings it up when the road is clear.
 * Speed limits: ICBM on changes the set speed. ICBM off asks you to set 80 mph, then handles the limit.
 * Auto high beams fixed.
