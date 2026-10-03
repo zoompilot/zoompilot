@@ -267,11 +267,10 @@ class UIStateSP:
         self.params.remove("LateralJerkTorqueController")
         self.params.remove("AlphaLongitudinalEnabled")
 
-    # No longitudinal control: no experimental mode, DEC or its set-speed floor
+    # No longitudinal control: no experimental mode. DEC, the set-speed nudge, custom ACC and
+    # SCC keep their values; card and the planner leave them idle until long or ICBM returns.
     if not has_long:
       self.params.remove("ExperimentalMode")
-      self.params.remove("DynamicExperimentalControl")
-      self.params.remove("ExperimentalModeSetSpeed")
 
     # ICBM: clear where the buttons have no set speed to move (icbm_applicable)
     if self.CP_SP is not None:
@@ -281,12 +280,6 @@ class UIStateSP:
     else:
       self.params.remove("IntelligentCruiseButtonManagement")
       self.has_icbm = False
-
-    # Cruise features requiring longitudinal or ICBM
-    if not (has_long or self.has_icbm):
-      self.params.remove("CustomAccIncrementsEnabled")
-      self.params.remove("SmartCruiseControlVision")
-      self.params.remove("SmartCruiseControlMap")
 
 
 def set_always_offroad(params: Params, enable: bool) -> None:

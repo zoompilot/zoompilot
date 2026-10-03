@@ -56,7 +56,6 @@ class CruiseLayoutMici(NavScroller):
     super().__init__()
 
     self._prev_icbm_available: bool | None = None
-    self._prev_has_long_or_icbm: bool | None = None
     self._prev_sla_available: bool | None = None
 
     self._alpha_long_btn = BigButtonSP(tr("alpha longitudinal"))
@@ -120,13 +119,6 @@ class CruiseLayoutMici(NavScroller):
     if not icbm_available and self._prev_icbm_available is not False:
       ui_state.params.remove("IntelligentCruiseButtonManagement")
     self._prev_icbm_available = icbm_available
-
-    has_long_or_icbm = has_long or has_icbm
-    if not has_long_or_icbm and self._prev_has_long_or_icbm is not False:
-      ui_state.params.remove("CustomAccIncrementsEnabled")
-      ui_state.params.remove("SmartCruiseControlVision")
-      ui_state.params.remove("SmartCruiseControlMap")
-    self._prev_has_long_or_icbm = has_long_or_icbm
 
     # Custom ACC button subtitle
     acc_on = ui_state.params.get_bool("CustomAccIncrementsEnabled")

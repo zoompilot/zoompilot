@@ -140,12 +140,8 @@ def _cleanup_unsupported_params(CP: structs.CarParams, CP_SP: structs.CarParamsS
     cloudlog.warning("ICBM not applicable, cleaning up params")
     params.remove("IntelligentCruiseButtonManagement")
 
-  if not CP.openpilotLongitudinalControl and CP_SP.pcmCruiseSpeed:
-    cloudlog.warning("openpilot Longitudinal Control and ICBM not available, cleaning up params")
-    params.remove("DynamicExperimentalControl")
-    params.remove("CustomAccIncrementsEnabled")
-    params.remove("SmartCruiseControlVision")
-    params.remove("SmartCruiseControlMap")
+  # DEC, custom ACC and SCC stay as the user left them without openpilot long or ICBM: they
+  # are inert then, and come back as set when either returns
 
   set_speed_limit_assist_availability(CP, CP_SP, params)
 

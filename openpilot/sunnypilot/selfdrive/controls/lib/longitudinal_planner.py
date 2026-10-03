@@ -37,6 +37,9 @@ class LongitudinalPlannerSP:
     self.dec = DynamicExperimentalController(CP, mpc)
     self.e2e_set_speed = E2ESetSpeedController()
     self.scc = make_smart_cruise_control(CP)
+    # SCC has nothing to act through without openpilot long or ICBM (pcmCruiseSpeed off), the
+    # same condition controlsd gates longActive on. Its params outlive that, so gate it here.
+    self.scc_actionable = CP.openpilotLongitudinalControl or not CP_SP.pcmCruiseSpeed
     self.resolver = SpeedLimitResolver(CP)
     # cars whose setpoint only the driver can move run the SLA machine here; everywhere
     # else it runs in card (the cruise arbiter, next to the buttons and the setpoint) and
@@ -69,7 +72,7 @@ class LongitudinalPlannerSP:
     long_override = sm['carControl'].cruiseControl.override
 
     # Smart Cruise Control
-    self.scc.update(sm, long_enabled, long_override, v_ego, a_ego, v_cruise)
+    self.scc.update(sm, long_enabled and self.scc_actionable, long_override, v_ego, a_ego, v_cruise)
 
     # Speed Limit Resolver
     self.resolver.update(v_ego, sm)
