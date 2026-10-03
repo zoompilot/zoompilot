@@ -201,6 +201,7 @@ class UIStateSP:
     self.chestnut_compiled = self.chestnut_compiled or self.model_runner_tinygrad
     # on the 5 Hz params pass, not per frame in a layout; a fitted chestnut owns chestnut_state
     self.jetlink = None if self.sm['deviceState'].chestnutPresent else jetlink_adapter.status()
+    self._enforce_usb_port()
     # the Jetson configures the gadget ~25 s after a cold boot, after the one-shot
     # usb_unknown decision; recognising it late still clears "unknown"
     if (view := self.jetlink_view) is not None and view.present and self.usb_unknown:
@@ -283,17 +284,14 @@ class UIStateSP:
       self.params.remove("IntelligentCruiseButtonManagement")
       self.has_icbm = False
 
-    self._enforce_usb_port()
-
   def _enforce_usb_port(self) -> None:
     """ADB and the Accelerator Link both need the comma's USB port: the link
     on turns ADB off, and the developer panels grey its toggle out. Here, not
-    in the panels, so a link set from sunnylink counts too. A fitted chestnut
-    has the link off whatever the setting says."""
-    self.adb_blocked = (not self.chestnut_present and
-                        (self.params.get(jetlink_adapter.KEYS.link, return_default=True) or 0) > 0)
-    if self.adb_blocked and self.params.get_bool(jetlink_adapter.ADB_KEY):
-      self.params.put_bool(jetlink_adapter.ADB_KEY, False, block=True)
+    in the panels, so a link set from sunnylink counts too. jetlink's owner
+    retries the port in seconds while ADB's gadget still holds it."""
+    self.adb_blocked = self.jetlink is not None and self.jetlink.enabled
+    if self.adb_blocked and self.params.get_bool("AdbEnabled"):
+      self.params.put_bool("AdbEnabled", False, block=True)
 
 
 def set_always_offroad(params: Params, enable: bool) -> None:

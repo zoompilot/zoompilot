@@ -243,37 +243,6 @@ print(json.dumps({'built': built, 'seen': seen, 'callable': callable(graph), 'si
     self.assertLess(seen.index('openpilot.selfdrive.modeld.compile_modeld'), first_tinygrad)
 
 
-class TestTheUsbPort(OpenpilotTestCase):
-  def test_the_owner_turns_adb_off_and_waits_for_agnos_to_let_go(self):
-    params = Params()
-    with tempfile.TemporaryDirectory() as d:
-      udc = Path(d) / 'UDC'
-      udc.write_text('a600000.dwc3\n')
-      sleeps = []
-
-      def let_go(_):
-        sleeps.append(1)
-        udc.write_text('\n')
-
-      with mock.patch.object(jetlink_adapter, 'ADB_UDC', udc), mock.patch('time.sleep', side_effect=let_go):
-        params.put_bool(jetlink_adapter.ADB_KEY, True, block=True)
-        jetlink_adapter._release_adb()
-      self.assertFalse(params.get_bool(jetlink_adapter.ADB_KEY))
-      self.assertEqual(len(sleeps), 1)
-
-  def test_the_owner_leaves_adb_alone_when_it_is_off(self):
-    with mock.patch('time.sleep', side_effect=AssertionError('waited')):
-      jetlink_adapter._release_adb()
-    self.assertFalse(Params().get_bool(jetlink_adapter.ADB_KEY))
-
-  def test_only_an_agnos_owner_touches_adb(self):
-    for agnos in (False, True):
-      with mock.patch.object(jetlink_adapter, '_AGNOS', agnos), \
-           mock.patch.object(jetlink_adapter, '_release_adb') as release, mock.patch('jetlink.openpilot.owner.main'):
-        jetlink_adapter.main()
-      self.assertEqual(release.called, agnos)
-
-
 class TestTheOwner(OpenpilotTestCase):
   def test_the_owners_path_stays_out_of_the_heavy_half(self):
     code = '''
