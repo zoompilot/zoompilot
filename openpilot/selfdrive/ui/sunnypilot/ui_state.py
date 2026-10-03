@@ -267,10 +267,11 @@ class UIStateSP:
         self.params.remove("LateralJerkTorqueController")
         self.params.remove("AlphaLongitudinalEnabled")
 
-    # No longitudinal control: no experimental mode or DEC
+    # No longitudinal control: no experimental mode, DEC or its set-speed floor
     if not has_long:
       self.params.remove("ExperimentalMode")
       self.params.remove("DynamicExperimentalControl")
+      self.params.remove("ExperimentalModeSetSpeed")
 
     # ICBM: clear where the buttons have no set speed to move (icbm_applicable)
     if self.CP_SP is not None:

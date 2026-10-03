@@ -17,6 +17,8 @@ repo.
 - lateral-tune-roadmap.md: the empirical roadmap for the torque tune
 - cruise-arbiter.md: setpoint ownership, SLA sessions, dismiss semantics, the reconciler
 - icbm.md: the button servo, actuation profiles, fast mode, restore quiet window
+- e2e-set-speed.md: experimental mode's set-speed floor, the model's lazy pace, trips and their
+  separation data, IQ.Pilot's version
 - scc-curve-planning.md: the Mazda / upstream planner split, model curvature range bias, the
   whole-path horizon with a per-model near window, the commit hold below 50 mph,
   publish_ramp and the op-long budget, map retain logic and confirmation time
