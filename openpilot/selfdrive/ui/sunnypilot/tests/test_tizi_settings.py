@@ -4,9 +4,10 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-The tizi (comma three / 3X) developer page: the alpha-long switch is offroad-only, with no
-status line. Its own module: the big UI is chosen at import, so it cannot share a window with
-the mici tests.
+The tizi (comma three / 3X) settings: the Alpha Longitudinal panel owns the alpha switch
+(offroad-only, no status line) and experimental mode, which Developer and Toggles no longer
+show. Its own module: the big UI is chosen at import, so it cannot share a window with the mici
+tests.
 """
 import os
 
@@ -29,14 +30,66 @@ def gui():
     gui_app.close()
 
 
-def test_alpha_toggle_is_offroad_only(gui, monkeypatch):
-  from openpilot.common.params import Params
-  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.developer import DeveloperLayoutSP
+def test_alpha_toggle_is_offroad_only(params, monkeypatch):
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import AlphaLongitudinalLayout
   from openpilot.selfdrive.ui.ui_state import ui_state
-  ui_state.params = Params()
-  ui_state.update_params()
-  layout = DeveloperLayoutSP()
+  layout = AlphaLongitudinalLayout()
   monkeypatch.setattr(ui_state, "started", True)
   assert not layout._alpha_long_toggle.action_item.enabled
   monkeypatch.setattr(ui_state, "started", False)
   assert layout._alpha_long_toggle.action_item.enabled
+
+
+def test_moved_switches_appear_once(params):
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import AlphaLongitudinalLayout
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.developer import DeveloperLayoutSP
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.toggles import TogglesLayoutSP
+
+  developer, toggles = DeveloperLayoutSP(), TogglesLayoutSP()
+  assert developer._alpha_long_toggle not in developer._scroller._items
+  assert not toggles._toggles["ExperimentalMode"].is_visible
+  assert not hasattr(CruiseLayout(), "dec_toggle")
+
+  alpha = AlphaLongitudinalLayout()
+  assert [key for key, _ in alpha._refresh_toggles] == [
+    "AlphaLongitudinalEnabled", "ExperimentalMode", "DynamicExperimentalControl", "ExperimentalModeSetSpeed"]
+
+
+def test_panel_order(params):
+  from openpilot.selfdrive.ui.layouts.settings import settings as OP
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.settings import SettingsLayoutSP
+
+  panels = list(SettingsLayoutSP()._panels)
+  assert panels.index(OP.PanelType.ALPHA_LONGITUDINAL) == panels.index(OP.PanelType.CRUISE) - 1
+
+
+def test_experimental_mode_text_matches_upstream(params, monkeypatch):
+  # upstream writes this text inline in TogglesLayout._update_toggles; the panel keeps a copy
+  from opendbc.car.structs import car
+  from openpilot.selfdrive.ui.layouts.settings.toggles import TogglesLayout
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import EXPERIMENTAL_MODE_DESCRIPTION
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "update_params", lambda: None)
+  monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(openpilotLongitudinalControl=True))
+  monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
+  toggles = TogglesLayout()
+  toggles._update_toggles()
+  assert toggles._toggles["ExperimentalMode"].description == EXPERIMENTAL_MODE_DESCRIPTION
+
+
+def test_set_speed_greys_out_under_dec(params, monkeypatch):
+  from opendbc.car.structs import car
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import AlphaLongitudinalLayout
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=True))
+  monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
+  layout = AlphaLongitudinalLayout()
+  layout._dec_toggle.action_item.set_state(False)
+  layout._update_state()
+  assert layout._set_speed_toggle.action_item.enabled
+  layout._dec_toggle.action_item.set_state(True)
+  layout._update_state()
+  assert not layout._set_speed_toggle.action_item.enabled

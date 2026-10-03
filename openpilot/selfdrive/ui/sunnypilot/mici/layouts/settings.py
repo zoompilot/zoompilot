@@ -9,18 +9,27 @@ from openpilot.selfdrive.ui.mici.layouts.settings.settings import SettingsBigBut
 from openpilot.selfdrive.ui.mici.layouts.settings.device import DeviceLayoutMici
 from openpilot.selfdrive.ui.mici.widgets.button import BigCircleButton
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigConfirmationDialog, BigDialog
+from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
+from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.display import DisplayLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import SoftwareLayoutSP
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.sunnylink import SunnylinkLayoutMici
+from openpilot.selfdrive.ui.sunnypilot.mici.layouts.toggles import TogglesLayoutMiciSP
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.trips import TripsLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.visuals import VisualsLayoutMici
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.sunnypilot.ui_state import set_always_offroad
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
+
+# experimental mode and the alpha switch move to the alpha long panel. Swapped before the base
+# layout builds them, so the upstream panels are never constructed and their ui_state callbacks
+# (a full params pass each) never register.
+OP.TogglesLayoutMici = TogglesLayoutMiciSP
+OP.DeveloperLayoutMici = DeveloperLayoutMiciSP
 
 SP_ICON = "../../sunnypilot/selfdrive/assets/offroad"
 BIG_ICON_SIZE = 110
@@ -54,6 +63,7 @@ class SettingsLayoutSP(OP.SettingsLayout):
 
     panels = [
       (tr("models"),    ModelsLayoutMici,    gui_app.texture(f"{SP_ICON}/icon_models.png", 64, 64)),
+      (tr("alpha long"), AlphaLongitudinalLayoutMici, gui_app.texture("icons/experimental_white.png", 64, 64)),
       (tr("cruise"),    CruiseLayoutMici,    gui_app.texture(f"{SP_ICON}/icon_vehicle.png", 64, 64)),
       (tr("steering"),  SteeringLayoutMici,  gui_app.texture(f"{SP_ICON}/icon_lateral.png", 64, 64)),
       (tr("display"),   DisplayLayoutMici,   gui_app.texture(f"{SP_ICON}/icon_display.png", 64, 64)),

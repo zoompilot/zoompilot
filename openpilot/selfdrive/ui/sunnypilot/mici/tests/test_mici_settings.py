@@ -30,20 +30,6 @@ def gui():
     gui_app.close()
 
 
-@pytest.fixture
-def params(gui):
-  from openpilot.common.params import Params
-  from openpilot.selfdrive.ui.ui_state import ui_state
-
-  p = Params()
-  ui_state.params = p
-  # on device update_params() runs every frame before anything draws, so attributes it
-  # sets (always_offroad, screensaver_enabled, ...) exist by render time. Without this a
-  # layout reading one of them fails in the test for a reason the device never sees.
-  ui_state.update_params()
-  return p
-
-
 def jetlink_status(**fields):
   """jetlink's snapshot as the UI's params pass takes it, nothing to show unless a field says so."""
   from jetlink.openpilot import Status
@@ -444,13 +430,16 @@ class TestMadsLimitedCallSignature:
     # State-only tests do not cover widget overrides that depend on upstream drawing internals.
 
 LAYOUT_TARGETS = [
+  ("alpha_longitudinal", "AlphaLongitudinalLayoutMici"),
   ("cruise", "CruiseLayoutMici"),
+  ("developer", "DeveloperLayoutMiciSP"),
   ("display", "DisplayLayoutMici"),
   ("models", "ModelsLayoutMici"),
   ("settings", "SettingsLayoutSP"),
   ("software", "SoftwareLayoutSP"),
   ("steering", "SteeringLayoutMici"),
   ("sunnylink", "SunnylinkLayoutMici"),
+  ("toggles", "TogglesLayoutMiciSP"),
   ("trips", "TripsLayoutMici"),
   ("visuals", "VisualsLayoutMici"),
 ]
@@ -1028,9 +1017,9 @@ class TestAlphaLongSwitchMici:
   """The alpha switch is the saved preference, editable offroad only (forced offroad included)."""
 
   def test_switch_is_offroad_only(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.mici.layouts.settings.developer import DeveloperLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
     from openpilot.selfdrive.ui.ui_state import ui_state
-    layout = DeveloperLayoutMici()
+    layout = AlphaLongitudinalLayoutMici()
     monkeypatch.setattr(ui_state, "started", True)
     render(layout)
     assert not layout._alpha_long_toggle.enabled
@@ -1048,3 +1037,56 @@ class TestAlphaLongSwitchMici:
     pushed[-1]._confirm_callback()
     assert wait_for_param(params, "OffroadModeRequested") is True
     assert not params.get_bool("OffroadMode")  # applied by hardwared, never the UI
+
+
+class TestAlphaLongitudinalPanelMici:
+  """The alpha switch, experimental mode, DEC and the set-speed floor live in one panel, once."""
+
+  def test_moved_switches_appear_once(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.toggles import TogglesLayoutMiciSP
+
+    developer, toggles = DeveloperLayoutMiciSP(), TogglesLayoutMiciSP()
+    assert developer._alpha_long_toggle not in developer._scroller.items
+    assert toggles._experimental_btn not in toggles._scroller.items
+    assert not hasattr(CruiseLayoutMici(), "_dec_toggle")
+
+    alpha = AlphaLongitudinalLayoutMici()
+    assert [key for key, _ in alpha._refresh_toggles] == [
+      "AlphaLongitudinalEnabled", "ExperimentalMode", "DynamicExperimentalControl", "ExperimentalModeSetSpeed"]
+
+  def test_settings_opens_the_moved_panels(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.settings import SettingsLayoutSP
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.toggles import TogglesLayoutMiciSP
+    from openpilot.system.ui.lib.application import gui_app
+
+    buttons = {btn.get_text(): btn for btn in SettingsLayoutSP()._scroller.items if hasattr(btn, "get_text")}
+    assert list(buttons).index("alpha long") == list(buttons).index("cruise") - 1
+
+    pushed = []
+    monkeypatch.setattr(gui_app, "push_widget", lambda w: pushed.append(w))
+    for label, cls in (("alpha long", AlphaLongitudinalLayoutMici), ("toggles", TogglesLayoutMiciSP),
+                       ("developer", DeveloperLayoutMiciSP)):
+      buttons[label]._click_callback()
+      assert type(pushed[-1]) is cls
+
+  def test_experimental_mode_waits_for_confirmation(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts import alpha_longitudinal
+    from openpilot.system.ui.lib.application import gui_app
+
+    params.remove("ExperimentalModeConfirmed")
+    params.put_bool("ExperimentalMode", False, block=True)
+    confirms = []
+    monkeypatch.setattr(alpha_longitudinal, "ExperimentalModeConfirmPage", confirms.append)
+    monkeypatch.setattr(gui_app, "push_widget", lambda w: None)
+    layout = alpha_longitudinal.AlphaLongitudinalLayoutMici()
+    layout._on_experimental_mode(True)
+    assert not layout._experimental_toggle._checked
+    assert not params.get_bool("ExperimentalMode")
+    confirms[-1]()
+    assert wait_for_param(params, "ExperimentalMode") is True
+    assert layout._experimental_toggle._checked

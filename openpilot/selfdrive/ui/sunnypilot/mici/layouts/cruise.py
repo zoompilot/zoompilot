@@ -41,7 +41,7 @@ def _offset_label(value):
 
 
 class CruiseLayoutMici(NavScroller):
-  """Cruise settings: ICBM, DEC, SCC, custom ACC increments, speed limit assist.
+  """Cruise settings: ICBM, SCC, custom ACC increments, speed limit assist.
 
   State gating pattern:
     - _update_state runs every frame, reads params and enables/disables widgets
@@ -58,7 +58,6 @@ class CruiseLayoutMici(NavScroller):
     self._prev_sla_available: bool | None = None
 
     self._icbm_toggle = BigParamControl(tr("intelligent cruise button management"), "IntelligentCruiseButtonManagement")
-    self._dec_toggle = BigParamControl(tr("dynamic experimental control"), "DynamicExperimentalControl")
     self._scc_v_toggle = BigParamControl(tr("smart cruise vision"), "SmartCruiseControlVision")
     self._scc_m_toggle = BigParamControl(tr("smart cruise map"), "SmartCruiseControlMap")
     self._custom_acc_btn = BigButtonSP(tr("custom increments"))
@@ -68,7 +67,7 @@ class CruiseLayoutMici(NavScroller):
       btn.set_subtitle_font_size(24)
 
     self._scroller.add_widgets([
-      self._icbm_toggle, self._dec_toggle,
+      self._icbm_toggle,
       self._scc_v_toggle, self._scc_m_toggle,
       self._custom_acc_btn, self._speed_limit_btn,
     ])
@@ -95,7 +94,6 @@ class CruiseLayoutMici(NavScroller):
     super()._update_state()
 
     self._icbm_toggle.refresh()
-    self._dec_toggle.refresh()
     self._scc_v_toggle.refresh()
     self._scc_m_toggle.refresh()
 
@@ -107,7 +105,6 @@ class CruiseLayoutMici(NavScroller):
     has_icbm = icbm_available and self._icbm_toggle._checked
 
     self._icbm_toggle.set_enabled(icbm_available and offroad)
-    self._dec_toggle.set_enabled(has_long)
     self._scc_v_toggle.set_enabled(has_long or has_icbm)
     self._scc_m_toggle.set_enabled(has_long or has_icbm)
     self._custom_acc_btn.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and offroad if cp_ready else False)
@@ -120,7 +117,6 @@ class CruiseLayoutMici(NavScroller):
     has_long_or_icbm = has_long or has_icbm
     if not has_long_or_icbm and self._prev_has_long_or_icbm is not False:
       ui_state.params.remove("CustomAccIncrementsEnabled")
-      ui_state.params.remove("DynamicExperimentalControl")
       ui_state.params.remove("SmartCruiseControlVision")
       ui_state.params.remove("SmartCruiseControlMap")
     self._prev_has_long_or_icbm = has_long_or_icbm

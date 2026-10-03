@@ -27,6 +27,8 @@ PREBUILT_PATH = os.path.join(Paths.comma_home(), "prebuilt") if PC else "/data/o
 class DeveloperLayoutSP(DeveloperLayout):
   def __init__(self):
     super().__init__()
+    # zoompilot: the alpha switch lives in the Alpha Longitudinal panel
+    self._scroller._items.remove(self._alpha_long_toggle)
     self.error_log_path = os.path.join(Paths.crash_log_root(), "error.log")
     self._is_release_branch: bool = self._is_release or ui_state.params.get_bool("IsReleaseSpBranch")
     self._is_development_branch: bool = ui_state.params.get_bool("IsTestedBranch") or ui_state.params.get_bool("IsDevelopmentBranch")
