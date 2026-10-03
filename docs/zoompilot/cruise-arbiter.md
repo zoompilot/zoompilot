@@ -46,7 +46,12 @@ The published surface is `carStateSP.zoompilot.cruiseSession`: `state`, `vCap`, 
 `announceCounter`. `vCap` is the plan cap in m/s: the session target while active, the
 frozen hold while prompting, `V_CRUISE_UNSET` otherwise, never 0 (the mirror treats 0
 as a not-yet-received message). `announceCounter` is bumped on alert-worthy transitions
-and never un-bumped, so the 20 Hz mirror cannot miss one.
+and never un-bumped, so the 20 Hz mirror cannot miss one. Alert-worthy means a confirm,
+or a change in the speed the car settles at, `min(target, setpoint)` (`helpers.settle_conv`):
+a limit above a setpoint the car already holds is silent. The alert names that speed
+("Adjusting to 45 mph"). The plannerd machine (`speed_limit_assist.py`, driver-only setpoints)
+uses the same helper; its prompt already caps the plan at the limit, so a confirm that changes
+nothing is silent there.
 
 ### What a prompt freezes
 
