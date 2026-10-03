@@ -27,6 +27,7 @@ from __future__ import annotations
 import functools
 import os
 import threading
+import time
 from collections import namedtuple
 from pathlib import Path
 
@@ -64,6 +65,13 @@ WARP_DIR = Path(__file__).resolve().parent / 'models'
 
 OWNER_LOG = Path('/data/log/jetlink-owner.log')
 
+# ADB and the link both need the comma's one USB device controller: AGNOS
+# binds its own gadget (g1, ADB over FunctionFS) while AdbEnabled is set, and
+# applies a change at once (adb-param-watcher.path runs set_adb.sh)
+ADB_KEY = 'AdbEnabled'
+ADB_UDC = Path('/config/usb_gadget/g1/UDC')
+ADB_RELEASE_WAIT = 5.0
+
 _AGNOS = os.path.isfile('/AGNOS')
 
 
@@ -84,6 +92,28 @@ def warp_path(cam_w: int, cam_h: int, model_w: int, model_h: int) -> Path:
   return WARP_DIR / f'warp_{cam_w}x{cam_h}_{model_w}x{model_h}_tinygrad.pkl'
 
 
+def _release_adb() -> None:
+  """The link on turns ADB off (the UI's params pass does too, and greys the
+  toggle out). jetlinkd runs only with the link on, so here it happens ahead
+  of the UI at boot, then a short wait for AGNOS to unbind its gadget: the
+  first gadget setup would fail on it and back off for a minute."""
+  try:
+    if (_params_dir() / ADB_KEY).read_bytes() != b'1':
+      return
+  except OSError:
+    return
+  from openpilot.common.params import Params
+  Params().put_bool(ADB_KEY, False, block=True)
+  deadline = time.monotonic() + ADB_RELEASE_WAIT
+  while time.monotonic() < deadline:
+    try:
+      if not ADB_UDC.read_text().strip():
+        return
+    except OSError:
+      return
+    time.sleep(0.1)
+
+
 def owner_config():
   """What jetlinkd needs: data only, so the owner imports nothing heavy."""
   from jetlink.openpilot.interface import Keys, OwnerConfig
@@ -98,6 +128,8 @@ def owner_config():
 def main() -> None:
   """jetlinkd: hold the USB gadget until manager stops this process."""
   from jetlink.openpilot.owner import main as run_owner
+  if _AGNOS:
+    _release_adb()
   run_owner(owner_config())
 
 

@@ -54,6 +54,8 @@ class UIStateSP:
     # jetlink's snapshot (jetlink.openpilot.Status) from the params pass; None
     # with a chestnut fitted or no jetlink on this device
     self.jetlink = None
+    # the Accelerator Link holds the USB port, so ADB is off and its toggle greyed out
+    self.adb_blocked: bool = False
     self._accelerator_state_name: str = 'none'
     self.blindspot: bool = False
     self.chevron_metrics = None
@@ -280,6 +282,18 @@ class UIStateSP:
     else:
       self.params.remove("IntelligentCruiseButtonManagement")
       self.has_icbm = False
+
+    self._enforce_usb_port()
+
+  def _enforce_usb_port(self) -> None:
+    """ADB and the Accelerator Link both need the comma's USB port: the link
+    on turns ADB off, and the developer panels grey its toggle out. Here, not
+    in the panels, so a link set from sunnylink counts too. A fitted chestnut
+    has the link off whatever the setting says."""
+    self.adb_blocked = (not self.chestnut_present and
+                        (self.params.get(jetlink_adapter.KEYS.link, return_default=True) or 0) > 0)
+    if self.adb_blocked and self.params.get_bool(jetlink_adapter.ADB_KEY):
+      self.params.put_bool(jetlink_adapter.ADB_KEY, False, block=True)
 
 
 def set_always_offroad(params: Params, enable: bool) -> None:

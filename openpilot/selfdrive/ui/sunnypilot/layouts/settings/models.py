@@ -125,7 +125,8 @@ class ModelsLayout(Widget):
 
   @staticmethod
   def _link_description(status: str) -> str:
-    what = tr("Run the big driving model on an attached accelerator: USB for a Jetson, a Linux PC or a Mac, iOS for an iPhone.")
+    what = tr("Run the big driving model on an attached accelerator: USB for a Jetson, a Linux PC or a Mac, iOS for an iPhone. " +
+              "Turns off ADB, which needs the same USB port.")
     return f"{what} {status}".strip()
 
   def _refresh_accelerator_items(self):
