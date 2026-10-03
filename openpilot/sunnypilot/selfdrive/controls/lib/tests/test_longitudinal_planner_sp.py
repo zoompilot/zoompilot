@@ -68,3 +68,28 @@ class TestSeedGuard(OpenpilotTestCase):
     self.planner.scc.vision.output_v_target = float('nan')
     v, a = self.planner.update_targets(self.sm, float('nan'), float('nan'), float('nan'))
     assert math.isfinite(v) and math.isfinite(a)
+
+
+class TestSccNeedsLongOrIcbm:
+  """SCC's params survive losing openpilot long and ICBM, so the planner keeps it idle there."""
+
+  def _scc_enabled(self, op_long: bool, pcm_cruise_speed: bool) -> bool:
+    cp = structs.CarParams(brand="mazda", openpilotLongitudinalControl=op_long, longitudinalActuatorDelay=0.36)
+    planner = LongitudinalPlannerSP(cp, structs.CarParamsSP(pcmCruiseSpeed=pcm_cruise_speed), MagicMock())
+    planner.scc.update = MagicMock()
+    planner.resolver.update = MagicMock()
+    planner.resolver.distance = 0.
+    planner.sla.update = MagicMock()
+    cc = messaging.new_message('carControl').carControl
+    cc.enabled = True
+    sm = {'carState': messaging.new_message('carState').carState, 'carControl': cc,
+          'carStateSP': messaging.new_message('carStateSP').carStateSP}
+    planner.update_targets(sm, 20., 0., 25.)
+    return planner.scc.update.call_args.args[1]
+
+  def test_stock_acc_without_icbm_keeps_scc_idle(self):
+    assert not self._scc_enabled(op_long=False, pcm_cruise_speed=True)
+
+  def test_icbm_or_op_long_lets_scc_run(self):
+    assert self._scc_enabled(op_long=False, pcm_cruise_speed=False)
+    assert self._scc_enabled(op_long=True, pcm_cruise_speed=True)

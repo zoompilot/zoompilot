@@ -23,7 +23,8 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES, V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import compare_cluster_target, confirm_needed_for_change, pcm_machine_owns_sla
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import compare_cluster_target, confirm_needed_for_change, pcm_machine_owns_sla, \
+  settle_conv
 
 ButtonType = car.CarState.ButtonEvent.Type
 SessionState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
@@ -150,10 +151,14 @@ class CruiseArbiter:
     self.v_cap = float(hold)
     self.pre_active_timer = int(PRE_ACTIVE_GUARD_PERIOD / DT_CTRL)
 
+  @property
+  def _speed_moves(self) -> bool:
+    # the current target against the cap published last frame
+    return settle_conv(self._slf, self._cluster_conv, self.is_metric) != settle_conv(self.v_cap, self._cluster_conv, self.is_metric)
+
   def _activate(self, from_prompt: bool):
-    # Announce confirmations and upcoming setpoint movement, not an existing match.
-    announce = from_prompt or self._target_conv() != self._cluster_conv
-    self._set_state(SessionState.active, announce=announce)
+    # Announce confirmations and sessions that move the speed, not an existing match.
+    self._set_state(SessionState.active, announce=from_prompt or self._speed_moves)
 
   def _classify_presses(self, CS, v_cruise_kph: float) -> float:
     """Consume button edges; decide intents from the pre-frame session snapshot.
@@ -270,8 +275,9 @@ class CruiseArbiter:
       elif self.state in ACTIVE_STATES:
         if self._limit_changed and confirm_needed_for_change(self._cluster_conv, self._target_conv(), self.is_metric):
           self._enter_prompt()
-        elif self._limit_changed and self._target_conv() != self._cluster_conv:
-          # Auto-apply target changes that do not require confirmation.
+        elif self._limit_changed and self._speed_moves:
+          # Auto-apply target changes that do not require confirmation; a limit above the
+          # setpoint the car already holds changes nothing to announce.
           self.announce_counter += 1
 
       elif self.state == SessionState.preActive:

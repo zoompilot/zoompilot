@@ -6,6 +6,8 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl
+from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import alpha_longitudinal_reachable, longitudinal_mode_labels
+from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import (
   BigButtonSP,
   BigMultiParamToggleSP,
@@ -41,7 +43,7 @@ def _offset_label(value):
 
 
 class CruiseLayoutMici(NavScroller):
-  """Cruise settings: ICBM, DEC, SCC, custom ACC increments, speed limit assist.
+  """Cruise settings: alpha longitudinal, ICBM, SCC, custom ACC increments, speed limit assist.
 
   State gating pattern:
     - _update_state runs every frame, reads params and enables/disables widgets
@@ -54,21 +56,23 @@ class CruiseLayoutMici(NavScroller):
     super().__init__()
 
     self._prev_icbm_available: bool | None = None
-    self._prev_has_long_or_icbm: bool | None = None
     self._prev_sla_available: bool | None = None
 
+    self._alpha_long_btn = BigButtonSP(tr("alpha longitudinal"))
+    alpha_long_view = AlphaLongitudinalLayoutMici()
+    self._alpha_long_btn.set_click_callback(lambda: gui_app.push_widget(alpha_long_view))
     self._icbm_toggle = BigParamControl(tr("intelligent cruise button management"), "IntelligentCruiseButtonManagement")
-    self._dec_toggle = BigParamControl(tr("dynamic experimental control"), "DynamicExperimentalControl")
     self._scc_v_toggle = BigParamControl(tr("smart cruise vision"), "SmartCruiseControlVision")
     self._scc_m_toggle = BigParamControl(tr("smart cruise map"), "SmartCruiseControlMap")
     self._custom_acc_btn = BigButtonSP(tr("custom increments"))
     self._speed_limit_btn = BigButtonSP(tr("speed limit"))
 
-    for btn in [self._custom_acc_btn, self._speed_limit_btn]:
+    for btn in [self._alpha_long_btn, self._custom_acc_btn, self._speed_limit_btn]:
       btn.set_subtitle_font_size(24)
 
     self._scroller.add_widgets([
-      self._icbm_toggle, self._dec_toggle,
+      self._alpha_long_btn,
+      self._icbm_toggle,
       self._scc_v_toggle, self._scc_m_toggle,
       self._custom_acc_btn, self._speed_limit_btn,
     ])
@@ -95,7 +99,6 @@ class CruiseLayoutMici(NavScroller):
     super()._update_state()
 
     self._icbm_toggle.refresh()
-    self._dec_toggle.refresh()
     self._scc_v_toggle.refresh()
     self._scc_m_toggle.refresh()
 
@@ -107,7 +110,7 @@ class CruiseLayoutMici(NavScroller):
     has_icbm = icbm_available and self._icbm_toggle._checked
 
     self._icbm_toggle.set_enabled(icbm_available and offroad)
-    self._dec_toggle.set_enabled(has_long)
+    self._alpha_long_btn.set_enabled(alpha_longitudinal_reachable(ui_state))
     self._scc_v_toggle.set_enabled(has_long or has_icbm)
     self._scc_m_toggle.set_enabled(has_long or has_icbm)
     self._custom_acc_btn.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and offroad if cp_ready else False)
@@ -116,14 +119,6 @@ class CruiseLayoutMici(NavScroller):
     if not icbm_available and self._prev_icbm_available is not False:
       ui_state.params.remove("IntelligentCruiseButtonManagement")
     self._prev_icbm_available = icbm_available
-
-    has_long_or_icbm = has_long or has_icbm
-    if not has_long_or_icbm and self._prev_has_long_or_icbm is not False:
-      ui_state.params.remove("CustomAccIncrementsEnabled")
-      ui_state.params.remove("DynamicExperimentalControl")
-      ui_state.params.remove("SmartCruiseControlVision")
-      ui_state.params.remove("SmartCruiseControlMap")
-    self._prev_has_long_or_icbm = has_long_or_icbm
 
     # Custom ACC button subtitle
     acc_on = ui_state.params.get_bool("CustomAccIncrementsEnabled")
@@ -135,6 +130,12 @@ class CruiseLayoutMici(NavScroller):
       long_raw = ui_state.params.get("CustomAccLongPressIncrement", return_default=True) or 1
       long_val = ACC_LONG_PRESS_MAP.get(long_raw, long_raw)
       self._custom_acc_btn.set_badges([(f"{short_val}{unit}", "on"), (f"{long_val}{unit}", "on")])
+
+    # Alpha longitudinal button subtitle: the mode that drives
+    if labels := longitudinal_mode_labels(ui_state):
+      self._alpha_long_btn.set_badges([(label, "on") for label in labels])
+    else:
+      self._alpha_long_btn.set_disabled()
 
     # Speed limit button subtitle
     sl_mode_idx = ui_state.params.get("SpeedLimitMode", return_default=True) or 0

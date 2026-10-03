@@ -289,3 +289,49 @@ class TestCruiseArbiterNonPcm:
     self.press(ButtonType.accelCruise, 40, 45)
     assert self.arb.state == SpeedLimitAssistState.active
     assert round(self.v_cruise_kph * CV.KPH_TO_MPH) == 45
+
+  # announcements: the "Adjusting to" alert is raised only when the speed the car settles at
+  # moves. `cluster` below is card's own setpoint, which the servo's dash moves leave alone.
+
+  def active_at(self, cluster_mph, limit_mph):
+    if limit_mph == cluster_mph:
+      self.frame(cluster_mph, limit_mph)
+      self.arb._enter_prompt()  # the dash already shows the limit: activates
+    else:
+      self.go_pre_active(cluster_mph, limit_mph)
+      self.press(ButtonType.decelCruise, cluster_mph, limit_mph)
+    self.frame(cluster_mph, limit_mph)
+    assert self.arb.state == SpeedLimitAssistState.active
+
+  def announces(self, cluster_mph, limit_mph) -> bool:
+    before = self.arb.announce_counter
+    self.frame(cluster_mph, limit_mph)
+    return self.arb.announce_counter != before
+
+  def test_confirm_announces(self):
+    self.go_pre_active(cluster_mph=60, limit_mph=45)
+    before = self.arb.announce_counter
+    self.press(ButtonType.decelCruise, 60, 45)
+    assert self.arb.announce_counter == before + 1
+
+  def test_limit_above_the_held_setpoint_is_silent(self):
+    """Holding the 60 setpoint under a 60 limit, a 65 limit changes nothing the car does."""
+    self.active_at(60, 60)
+    assert not self.announces(60, 65)
+    assert self.arb.state == SpeedLimitAssistState.active
+
+  def test_limit_rising_past_the_setpoint_announces_the_release(self):
+    """Capped at 55 under a 60 setpoint, a 65 limit lets the car back up to 60."""
+    self.active_at(60, 55)
+    assert self.announces(60, 65)
+
+  def test_limit_falling_announces(self):
+    self.active_at(70, 65)
+    assert self.announces(70, 55)
+
+  def test_limit_reaching_the_setpoint_below_the_threshold_announces(self):
+    """Below the confirm threshold a limit equal to the setpoint skips the prompt, but a
+    car capped under it still speeds up."""
+    self.active_at(40, 35)
+    assert self.announces(40, 40)
+    assert self.arb.state == SpeedLimitAssistState.active

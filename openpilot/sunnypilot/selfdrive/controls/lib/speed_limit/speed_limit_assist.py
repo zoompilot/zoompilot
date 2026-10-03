@@ -27,7 +27,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATE
   PCM_LONG_REQUIRED_MAX_SET_SPEED, CONFIRM_SPEED_THRESHOLD, V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import confirm_needed_for_change, pcm_machine_owns_sla, \
-  set_speed_limit_assist_availability
+  set_speed_limit_assist_availability, settle_conv
 
 EventNameSP = custom.OnroadEventSP.EventName
 SpeedLimitAssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
@@ -84,8 +84,8 @@ class SpeedLimitAssist:
     self.speed_limit_final_last_conv = 0
     self.prev_speed_limit_final_last_conv = 0
     self._distance = 0.
+    self.prev_settle_conv = 0
     self.state = SpeedLimitAssistState.disabled
-    self._state_prev = SpeedLimitAssistState.disabled
     self.pcm_op_long = pcm_machine_owns_sla(CP, CP_SP)
 
     # Solution functions mapped to respective states
@@ -264,17 +264,13 @@ class SpeedLimitAssist:
 
     # pending fires no alert: announcing "auto adjusting" on every engage reads as SLA acting
 
-    if self.is_active:
-      if self._state_prev not in ACTIVE_STATES:
-        self.update_active_event(events_sp)
-
-      # only notify if we acquire a valid speed limit
-      # do not check has_speed_limit here
-      elif self._speed_limit != self.speed_limit_prev:
-        if self.speed_limit_prev <= 0:
-          self.update_active_event(events_sp)
-        elif self.speed_limit_prev > 0 and self._speed_limit > 0:
-          self.update_active_event(events_sp)
+    # announce only a move of the speed the car settles at, as the cruise arbiter does: a limit
+    # above the set speed, a confirm the prompt's cap already reached, or a limit that drops out
+    # and returns changes nothing
+    settle = settle_conv(self.output_v_target, self.v_cruise_cluster_conv, self.is_metric)
+    if self.is_active and settle != self.prev_settle_conv:
+      self.update_active_event(events_sp)
+    self.prev_settle_conv = settle
 
   def update(self, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float, v_cruise_cluster: float, speed_limit: float,
              speed_limit_final_last: float, has_speed_limit: bool, distance: float, events_sp: EventsSP) -> None:
@@ -290,8 +286,9 @@ class SpeedLimitAssist:
     self.update_params()
     self.update_calculations(v_cruise_cluster)
 
-    self._state_prev = self.state
     self.is_enabled, self.is_active = self.update_state_machine_pcm_op_long()
+    self.output_v_target = self.get_v_target_from_control()
+    self.output_a_target = self.get_a_target_from_control()
 
     self.update_events(events_sp)
 
@@ -302,8 +299,5 @@ class SpeedLimitAssist:
     self.prev_target_set_speed_conv = self.target_set_speed_conv
     self.prev_v_cruise_cluster_conv = self.v_cruise_cluster_conv
     self.prev_speed_limit_final_last_conv = self.speed_limit_final_last_conv
-
-    self.output_v_target = self.get_v_target_from_control()
-    self.output_a_target = self.get_a_target_from_control()
 
     self.frame += 1

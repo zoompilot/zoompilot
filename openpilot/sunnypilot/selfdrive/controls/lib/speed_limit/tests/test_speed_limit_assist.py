@@ -25,6 +25,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist 
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 SpeedLimitAssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
+EventNameSP = custom.OnroadEventSP.EventName
 
 ALL_STATES = tuple(SpeedLimitAssistState.schema.enumerants.values())
 
@@ -297,3 +298,48 @@ class TestSpeedLimitAssist:
       assert self.sla.state in [SpeedLimitAssistState.preActive, SpeedLimitAssistState.active]
     elif initial_state in ACTIVE_STATES:
       assert self.sla.state in ACTIVE_STATES
+
+  # announcements: "Adjusting to" is raised only when the speed the car settles at,
+  # min(target, set speed), moves; the cruise arbiter follows the same rule
+
+  def step(self, cluster_mph, limit_mph, raw_limit_mph=None):
+    self.events_sp.clear()
+    raw = limit_mph if raw_limit_mph is None else raw_limit_mph
+    self.sla.update(True, False, limit_mph * CV.MPH_TO_MS, 0, cluster_mph * CV.MPH_TO_MS, raw * CV.MPH_TO_MS,
+                    limit_mph * CV.MPH_TO_MS, True, 0, self.events_sp)
+
+  def announces(self, cluster_mph, limit_mph, raw_limit_mph=None) -> bool:
+    self.step(cluster_mph, limit_mph, raw_limit_mph)
+    return self.events_sp.has(EventNameSP.speedLimitActive) or self.events_sp.has(EventNameSP.speedLimitChanged)
+
+  def active_at(self, cluster_mph, limit_mph):
+    self.initialize_active_state(cluster_mph * CV.MPH_TO_MS)
+    self.step(cluster_mph, limit_mph)
+    assert self.sla.state in ACTIVE_STATES
+
+  def test_limit_above_the_set_speed_is_silent(self):
+    self.active_at(80, 80)
+    assert not self.announces(80, 85)
+    assert self.sla.state in ACTIVE_STATES
+
+  def test_limit_change_announces(self):
+    self.active_at(80, 65)
+    assert self.announces(80, 55)
+
+  def test_limit_dropout_and_return_is_silent(self):
+    self.active_at(80, 65)
+    assert not self.announces(80, 65, raw_limit_mph=0)
+    assert not self.announces(80, 65)
+
+  def test_confirm_that_raises_the_speed_announces(self):
+    self.sla.state = SpeedLimitAssistState.preActive
+    assert not self.announces(60, 65)
+    assert self.announces(80, 65)  # the required max confirms; the car goes 60 -> 65
+    assert self.sla.state in ACTIVE_STATES
+
+  def test_confirm_the_prompt_already_reached_is_silent(self):
+    """The prompt already caps the plan at the limit, so confirming changes nothing."""
+    self.sla.state = SpeedLimitAssistState.preActive
+    assert not self.announces(60, 45)
+    assert not self.announces(70, 45)
+    assert self.sla.state in ACTIVE_STATES

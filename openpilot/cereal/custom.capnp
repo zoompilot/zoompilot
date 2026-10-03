@@ -209,6 +209,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   aTarget @5 :Float32;
   events @6 :List(OnroadEventSP.Event);
   e2eAlerts @7 :E2eAlerts;
+  zoompilot @8 :LongitudinalPlanZP;
 
   struct DynamicExperimentalControl {
     state @0 :DynamicExperimentalControlState;
@@ -609,5 +610,40 @@ struct CarControlZP @0xaadf9bc39b7bd41e {
 
   struct LaneChangeSmoothing {
     jerkFactor @0 :Float32;
+  }
+}
+
+struct LongitudinalPlanZP @0xc3b0556e1118c2db {
+  e2eSetSpeed @0 :E2ESetSpeed;
+
+  # Experimental mode's set-speed floor (sunnypilot/selfdrive/controls/lib/e2e_set_speed):
+  # what it added to the model's acceleration and, when nothing, why.
+  struct E2ESetSpeed {
+    authority @0 :Float32;     # 0..1, rate-limited
+    gain @1 :Float32;          # 0..1 from the model's own acceleration
+    floor @2 :Float32;         # m/s^2 the boost pulls toward
+    boost @3 :Float32;         # m/s^2 added to the model's acceleration
+    inhibit @4 :Inhibit;
+
+    enum Inhibit {
+      disabled @0;      # the ExperimentalModeSetSpeed toggle is off (and logs from before it)
+      none @1;
+      inactive @2;      # not e2e, or long control reset
+      decActive @3;
+      invalid @4;
+      hold @5;          # a trip cleared less than the hold time ago
+      fcw @6;
+      hardBrake @7;
+      forceDecel @8;
+      stop @9;
+      lead @10;
+      driver @11;       # gas or brake pressed
+      modelBraking @12;
+      planSlowing @13;
+      lateral @14;
+      coast @15;        # allow_throttle false
+      laneChange @16;
+      lowSpeed @17;
+    }
   }
 }

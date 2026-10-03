@@ -44,7 +44,8 @@ class DeveloperLayout(Widget):
       description=lambda: tr(DESCRIPTIONS["enable_adb"]),
       initial_state=self._params.get_bool("AdbEnabled"),
       callback=self._on_enable_adb,
-      enabled=ui_state.is_offroad,
+      # the Accelerator Link holds the USB port that ADB needs
+      enabled=lambda: ui_state.is_offroad() and not ui_state.adb_blocked,
     )
 
     # SSH enable toggle + SSH key management

@@ -34,6 +34,13 @@ def confirm_needed_for_change(cluster_conv: int, target_conv: int, is_metric: bo
   return target_conv < cst
 
 
+def settle_conv(v_cap: float, cluster_conv: int, is_metric: bool) -> int:
+  """The display speed an SLA cap (m/s) leaves the car at, shared by the pcm SLA machine and
+  the cruise arbiter, which announce only when it moves. The cap limits the plan, it never
+  lifts it past the set speed; an unset cap (V_CRUISE_UNSET, 255 m/s) never wins the min."""
+  return min(round(v_cap * (CV.MS_TO_KPH if is_metric else CV.MS_TO_MPH)), cluster_conv)
+
+
 def pcm_machine_owns_sla(CP: car.CarParams, CP_SP: custom.CarParamsSP) -> bool:
   """The plannerd SLA machine runs where openpilot commands acceleration, the car's ECU keeps
   the setpoint on its cluster, and nothing can move that setpoint but the driver: it confirms

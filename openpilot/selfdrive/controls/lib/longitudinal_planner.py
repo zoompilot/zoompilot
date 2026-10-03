@@ -139,6 +139,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
     is_e2e = self.is_e2e(sm)
+    output_a_target_e2e = LongitudinalPlannerSP.update_e2e_target(self, sm, output_a_target_e2e, reset_state, accel_coast)
 
     self.a_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego,
                                      self.a_cruise, steer_angle_without_offset, self.CP, self.dt,

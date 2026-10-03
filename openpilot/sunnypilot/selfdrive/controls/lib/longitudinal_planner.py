@@ -13,6 +13,7 @@ from openpilot.common.constants import CV
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import make_smart_cruise_control
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.assist_mirror import SpeedLimitAssistMirror
@@ -27,10 +28,18 @@ LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
 
 class LongitudinalPlannerSP:
+  # set by the host planner before the e2e candidate is built
+  allow_throttle: bool
+  fcw: bool
+
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, mpc):
     self.events_sp = EventsSP()
     self.dec = DynamicExperimentalController(CP, mpc)
+    self.e2e_set_speed = E2ESetSpeedController()
     self.scc = make_smart_cruise_control(CP)
+    # SCC has nothing to act through without openpilot long or ICBM (pcmCruiseSpeed off), the
+    # same condition controlsd gates longActive on. Its params outlive that, so gate it here.
+    self.scc_actionable = CP.openpilotLongitudinalControl or not CP_SP.pcmCruiseSpeed
     self.resolver = SpeedLimitResolver(CP)
     # cars whose setpoint only the driver can move run the SLA machine here; everywhere
     # else it runs in card (the cruise arbiter, next to the buttons and the setpoint) and
@@ -63,7 +72,7 @@ class LongitudinalPlannerSP:
     long_override = sm['carControl'].cruiseControl.override
 
     # Smart Cruise Control
-    self.scc.update(sm, long_enabled, long_override, v_ego, a_ego, v_cruise)
+    self.scc.update(sm, long_enabled and self.scc_actionable, long_override, v_ego, a_ego, v_cruise)
 
     # Speed Limit Resolver
     self.resolver.update(v_ego, sm)
@@ -102,6 +111,11 @@ class LongitudinalPlannerSP:
 
     self.output_v_target, self.output_a_target = v_target, a_target
     return self.output_v_target, self.output_a_target
+
+  def update_e2e_target(self, sm: messaging.SubMaster, a_model: float, reset_state: bool, accel_coast: float) -> float:
+    # output_v_target is this frame's cruise target after SCC and SLA
+    return self.e2e_set_speed.update(sm, a_model, self.output_v_target, self.is_e2e(sm), reset_state, self.dec.active(),
+                                     self.allow_throttle, self.fcw, accel_coast)
 
   def update(self, sm: messaging.SubMaster) -> None:
     self.events_sp.clear()
@@ -169,5 +183,13 @@ class LongitudinalPlannerSP:
     e2eAlerts = longitudinalPlanSP.e2eAlerts
     e2eAlerts.greenLightAlert = self.e2e_alerts_helper.green_light_alert
     e2eAlerts.leadDepartAlert = self.e2e_alerts_helper.lead_depart_alert
+
+    # zoompilot: experimental mode's set-speed floor
+    e2eSetSpeed = longitudinalPlanSP.zoompilot.e2eSetSpeed
+    e2eSetSpeed.authority = float(self.e2e_set_speed.authority)
+    e2eSetSpeed.gain = float(self.e2e_set_speed.gain)
+    e2eSetSpeed.floor = float(self.e2e_set_speed.floor)
+    e2eSetSpeed.boost = float(self.e2e_set_speed.boost)
+    e2eSetSpeed.inhibit = self.e2e_set_speed.inhibit
 
     pm.send('longitudinalPlanSP', plan_sp_send)

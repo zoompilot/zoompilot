@@ -12,15 +12,16 @@ import os
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
-from openpilot.selfdrive.ui.sunnypilot.mici.tests.test_mici_settings import gui, params, render  # noqa: F401
+from openpilot.selfdrive.ui.sunnypilot.mici.tests.test_mici_settings import gui, render  # noqa: F401
 
 
 def _bundle(p, brand):
-  p.put("CarPlatformBundle", {"brand": brand, "platform": "X", "name": "X"})
+  # blocking: the default put lands on a background thread, and the next render would race it
+  p.put("CarPlatformBundle", {"brand": brand, "platform": "X", "name": "X"}, block=True)
 
 
 class TestMadsTjaToggle:
-  def test_mici_visible_only_for_mazda(self, params):  # noqa: F811
+  def test_mici_visible_only_for_mazda(self, params):
     from openpilot.selfdrive.ui.ui_state import ui_state
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
     ui_state.CP = None
@@ -34,7 +35,7 @@ class TestMadsTjaToggle:
     render(layout._mads_view)
     assert layout._mads_tja.is_visible
 
-  def test_tici_visible_only_for_mazda(self, params):  # noqa: F811
+  def test_tici_visible_only_for_mazda(self, params):
     from openpilot.selfdrive.ui.ui_state import ui_state
     from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering_sub_layouts.mads_settings import MadsSettingsLayout
     ui_state.CP = None

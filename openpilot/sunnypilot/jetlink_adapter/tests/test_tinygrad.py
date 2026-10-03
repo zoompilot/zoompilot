@@ -131,12 +131,16 @@ spec = ModelSpec(sha256='a' * 64, nbytes=1, frame_skip=4, input_shapes=INPUTS, o
 class Client:
   def __init__(self):
     self.sent, self.last_timings, self.last_state, self.dead = [], (0, 0, 0), {'gpu_temp': 40.0}, False
+    self.last_output, self.unanswered = None, 0
     self.t = SimpleNamespace(link_info=lambda: {'kind': 'usb'})
   def infer_begin(self, data, packed, frame_id, reset=False, want_state=False):
     self.sent.append((bytes(data), np.array(packed), reset, want_state))
     return frame_id
-  def infer_end(self, seq):
-    return np.zeros(18452, np.float32)
+  def infer_end(self, seq, deadline=None, hold=None):
+    self.last_output = np.zeros(18452, np.float32)
+    return self.last_output
+  def drain(self):
+    return 0
 
 from jetlink.openpilot.model_state import JetlinkModelState
 client, events = Client(), []
@@ -197,6 +201,7 @@ class TestTheFramePath(OpenpilotTestCase):
       self.assertIn(key, self.found['parsed'])
 
   def test_it_asks_for_telemetry_on_its_own(self):
-    # modeld passes no callback: every second frame asks, and the log gets it at 1 Hz
-    self.assertEqual(self.found['asks'], [False, True, False])
+    # modeld passes no callback: a frame asks only once the 1 Hz log is due,
+    # and the first frame's log has just gone out
+    self.assertEqual(self.found['asks'], [False, False, False])
     self.assertEqual(self.found['events'], ['jetlinkTelemetry'])
