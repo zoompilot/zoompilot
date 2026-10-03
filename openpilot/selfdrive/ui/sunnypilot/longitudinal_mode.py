@@ -16,13 +16,13 @@ def alpha_longitudinal_reachable(ui_state) -> bool:
 
 
 def longitudinal_mode_labels(ui_state) -> list[str]:
-  """The mode that drives, then the set speed nudge where it acts. Empty without openpilot
+  """The mode that drives, then speed assist where it acts. Empty without openpilot
   longitudinal control."""
   if not ui_state.has_longitudinal_control:
     return []
   if not ui_state.experimental_mode:
     return [tr("chill")]
-  # DEC switches between chill and experimental itself, and the nudge never acts under it
+  # DEC switches between chill and experimental itself, and speed assist never acts under it
   if ui_state.params.get_bool("DynamicExperimentalControl"):
     return [tr("experimental"), tr("dec")]
-  return [tr("experimental")] + ([tr("nudge")] if ui_state.params.get_bool("ExperimentalModeSetSpeed") else [])
+  return [tr("experimental")] + ([tr("speed assist")] if ui_state.params.get_bool("ExperimentalModeSetSpeed") else [])

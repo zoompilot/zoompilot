@@ -24,7 +24,7 @@ class AlphaLongitudinalLayoutMici(NavScroller):
     self._alpha_long_toggle = BigToggle(tr("alpha longitudinal"), toggle_callback=self._on_alpha_long)
     self._experimental_toggle = BigToggle(tr("experimental mode"), toggle_callback=self._on_experimental_mode)
     self._dec_toggle = BigParamControl(tr("dynamic experimental control"), "DynamicExperimentalControl")
-    self._set_speed_toggle = BigParamControl(tr("set speed nudge"), "ExperimentalModeSetSpeed")
+    self._set_speed_toggle = BigParamControl(tr("speed assist"), "ExperimentalModeSetSpeed")
 
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),

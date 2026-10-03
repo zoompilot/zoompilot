@@ -713,7 +713,7 @@
             {
               "key": "ExperimentalModeSetSpeed",
               "widget": "toggle",
-              "title": "Set Speed Nudge",
+              "title": "Experimental Mode Speed Assist",
               "description": "In Experimental Mode, gently raise speed toward the set speed when nothing calls for slowing down. Has no effect while Dynamic Experimental Control is on.",
               "visibility": [
                 {

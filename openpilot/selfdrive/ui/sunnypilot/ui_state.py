@@ -267,7 +267,7 @@ class UIStateSP:
         self.params.remove("LateralJerkTorqueController")
         self.params.remove("AlphaLongitudinalEnabled")
 
-    # No longitudinal control: no experimental mode. DEC, the set-speed nudge, custom ACC and
+    # No longitudinal control: no experimental mode. DEC, speed assist, custom ACC and
     # SCC keep their values; card and the planner leave them idle until long or ICBM returns.
     if not has_long:
       self.params.remove("ExperimentalMode")

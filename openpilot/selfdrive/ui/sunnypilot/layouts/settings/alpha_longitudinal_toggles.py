@@ -50,7 +50,7 @@ class AlphaLongitudinalToggles:
       param="DynamicExperimentalControl")
 
     self._set_speed_toggle = toggle_item_sp(
-      title=lambda: tr("Set Speed Nudge"),
+      title=lambda: tr("Experimental Mode Speed Assist"),
       description=lambda: tr("In Experimental Mode, gently raise speed toward the set speed when nothing calls for slowing down. " +
                              "Has no effect while Dynamic Experimental Control is on."),
       param="ExperimentalModeSetSpeed")
