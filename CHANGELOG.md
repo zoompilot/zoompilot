@@ -5,9 +5,10 @@ zoompilot vUNRELEASED
 * Turn on: Settings > Models > Accelerator Link.
 
 **Big model, Accelerator Link**
-* Jetlink v0.7.2: one server on Jetson, Mac, Linux PC, iPhone and Android. Update the comma and Jetlink together.
+* Jetlink v0.8.0: one server on Jetson, Mac, Linux PC, iPhone and Android. Update the comma and Jetlink together.
 * Losing the big model no longer disengages. A 5 s "Big model lost, small model driving" warning shows and the small model keeps driving.
 * A big model that is only a little slow (an iPhone that has warmed up) now hands back the same way, instead of disengaging with "Driving Model Lagging".
+* Direct USB-C to USB-C cables (iPad, iPhone) should connect without a hub.
 * The big model swaps in only while nothing is engaged, MADS included. "Big Model Active" chimes when you can engage again.
 * The torque tune follows the model that is steering and swaps after half a second of inactive steering, so a hand-back no longer steps the torque.
 * Fixed "Driving Model Lagging" for several seconds after a model switch.
@@ -18,6 +19,7 @@ zoompilot vUNRELEASED
 * The torque bar and lane-line colour now reach their limits where the EPS does.
 * Older Mazdas and the 2012-16 CX-5 steer on their stock EPS; older EPS firmware keeps the 45 kph floor.
 * The dash "hands on wheel" warning mirrors zoompilot's alert while it steers.
+* 2022 CX-5: friction seeds refit from the learner, higher through 63 mph.
 
 **Curve speed (Mazda)**
 * Curves are planned on the whole model path with a tracking servo: braking starts earlier and lands softer. The decel overshoot toggle is gone.
@@ -30,6 +32,7 @@ zoompilot vUNRELEASED
 * **NZ & AUS:** zoompilot set speeds now match the dash and speed limit displays.
 * **Sunnylink:** Fixed backup/restore reading garbage setting names.
 * **Upstream sunnypilot:** Added refresh/clear-cache buttons, fixed Models UI freezing, and fixed camera offset.
+* **Wheel Cancel:** zoompilot no longer sends its own cancel while the car is cancelling, which could turn cruise main off.
 
 **TJA Button Mazdas**
 * Fixed steering deactivating after a TJA press.
@@ -41,6 +44,7 @@ zoompilot vUNRELEASED
 * **ICBM & Speed Limit Assist:** When ICBM is on, the limit is applied by changing the cruise set speed. When ICBM is off, you're prompted to set 80 mph and the limit is handled internally.
 * **Auto High Beams:** Restored functionality.
 * **Distance Controls:** Both follow distance buttons now work for driving personality (closer = aggressive, farther = relaxed).
+* **Auto Hold off:** Fixed stops not releasing or resuming with Auto Hold off.
 
 zoompilot v2026.09.12-14
 ========================
