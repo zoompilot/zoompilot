@@ -10,7 +10,6 @@ from enum import IntEnum
 import pyray as rl
 from openpilot.selfdrive.ui.layouts.settings import settings as OP
 from openpilot.selfdrive.ui.layouts.settings.firehose import FirehoseLayout
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import AlphaLongitudinalLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.developer import DeveloperLayoutSP
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.device import DeviceLayoutSP
@@ -51,13 +50,12 @@ OP.PanelType = IntEnum(  # type: ignore[assignment] # ty: ignore[invalid-assignm
     "NAVIGATION",
     "TRIPS",
     "VEHICLE",
-    "ALPHA_LONGITUDINAL",
   ],
   start=0,
 )
 
-# where the home screen's experimental mode button opens settings
-EXPERIMENTAL_MODE_PANEL = OP.PanelType.ALPHA_LONGITUDINAL
+# where the home screen's experimental mode button opens settings: Alpha Longitudinal heads Cruise
+EXPERIMENTAL_MODE_PANEL = OP.PanelType.CRUISE
 
 
 @dataclass
@@ -121,8 +119,6 @@ class SettingsLayoutSP(OP.SettingsLayout):
       OP.PanelType.SOFTWARE: PanelInfo(tr_noop("Software"), SoftwareLayoutSP(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_software.png"),
       OP.PanelType.MODELS: PanelInfo(tr_noop("Models"), ModelsLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_models.png"),
       OP.PanelType.STEERING: PanelInfo(tr_noop("Steering"), SteeringLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_lateral.png"),
-      # the full name does not fit the 500 px sidebar
-      OP.PanelType.ALPHA_LONGITUDINAL: PanelInfo(tr_noop("Alpha Long"), AlphaLongitudinalLayout(), icon="icons/experimental_white.png"),
       OP.PanelType.CRUISE: PanelInfo(tr_noop("Cruise"), CruiseLayout(), icon="icons/speed_limit.png"),
       OP.PanelType.VISUALS: PanelInfo(tr_noop("Visuals"), VisualsLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_visuals.png"),
       OP.PanelType.DISPLAY: PanelInfo(tr_noop("Display"), DisplayLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_display.png"),

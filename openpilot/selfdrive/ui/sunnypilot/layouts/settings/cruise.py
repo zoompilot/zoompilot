@@ -6,7 +6,9 @@ See the LICENSE.md file in the root directory for more details.
 """
 from enum import IntEnum
 
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.alpha_longitudinal_settings import AlphaLongitudinalSettingsLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
+from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import alpha_longitudinal_reachable, longitudinal_mode_labels
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable, icbm_moves_speed_limits
 from openpilot.system.ui.lib.multilang import tr, tr_noop
@@ -19,6 +21,7 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 class PanelType(IntEnum):
   CRUISE = 0
   SLA = 1
+  ALPHA_LONGITUDINAL = 2
 
 
 ICBM_DESC = tr_noop("When enabled, zoompilot will attempt to manage the built-in cruise control buttons " +
@@ -38,11 +41,18 @@ class CruiseLayout(Widget):
     super().__init__()
     self._current_panel = PanelType.CRUISE
     self._speed_limit_layout = SpeedLimitSettingsLayout(lambda: self._set_current_panel(PanelType.CRUISE))
+    self._alpha_long_layout = AlphaLongitudinalSettingsLayout(lambda: self._set_current_panel(PanelType.CRUISE))
 
     items = self._initialize_items()
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
+
+    self.alpha_long_button = simple_button_item_sp(
+      button_text=lambda: tr("Alpha Longitudinal"),
+      button_width=800,
+      callback=lambda: self._set_current_panel(PanelType.ALPHA_LONGITUDINAL)
+    )
 
     self.icbm_toggle = toggle_item_sp(
       title=tr("Intelligent Cruise Button Management (ICBM) (Alpha)"),
@@ -85,6 +95,7 @@ class CruiseLayout(Widget):
     )
 
     items = [
+      self.alpha_long_button,
       self.icbm_toggle,
       self.scc_v_toggle,
       self.scc_m_toggle,
@@ -98,6 +109,8 @@ class CruiseLayout(Widget):
   def _render(self, rect):
     if self._current_panel == PanelType.SLA:
       self._speed_limit_layout.render(rect)
+    elif self._current_panel == PanelType.ALPHA_LONGITUDINAL:
+      self._alpha_long_layout.render(rect)
     else:
       self._scroller.render(rect)
 
@@ -111,6 +124,8 @@ class CruiseLayout(Widget):
     self._current_panel = panel
     if panel == PanelType.SLA:
       self._speed_limit_layout.show_event()
+    elif panel == PanelType.ALPHA_LONGITUDINAL:
+      self._alpha_long_layout.show_event()
 
   def _update_state(self):
     super()._update_state()
@@ -140,6 +155,8 @@ class CruiseLayout(Widget):
 
       icbm_sla = icbm_moves_speed_limits(has_long, has_icbm, ui_state.speed_limit_mode)
       self.sla_settings_button.set_right_value(tr("icbm") if icbm_sla else "", style.GREEN)
+      self.alpha_long_button.action_item.set_enabled(alpha_longitudinal_reachable(ui_state))
+      self.alpha_long_button.set_right_value(", ".join(longitudinal_mode_labels(ui_state)), style.GREEN)
 
       if has_long or has_icbm:
         self.custom_acc_toggle.action_item.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and ui_state.is_offroad())

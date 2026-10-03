@@ -3,7 +3,7 @@
 Code: `openpilot/sunnypilot/selfdrive/controls/lib/e2e_set_speed/controller.py`, called from
 one hook after the e2e candidate in `openpilot/selfdrive/controls/lib/longitudinal_planner.py`
 through `LongitudinalPlannerSP.update_e2e_target`. Toggle "Set Speed Nudge" (`ExperimentalModeSetSpeed`), off
-by default, in the Alpha Longitudinal settings panel (tizi, mici, sunnylink), greyed while Dynamic
+by default, under Cruise > Alpha Longitudinal (tizi, mici, sunnylink), greyed while Dynamic
 Experimental Control is on. Logged in
 `longitudinalPlanSP.zoompilot.e2eSetSpeed`. Tests: `e2e_set_speed/tests/`. Tool:
 `tools/mazda_long/e2e_set_speed_replay.py`.

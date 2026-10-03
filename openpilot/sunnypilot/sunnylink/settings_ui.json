@@ -634,16 +634,16 @@
       ]
     },
     {
-      "id": "alpha_longitudinal",
-      "label": "Alpha Longitudinal",
+      "id": "cruise",
+      "label": "Cruise",
       "icon": "cruise_control",
       "order": 2,
       "remote_configurable": true,
-      "description": "Alpha longitudinal control and the modes that run on it",
+      "description": "Longitudinal control, speed limits, and cruise behavior",
       "sections": [
         {
           "id": "alpha_longitudinal",
-          "title": "",
+          "title": "Alpha Longitudinal",
           "description": "",
           "items": [
             {
@@ -736,17 +736,7 @@
               ]
             }
           ]
-        }
-      ]
-    },
-    {
-      "id": "cruise",
-      "label": "Cruise",
-      "icon": "cruise_control",
-      "order": 2,
-      "remote_configurable": true,
-      "description": "Longitudinal control, speed limits, and cruise behavior",
-      "sections": [
+        },
         {
           "id": "core_cruise_features",
           "title": "",

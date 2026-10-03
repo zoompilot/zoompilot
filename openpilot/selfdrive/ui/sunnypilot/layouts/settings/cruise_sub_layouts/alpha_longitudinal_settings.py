@@ -4,10 +4,13 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Alpha Longitudinal: the alpha switch and the modes that run on openpilot longitudinal control,
-in one panel. Toggles and Developer drop their copies of the first two (TogglesLayoutSP,
+Cruise > Alpha Longitudinal: the alpha switch and the modes that run on openpilot longitudinal
+control. Toggles and Developer drop their copies of the first two (TogglesLayoutSP,
 DeveloperLayoutSP) so each switch appears once.
 """
+from collections.abc import Callable
+
+import pyray as rl
 from openpilot.selfdrive.ui.layouts.settings.developer import DESCRIPTIONS as DEVELOPER_DESCRIPTIONS
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
@@ -15,6 +18,7 @@ from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp
 from openpilot.system.ui.widgets import DialogResult, Widget
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
+from openpilot.system.ui.widgets.network import NavButton
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 
 # upstream's Toggles text (layouts/settings/toggles.py), shown again in the confirm dialog
@@ -31,9 +35,11 @@ EXPERIMENTAL_MODE_DESCRIPTION = tr_noop(
 )
 
 
-class AlphaLongitudinalLayout(Widget):
-  def __init__(self):
+class AlphaLongitudinalSettingsLayout(Widget):
+  def __init__(self, back_btn_callback: Callable):
     super().__init__()
+    self._back_button = NavButton(tr("Back"))
+    self._back_button.set_click_callback(back_btn_callback)
 
     self._alpha_long_toggle = toggle_item_sp(
       title=lambda: tr("sunnypilot Longitudinal Control (Alpha)"),
@@ -85,7 +91,10 @@ class AlphaLongitudinalLayout(Widget):
     self._set_speed_toggle.action_item.set_enabled(has_long and not self._dec_toggle.action_item.get_state())
 
   def _render(self, rect):
-    self._scroller.render(rect)
+    self._back_button.set_position(self._rect.x, self._rect.y + 20)
+    self._back_button.render()
+    content_rect = rl.Rectangle(rect.x, rect.y + self._back_button.rect.height + 40, rect.width, rect.height - self._back_button.rect.height - 40)
+    self._scroller.render(content_rect)
 
   def _refresh(self):
     for key, item in self._refresh_toggles:

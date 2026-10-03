@@ -4,7 +4,7 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-The tizi (comma three / 3X) settings: the Alpha Longitudinal panel owns the alpha switch
+The tizi (comma three / 3X) settings: Cruise > Alpha Longitudinal owns the alpha switch
 (offroad-only, no status line) and experimental mode, which Developer and Toggles no longer
 show. Its own module: the big UI is chosen at import, so it cannot share a window with the mici
 tests.
@@ -31,9 +31,9 @@ def gui():
 
 
 def test_alpha_toggle_is_offroad_only(params, monkeypatch):
-  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import AlphaLongitudinalLayout
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.alpha_longitudinal_settings import AlphaLongitudinalSettingsLayout
   from openpilot.selfdrive.ui.ui_state import ui_state
-  layout = AlphaLongitudinalLayout()
+  layout = AlphaLongitudinalSettingsLayout(lambda: None)
   monkeypatch.setattr(ui_state, "started", True)
   assert not layout._alpha_long_toggle.action_item.enabled
   monkeypatch.setattr(ui_state, "started", False)
@@ -41,7 +41,7 @@ def test_alpha_toggle_is_offroad_only(params, monkeypatch):
 
 
 def test_moved_switches_appear_once(params):
-  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import AlphaLongitudinalLayout
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.alpha_longitudinal_settings import AlphaLongitudinalSettingsLayout
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.developer import DeveloperLayoutSP
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.toggles import TogglesLayoutSP
@@ -51,24 +51,37 @@ def test_moved_switches_appear_once(params):
   assert not toggles._toggles["ExperimentalMode"].is_visible
   assert not hasattr(CruiseLayout(), "dec_toggle")
 
-  alpha = AlphaLongitudinalLayout()
+  alpha = AlphaLongitudinalSettingsLayout(lambda: None)
   assert [key for key, _ in alpha._refresh_toggles] == [
     "AlphaLongitudinalEnabled", "ExperimentalMode", "DynamicExperimentalControl", "ExperimentalModeSetSpeed"]
 
 
-def test_panel_order(params):
-  from openpilot.selfdrive.ui.layouts.settings import settings as OP
-  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.settings import SettingsLayoutSP
+def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
+  from opendbc.car.structs import car
+  from openpilot.cereal import custom
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout, PanelType
+  from openpilot.selfdrive.ui.ui_state import ui_state
 
-  panels = list(SettingsLayoutSP()._panels)
-  assert panels.index(OP.PanelType.ALPHA_LONGITUDINAL) == panels.index(OP.PanelType.CRUISE) - 1
+  monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=True))
+  monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
+  monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
+  monkeypatch.setattr(ui_state, "experimental_mode", True)
+  params.put_bool("ExperimentalModeSetSpeed", True, block=True)
+  cruise = CruiseLayout()
+  assert cruise._scroller._items[0] is cruise.alpha_long_button
+  cruise._update_state()
+  assert cruise.alpha_long_button.right_value == "experimental, nudge"
+
+  cruise.alpha_long_button.action_item.button_action._click_callback()
+  assert cruise._current_panel == PanelType.ALPHA_LONGITUDINAL
+  params.remove("ExperimentalModeSetSpeed")
 
 
 def test_experimental_mode_text_matches_upstream(params, monkeypatch):
   # upstream writes this text inline in TogglesLayout._update_toggles; the panel keeps a copy
   from opendbc.car.structs import car
   from openpilot.selfdrive.ui.layouts.settings.toggles import TogglesLayout
-  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import EXPERIMENTAL_MODE_DESCRIPTION
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.alpha_longitudinal_settings import EXPERIMENTAL_MODE_DESCRIPTION
   from openpilot.selfdrive.ui.ui_state import ui_state
 
   monkeypatch.setattr(ui_state, "update_params", lambda: None)
@@ -81,12 +94,12 @@ def test_experimental_mode_text_matches_upstream(params, monkeypatch):
 
 def test_set_speed_greys_out_under_dec(params, monkeypatch):
   from opendbc.car.structs import car
-  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal import AlphaLongitudinalLayout
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.alpha_longitudinal_settings import AlphaLongitudinalSettingsLayout
   from openpilot.selfdrive.ui.ui_state import ui_state
 
   monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=True))
   monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
-  layout = AlphaLongitudinalLayout()
+  layout = AlphaLongitudinalSettingsLayout(lambda: None)
   layout._dec_toggle.action_item.set_state(False)
   layout._update_state()
   assert layout._set_speed_toggle.action_item.enabled

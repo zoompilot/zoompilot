@@ -1040,7 +1040,7 @@ class TestAlphaLongSwitchMici:
 
 
 class TestAlphaLongitudinalPanelMici:
-  """The alpha switch, experimental mode, DEC and the set-speed floor live in one panel, once."""
+  """The alpha switch, experimental mode, DEC and the set speed nudge live under Cruise, once."""
 
   def test_moved_switches_appear_once(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
@@ -1057,22 +1057,50 @@ class TestAlphaLongitudinalPanelMici:
     assert [key for key, _ in alpha._refresh_toggles] == [
       "AlphaLongitudinalEnabled", "ExperimentalMode", "DynamicExperimentalControl", "ExperimentalModeSetSpeed"]
 
-  def test_settings_opens_the_moved_panels(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
+  def test_settings_opens_the_sp_panels(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.settings import SettingsLayoutSP
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.toggles import TogglesLayoutMiciSP
     from openpilot.system.ui.lib.application import gui_app
 
     buttons = {btn.get_text(): btn for btn in SettingsLayoutSP()._scroller.items if hasattr(btn, "get_text")}
-    assert list(buttons).index("alpha long") == list(buttons).index("cruise") - 1
-
     pushed = []
     monkeypatch.setattr(gui_app, "push_widget", lambda w: pushed.append(w))
-    for label, cls in (("alpha long", AlphaLongitudinalLayoutMici), ("toggles", TogglesLayoutMiciSP),
-                       ("developer", DeveloperLayoutMiciSP)):
+    for label, cls in (("toggles", TogglesLayoutMiciSP), ("developer", DeveloperLayoutMiciSP)):
       buttons[label]._click_callback()
       assert type(pushed[-1]) is cls
+
+  @pytest.mark.parametrize(("has_long", "badges"), [
+    (True, ["experimental", "nudge"]),
+    (False, None),  # alpha off: a grey "disabled" pill
+  ])
+  def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, badges):
+    from opendbc.car.structs import car
+    from openpilot.cereal import custom
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    from openpilot.system.ui.lib.application import gui_app
+
+    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=has_long))
+    monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
+    monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
+    monkeypatch.setattr(ui_state, "experimental_mode", True)
+    params.put_bool("ExperimentalModeSetSpeed", True, block=True)
+    try:
+      cruise = CruiseLayoutMici()
+      render(cruise)
+      btn = cruise._scroller.items[0]
+      assert btn is cruise._alpha_long_btn
+      assert btn._badge_labels == (badges or ["disabled"])
+      assert btn._disabled == (badges is None)
+
+      pushed = []
+      monkeypatch.setattr(gui_app, "push_widget", lambda w: pushed.append(w))
+      btn._click_callback()
+      assert type(pushed[-1]) is AlphaLongitudinalLayoutMici
+    finally:
+      params.remove("ExperimentalModeSetSpeed")
 
   def test_experimental_mode_waits_for_confirmation(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts import alpha_longitudinal

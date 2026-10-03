@@ -4,8 +4,8 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Alpha longitudinal: the alpha switch and the modes that run on openpilot longitudinal control,
-in one panel. Toggles and Developer drop their copies of the first two (TogglesLayoutMiciSP,
+Cruise > alpha longitudinal: the alpha switch and the modes that run on openpilot longitudinal
+control. Toggles and Developer drop their copies of the first two (TogglesLayoutMiciSP,
 DeveloperLayoutMiciSP) so each switch appears once.
 """
 from openpilot.selfdrive.ui.mici.layouts.settings.developer import AlphaLongConfirmPage
