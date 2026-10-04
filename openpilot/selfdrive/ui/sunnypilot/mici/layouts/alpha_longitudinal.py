@@ -29,8 +29,8 @@ class AlphaLongitudinalLayoutMici(NavScroller):
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ExperimentalMode", self._experimental_toggle),
-      ("DynamicExperimentalControl", self._dec_toggle),
       ("ExperimentalModeSetSpeed", self._set_speed_toggle),
+      ("DynamicExperimentalControl", self._dec_toggle),
     )
     self._scroller.add_widgets([item for _, item in self._refresh_toggles])
 

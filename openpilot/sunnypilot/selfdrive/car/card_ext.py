@@ -39,6 +39,8 @@ class CardExt:
     CS_SP.zoompilot.stockEcu = str(self.stock_ecu_state)
     # a second, opposite-direction distance button, on the brands whose carstate exposes one
     CS_SP.zoompilot.distanceFarther = bool(getattr(self.car_state, "distance_more_button", 0))
+    # the EPS re-arming after the car's lane keep came back on, on the brands that track it
+    CS_SP.zoompilot.lkasArming = bool(getattr(self.car_state, "lkas_arming", False))
 
   @property
   def stock_ecu_state(self) -> StockEcuState:

@@ -262,6 +262,56 @@ from. The speed is read once, when the alert arms, so a car accelerating out of 
 never lets go still gets told (route 00000148 crossed 5.9 to 7.6 m/s with zero delivery), while
 one hovering at the threshold does not flicker.
 
+## The car's own lane keep switched off (built 2026-10-03, on-car pending)
+
+The EPS applies no LKAS torque while the car's lane keep is off, so with MADS on that state is
+`stockLkasOff` (from `invalidLkasSetting`: CAM_SETTINGS both intervention bits clear, or
+CAM_LANEINFO LANE_LINES 0). On a CX-5 2022 the LAS switch is the LANE_LINES path: every one of
+16 edges on routes 0000024d, 00000251 and 0000027c came 0.02 to 0.05 s after a press on 0x9e
+MSG_05 byte 1 bit 0, and across 66 h of drives LANE_LINES never read 0 without such a press or
+without ERR_BIT (faded lanes read 1). The CAM_SETTINGS path is the one route 00000105 showed,
+toggled by the wheel's TJA button.
+
+**It pauses lateral, it does not disable it.** The first build (2026-09-25) disabled MADS. The
+panda then dropped its own lateral three heartbeats later (`mads_heartbeat_engaged_check`, fed
+`selfdriveStateSP.mads.enabled`) and only re-arms on an ACC main, MADS button or cruise-engage
+rising edge, so a software resume would be refused and the only way back was a cruise cycle.
+Now `mads.py update_stock_lkas` pauses an enabled MADS (`silentLkasDisable`), cruise engaged or
+not. MADS stays enabled, the panda keeps lateral allowed, and `stockLkasOff` sits in
+`GEARS_ALLOW_PAUSED_SILENT`, which blocks the paused state's silent resume while it holds. LKA
+back on clears it and the paused state resumes on its own, with no cruise cycle and no button. A
+request for lateral while LKA is off (MADS button, main-on, unified engagement) enters paused the
+same way and is refused aloud ("Lateral Disabled / LKAS is off"), so it starts when LKA does. A
+disable in the same frame (the MADS button, main off, the brake under disengage-on-brake) wins
+over the pause, and so does a later one, because a paused MADS is still enabled.
+
+**Telling the driver.** mici shows a standing "Lateral Disabled / LKAS is off" alert (PERMANENT,
+`Priority.LOW`, silent) for as long as LKA is off. tizi has no alert: its border already shows
+lateral off. MADS publishes the hold as `selfdriveStateSP.mads.lateralHeld` and
+`UIStateSP.update_status` reads it as MADS off, so the border (and mici's status dot) stays
+purple under cruise and blue without, not the override grey of a brake pause.
+
+**The EPS re-arms.** When LKA comes back on, the EPS holds LKAS_BLOCK with TRACK_STATE (byte 6
+0x14) for 3.00 to 3.08 s from the edge, then takes torque 0.02 to 0.38 s later. That is 7 edges:
+routes 0000024d and 00000105, plus the camera's ERR recovery on 00000043, which re-arms the same
+way. The timer ran with a zero request (0000024d, latched through it) and was not restarted by a
+second edge inside it. An ordinary engagement at speed has no such block: 1 of 41 first
+engagements above 15 m/s had one, and delivery took a 0.05 s median.
+
+Carstate's `lkas_arming` is set on the edge and ends when the block reads clear at
+`LKAS_REARM_T` (3.0 s) or later, or when the EPS delivers anything sooner. A clear block before
+3 s is only the gap before the block rises (00000105: clear while off, set 0.02 s after the
+edge). Delivery alone would be a poor end, because the EPS rounds requests under
+`STEER_UNDELIVERED_MIN` to nothing on a straight road. Card publishes the flag as
+`CarStateZP.lkasArming`. While MADS is enabled it raises `stockLkasArming`, which on mici is
+"Lateral Disabled / Waiting for steering", and `lateralHeld` stays set until it clears. Lateral itself resumes at the edge, because the EPS only lifts the block with our frames
+reaching it. While openpilot was not steering, the block stayed up (0x04) until it did, or until
+the camera read LANE_LINES 2. Through the re-arm the 2022 latch zeroes the request and stays
+silent (TRACK_STATE). The older EPS reports LKAS_BLOCK at road speed as `steerFaultTemporary`,
+a soft disable that would cost MADS the lateral it is handing back, so `steerFaultTemporary` is
+held false for `LKAS_REARM_FAULT_T` (4 s) from the edge. After that, a block is a fault again.
+The older EPS's re-arm is not in the corpus.
+
 ## LKAS_FAULT and the camera's ERR_BIT_1
 
 The camera's ERR_BIT_1 ("LKAS Fault: Restart the Car", the cluster's "Front Camera Sensor System
@@ -362,8 +412,8 @@ route 7c735af5fce56485/00000105 (2026-09-12) drove with CAM_SETTINGS `LKAS_INERV
 after the controller pressed the camera's button, and the EPS applied none of our request with
 no block and no fault. openpilot now never writes CRZ_BTNS on bus 2 (the panda refuses it), and
 the setting is read into `invalidLkasSetting` (both intervention bits clear, or LANE_LINES 0).
-With MADS on that refuses lateral only (`stockLkasOff`); with MADS off it stays upstream's
-whole-system no-entry. The design below is kept as history.
+With MADS on that holds lateral only (`stockLkasOff`, paused until LKA is back: "The car's own
+lane keep switched off" above); with MADS off it stays upstream's whole-system no-entry. The design below is kept as history.
 
 **1. Camera press on bus 2** (`CarController.update_camera_tja`, opendbc b697d69be6, removed). Carstate
 reads `stock_tja` live off the parsed 0x440 (0 when the camera is stale, never latched: the

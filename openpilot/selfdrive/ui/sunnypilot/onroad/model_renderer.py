@@ -24,7 +24,7 @@ class ModelRendererSP:
     if sm.valid["selfdriveStateSP"]:
       mads = sm["selfdriveStateSP"].mads
       if mads.available:
-        return mads.enabled and mads.state != MADSState.paused
+        return mads.enabled and mads.state != MADSState.paused and not mads.lateralHeld
     return ui_state.status in (UIStatus.ENGAGED, UIStatus.LAT_ONLY)
 
   def _get_path_half_width(self) -> float:

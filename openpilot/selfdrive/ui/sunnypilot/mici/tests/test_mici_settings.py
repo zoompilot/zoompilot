@@ -638,10 +638,10 @@ class TestAcceleratorProgressRenders:
 
   STAGES = ['download', 'connect', 'upload', 'build', 'failed']
 
-  def _info(self, stage, frac):
+  def _info(self, stage, frac, msg='', drops=0, mode='usb'):
     from openpilot.selfdrive.ui.ui_state import ui_state
     saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, progress={'stage': stage, 'frac': frac, 'msg': ''})
+    ui_state.jetlink = jetlink_status(present=True, mode=mode, progress={'stage': stage, 'frac': frac, 'msg': msg, 'drops': drops})
     try:
       from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
       return _model_info()
@@ -657,19 +657,17 @@ class TestAcceleratorProgressRenders:
     _, _, info = self._info('download', 0.42)
     assert '42%' in info
 
-  def test_a_message_is_shown_instead_of_a_percentage_that_means_nothing(self, params):
+  @pytest.mark.parametrize("stage, frac, msg, drops, mode, shown", [
     # a join has nothing to measure, and "getting ready" alone does not separate an
     # unplugged Jetson from one six seconds from ready
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, progress={'stage': 'connect', 'frac': 0.0, 'msg': 'waiting for the accelerator'})
-    try:
-      from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
-      _, _, info = _model_info()
-    finally:
-      ui_state.jetlink = saved
-    assert 'waiting for the accelerator' in info
-    assert '%' not in info
+    ('connect', 0.0, 'waiting for jetlink', 0, 'usb', 'waiting for jetlink'),
+    ('download', 0.45, 'downloading', 0, 'usb', 'downloading 45%'),
+    # jetlink counts the drops; the card names the cable, and on iOS the phone app too
+    ('connect', 0.0, 'reconnecting', 2, 'usb', 'reconnecting, check cable (2 drops)'),
+    ('connect', 0.0, 'waiting for jetlink', 3, 'ios', 'waiting for jetlink, check cable or app (3 drops)'),
+  ])
+  def test_the_line_is_jetlinks_message(self, params, stage, frac, msg, drops, mode, shown):
+    assert self._info(stage, frac, msg, drops, mode)[2] == shown
 
   def test_failure_says_so_rather_than_showing_100_percent(self, params):
     _, _, info = self._info('failed', 1.0)
@@ -858,7 +856,7 @@ class TestAcceleratorLinkToggle:
     params.remove(self.PARAM)
     toggle = AcceleratorLinkToggle()
     assert toggle.get_value() == "off"
-    for index, value in enumerate(("off", "usb: mac, linux", "iOS: iPhone, iPad")):
+    for index, value in enumerate(("off", "usb", "iOS")):
       params.put(self.PARAM, index, block=True)
       toggle.refresh()
       assert toggle.get_value() == value
@@ -1040,7 +1038,7 @@ class TestAlphaLongSwitchMici:
 
 
 class TestAlphaLongitudinalPanelMici:
-  """The alpha switch, experimental mode, DEC and speed assist live under Cruise, once."""
+  """The alpha switch, experimental mode, speed assist and DEC live under Cruise, once."""
 
   def test_moved_switches_appear_once(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
@@ -1055,7 +1053,7 @@ class TestAlphaLongitudinalPanelMici:
 
     alpha = AlphaLongitudinalLayoutMici()
     assert [key for key, _ in alpha._refresh_toggles] == [
-      "AlphaLongitudinalEnabled", "ExperimentalMode", "DynamicExperimentalControl", "ExperimentalModeSetSpeed"]
+      "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed", "DynamicExperimentalControl"]
 
   def test_settings_opens_the_sp_panels(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
@@ -1071,7 +1069,7 @@ class TestAlphaLongitudinalPanelMici:
       assert type(pushed[-1]) is cls
 
   @pytest.mark.parametrize(("has_long", "badges"), [
-    (True, ["experimental", "speed assist"]),
+    (True, ["exp.", "speed assist"]),
     (False, None),  # alpha off: a grey "disabled" pill
   ])
   def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, badges):

@@ -34,7 +34,7 @@ class AlphaLongitudinalToggles:
   """Not a panel: CruiseLayout lists `items` in its own scroller and drives the two hooks."""
   def __init__(self):
     self._alpha_long_toggle = toggle_item_sp(
-      title=lambda: tr("sunnypilot Longitudinal Control (Alpha)"),
+      title=lambda: tr("Alpha Longitudinal"),
       description=lambda: tr(DEVELOPER_DESCRIPTIONS["alpha_longitudinal"]),
       callback=self._on_alpha_long,
       enabled=ui_state.is_offroad)
@@ -45,7 +45,7 @@ class AlphaLongitudinalToggles:
       callback=self._on_experimental_mode)
 
     self._dec_toggle = toggle_item_sp(
-      title=lambda: tr("Enable Dynamic Experimental Control"),
+      title=lambda: tr("Dynamic Experimental Control"),
       description=lambda: tr("Enable toggle to allow the model to determine when to use zoompilot ACC or zoompilot End to End Longitudinal."),
       param="DynamicExperimentalControl")
 
@@ -58,8 +58,8 @@ class AlphaLongitudinalToggles:
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ExperimentalMode", self._experimental_toggle),
-      ("DynamicExperimentalControl", self._dec_toggle),
       ("ExperimentalModeSetSpeed", self._set_speed_toggle),
+      ("DynamicExperimentalControl", self._dec_toggle),
     )
     self.items = [item for _, item in self._refresh_toggles]
 

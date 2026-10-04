@@ -54,7 +54,7 @@ class UIStateSP:
     # jetlink's snapshot (jetlink.openpilot.Status) from the params pass; None
     # with a chestnut fitted or no jetlink on this device
     self.jetlink = None
-    # the Accelerator Link holds the USB port, so ADB is off and its toggle greyed out
+    # Jetlink holds the USB port, so ADB is off and its toggle greyed out
     self.adb_blocked: bool = False
     self._accelerator_state_name: str = 'none'
     self.blindspot: bool = False
@@ -154,6 +154,8 @@ class UIStateSP:
     state = ss.state
     mads = ss_sp.mads
     mads_state = mads.state
+    # held by the car's own lane keep (mads.py update_stock_lkas): reads as lateral off
+    mads_enabled = mads.enabled and not mads.lateralHeld
 
     if state == OpenpilotState.preEnabled:
       return "override"
@@ -165,20 +167,20 @@ class UIStateSP:
       if any(e.overrideLongitudinal for e in onroad_evt):
         return "override"
 
-    if mads_state in (MADSState.paused, MADSState.overriding):
+    if mads_state in (MADSState.paused, MADSState.overriding) and not mads.lateralHeld:
       return "override"
 
     # MADS specific statuses
     if not mads.available:
       return "engaged" if ss.enabled else "disengaged"
 
-    if not mads.enabled and not ss.enabled:
+    if not mads_enabled and not ss.enabled:
       return "disengaged"
 
-    if mads.enabled and ss.enabled:
+    if mads_enabled and ss.enabled:
       return "engaged"
 
-    if mads.enabled:
+    if mads_enabled:
       return "lat_only"
 
     if ss.enabled:
@@ -285,7 +287,7 @@ class UIStateSP:
       self.has_icbm = False
 
   def _enforce_usb_port(self) -> None:
-    """ADB and the Accelerator Link both need the comma's USB port: the link
+    """ADB and Jetlink both need the comma's USB port: the link
     on turns ADB off, and the developer panels grey its toggle out. Here, not
     in the panels, so a link set from sunnylink counts too. jetlink's owner
     retries the port in seconds while ADB's gadget still holds it."""

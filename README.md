@@ -48,7 +48,7 @@ The CX-5 keeps its factory cruise; zoompilot can set the speed for you by 'press
 
 - **Fixed ICBM.** sunnypilot's Intelligent-Cruise-Button-Management and Smart-Cruise are broken for Mazda. I rebuilt how zoompilot works your wheel buttons. The speed you dial is remembered exactly: curves and speed limits can borrow it for a while, but you get your number back, never one or two under it. If the car misses a press, it quietly catches up.
 - **Speed-limit assist that sticks.** When the car sees a new limit, the screen asks once. Tap minus to accept a lower one and zoompilot dials the car down for you. It used to forget your answer a moment later; now it holds until the road changes. Press plus while it has you at a limit and it steps aside until the next sign. Your buttons always win.
-- **Smart Cruise.** A sunnypilot feature that reduces your set speed before a curve in the road and sets it back after. You can use vision or downloaded maps to determine when to slow down. Enable it in the cruise settings menu.
+- **Slow for Curves.** sunnypilot's Smart Cruise: it reduces your set speed before a curve in the road and sets it back after. You can use vision or downloaded maps to determine when to slow down. Enable it in the cruise settings menu.
 - **Deceleration overshoot.** The Mazda's cruise control brakes according to how far the set speed sits below the car's speed, so for a curve zoompilot holds the set speed the measured gap below your actual speed that gives the braking the curve needs, then lands it on the curve's speed. Always on for Mazda; no setting.
 
 ## additional Mazdas covered
@@ -65,7 +65,7 @@ Not just the CX-5.
 3. Under steering: turn on torque control, then self-tune, then speed-dependent self-tune.
 4. Leave custom tune and manual real-time off. Let the car teach the software. That's the point.
 
-Want to slow down for curves? Under cruise, turn on intelligent cruise button management, then pick smart cruise vision, maps, or both. Maps need a region downloaded through SunnyLink first.
+Want to slow down for curves? Under cruise, turn on intelligent cruise button management, then turn on slow for curves: vision, map, or both. Maps need a region downloaded through SunnyLink first.
 
 You can manage almost all of it from the device screen. No laptop, no cloud editor. SunnyLink still works if you like it.
 

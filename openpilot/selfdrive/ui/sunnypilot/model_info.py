@@ -13,6 +13,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state, ChestnutState
 from openpilot.sunnypilot.models.fetcher import get_cached_bundles
 from openpilot.sunnypilot.models.helpers import get_active_source, get_selected_bundle, resolve_bundle_by_ref
 from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL, DEFAULT_MODEL
+from openpilot.system.ui.lib.multilang import tr
 
 
 def model_cache_size_mb() -> float:
@@ -40,7 +41,7 @@ def bundles_for_source(source: str):
 
 def default_model(source: str) -> str:
   """What an empty slot runs. The big slot's is the chestnut's model in the tree
-  when a board is fitted; with none, the slot is the accelerator's, whose
+  when a board is fitted; with none, the slot is jetlink's, whose
   default is its own."""
   if source != 'chestnut':
     return DEFAULT_MODEL
@@ -64,8 +65,9 @@ def big_model_state() -> str | None:
 
 
 def big_model_progress() -> tuple[str, float, str] | None:
-  """(stage, 0..1, message) while an accelerator is working, else None. The message
-  is carried because a stage like "waiting for the accelerator" has no meaningful fraction"""
+  """(stage, 0..1, message) while jetlink is working, else None. The message
+  is carried because a stage like "waiting for jetlink" has no meaningful fraction,
+  and it names the cable once jetlink counts enough link drops to blame it"""
   jetlink = ui_state.jetlink
   progress = jetlink.progress if jetlink is not None else None
   if not progress:
@@ -73,7 +75,12 @@ def big_model_progress() -> tuple[str, float, str] | None:
   stage = str(progress.get('stage', ''))
   if stage in ('', 'ready'):
     return None
-  return stage, float(progress.get('frac', 0.0)), str(progress.get('msg', ''))
+  msg = tr(str(progress.get('msg', '')))
+  if drops := progress.get('drops'):
+    # on iOS the phone app is the other suspect
+    hint = tr("check cable or app") if jetlink.mode == 'ios' else tr("check cable")
+    msg = tr("{}, {} ({} drops)").format(msg, hint, drops)
+  return stage, float(progress.get('frac', 0.0)), msg
 
 
 def carrying_model() -> tuple[str | None, str | None, str | None]:

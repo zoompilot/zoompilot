@@ -22,7 +22,10 @@ def longitudinal_mode_labels(ui_state) -> list[str]:
     return []
   if not ui_state.experimental_mode:
     return [tr("chill")]
+  # beside a second badge experimental is "exp.", so both fit one row under the two-line card title.
   # DEC switches between chill and experimental itself, and speed assist never acts under it
   if ui_state.params.get_bool("DynamicExperimentalControl"):
-    return [tr("experimental"), tr("dec")]
-  return [tr("experimental")] + ([tr("speed assist")] if ui_state.params.get_bool("ExperimentalModeSetSpeed") else [])
+    return [tr("exp."), tr("dynamic")]
+  if ui_state.params.get_bool("ExperimentalModeSetSpeed"):
+    return [tr("exp."), tr("speed assist")]
+  return [tr("experimental")]

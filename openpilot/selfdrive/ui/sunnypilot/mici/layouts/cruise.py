@@ -62,8 +62,8 @@ class CruiseLayoutMici(NavScroller):
     alpha_long_view = AlphaLongitudinalLayoutMici()
     self._alpha_long_btn.set_click_callback(lambda: gui_app.push_widget(alpha_long_view))
     self._icbm_toggle = BigParamControl(tr("intelligent cruise button management"), "IntelligentCruiseButtonManagement")
-    self._scc_v_toggle = BigParamControl(tr("smart cruise vision"), "SmartCruiseControlVision")
-    self._scc_m_toggle = BigParamControl(tr("smart cruise map"), "SmartCruiseControlMap")
+    self._scc_v_toggle = BigParamControl(tr("slow for curves: vision"), "SmartCruiseControlVision")
+    self._scc_m_toggle = BigParamControl(tr("slow for curves: map"), "SmartCruiseControlMap")
     self._custom_acc_btn = BigButtonSP(tr("custom increments"))
     self._speed_limit_btn = BigButtonSP(tr("speed limit"))
 

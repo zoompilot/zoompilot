@@ -24,17 +24,17 @@ from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.scroller import NavScroller
 
 
-# the value line: the mode, and what it is for
-LINK_MODE_LABELS = {"off": "off", "usb": "usb: mac, linux", "ios": "iOS: iPhone, iPad"}
+# the value line: the mode
+LINK_MODE_LABELS = {"off": "off", "usb": "usb", "ios": "iOS"}
 
 
 class AcceleratorLinkToggle(BigMultiToggle):
-  """off, usb, ios, a pill each, and the value line says what the mode is for.
+  """off, usb, ios, a pill each, and the value line names the mode.
   The pills follow the param, not a tap. Locked while onroad and drawn so, like
   the model buttons beside it: jetlink switches the link only parked."""
 
   def __init__(self):
-    super().__init__(tr("accelerator link"), [tr(LINK_MODE_LABELS[m]) for m in LINK_MODES])
+    super().__init__(tr("jetlink"), [tr(LINK_MODE_LABELS[m]) for m in LINK_MODES])
     self._mode = link_mode()
     self._show()
     self.set_enabled(lambda: ui_state.is_offroad())
@@ -78,9 +78,9 @@ def _model_info() -> tuple[str, str, str]:
     stage, frac, msg = provisioning
     if stage == 'failed':
       return active_text, tr("big model"), tr("unavailable")
-    # "waiting for the accelerator" says more than "connect 0%"; no percentage for a stage
+    # "waiting for jetlink" says more than "connect 0%"; no percentage for a stage
     # with nothing to measure
-    detail = tr(msg) if msg else tr(stage)
+    detail = msg or tr(stage)
     return active_text, tr("big model"), f"{detail} {frac * 100:.0f}%" if frac > 0 else detail
   if state == 'failed':
     return active_text, tr("big model"), tr("unavailable")

@@ -2,7 +2,7 @@ zoompilot vUNRELEASED
 ========================
 **jetlink support!**
 * Run big models on a Mac, Jetson, Linux PC, iPhone/iPad or Android <3
-* Settings > Models > Accelerator Link.
+* Settings > Models > Jetlink.
 
 **Mazda steering**
 * Better torque learning at every speed.
@@ -12,12 +12,13 @@ zoompilot vUNRELEASED
 * 2022 CX-5: better default tune up to 63 mph.
 
 **Curve speed (Mazda)**
+* Smart Cruise is now Slow for Curves: Vision and Map.
 * Decel Overshoot replaced by a Mazda tune: less hard braking for highway curves.
 * Smoother curve slowdowns.
 * A speed limit prompt no longer stalls a curve slowdown.
 
 **Fixes**
-* **Lane Keep Off:** dash button turns off steering, keeps cruise.
+* **Lane Keep Off:** dash button turns off steering, keeps cruise. Steering resumes when it's back on.
 * **False alert:** no "Steering Assist Temporarily Unavailable" with lane keep off.
 * **Export Mazdas:** CX-5 and CX-9 JM7 VINs recognised.
 * **NZ & AUS:** set speed matches the dash.
@@ -40,6 +41,7 @@ zoompilot vUNRELEASED
 * Auto high beams fixed.
 * Both distance buttons change personality.
 * Auto Hold off: stops release and resume again.
+* No creeping at a red light after stopping.
 
 zoompilot v2026.09.12-14
 ========================
