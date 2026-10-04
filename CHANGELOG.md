@@ -12,6 +12,7 @@ zoompilot vUNRELEASED
 * 2022 CX-5: better default tune up to 63 mph.
 
 **Curve speed (Mazda)**
+* Smart Cruise is now Slow for Curves: Vision and Map.
 * Decel Overshoot replaced by a Mazda tune: less hard braking for highway curves.
 * Smoother curve slowdowns.
 * A speed limit prompt no longer stalls a curve slowdown.
