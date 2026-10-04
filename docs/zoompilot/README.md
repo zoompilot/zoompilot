@@ -19,6 +19,10 @@ repo.
 - icbm.md: the button servo, actuation profiles, fast mode, restore quiet window
 - e2e-set-speed.md: experimental mode's set-speed floor, the model's lazy pace, trips and their
   separation data, IQ.Pilot's version
+- e2e-lead-gap.md: experimental mode's follow-distance assist, how far back the model follows,
+  its speed-matching behaviour, the lift tied to the MPC candidate
+- lead-forecast.md: the model's lead forecast as the MPC obstacle, forecast accuracy against
+  upstream's extrapolation, the replay A/B and why it is seeded from the log
 - scc-curve-planning.md: the Mazda / upstream planner split, model curvature range bias, the
   whole-path horizon with a per-model near window, the commit hold below 50 mph,
   publish_ramp and the op-long budget, map retain logic and confirmation time
