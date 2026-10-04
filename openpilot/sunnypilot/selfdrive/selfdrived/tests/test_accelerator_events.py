@@ -51,6 +51,29 @@ class AcceleratorEventsTest(OpenpilotTestCase):
     return 6000
 
 
+class TestSettling(AcceleratorEventsTest):
+  """A switch either way is settling for a second: selfdrived holds the comm
+  and localization errors the switch's dropped frames would raise."""
+
+  def test_a_swap_in_settles_for_a_second(self):
+    self.step()
+    self.assertFalse(self.accel.settling)
+    settled = [(self.step(state='running', big=True), self.accel.settling)[1] for _ in range(SWITCHING_TICKS + 5)]
+    self.assertEqual(settled, [True] * SWITCHING_TICKS + [False] * 5)
+
+  def test_a_hand_back_settles_for_a_second(self):
+    self.drive_big()
+    self.assertFalse(self.accel.settling)
+    settled = [(self.step(state='retrying', big=False), self.accel.settling)[1] for _ in range(SWITCHING_TICKS + 5)]
+    self.assertEqual(settled, [True] * SWITCHING_TICKS + [False] * 5)
+
+  def test_settling_is_what_selfdrived_holds_the_errors_on(self):
+    # the gate reads the property, not the switching chime's own counter
+    from openpilot.selfdrive.selfdrived import selfdrived
+    import inspect
+    self.assertIn('self.accelerator_events.settling', inspect.getsource(selfdrived.SelfdriveD.update_events))
+
+
 class TestHandBack(AcceleratorEventsTest):
   def test_event_ordinals(self):
     # logs store the ordinal, and 28-31 shipped before these existed
@@ -107,7 +130,7 @@ class TestHandBack(AcceleratorEventsTest):
     alerts = EVENTS_SP[EventNameSP.bigModelLinkLost]
     self.assertEqual(set(alerts), {ET.WARNING})
     alert = alerts[ET.WARNING]
-    self.assertEqual((alert.alert_text_1, alert.alert_text_2), ("TAKE CONTROL", "Big model lost, small model driving"))
+    self.assertEqual((alert.alert_text_1, alert.alert_text_2), ("Big Model Lost", "Using small model"))
 
 
 class TestHandBackOnTheRealStateMachines(AcceleratorEventsTest):
@@ -143,18 +166,18 @@ class TestHandBackOnTheRealStateMachines(AcceleratorEventsTest):
   def test_engaged_it_stays_engaged_and_warns_for_five_seconds(self):
     main, madsm, shown = self.drive(HANDBACK_TICKS + 100, mads=True)
     self.assertEqual((main, madsm), (State.enabled, MadsState.enabled))
-    self.assertEqual(shown[:HANDBACK_TICKS], ["TAKE CONTROL"] * HANDBACK_TICKS)
+    self.assertEqual(shown[:HANDBACK_TICKS], ["Big Model Lost"] * HANDBACK_TICKS)
     self.assertEqual(set(shown[HANDBACK_TICKS + 1:]), {""})
 
   def test_mads_only_it_keeps_steering_and_warns(self):
     main, madsm, shown = self.drive(HANDBACK_TICKS + 100, enabled=False, mads=True)
     self.assertEqual((main, madsm), (State.disabled, MadsState.enabled))
-    self.assertEqual(shown[:HANDBACK_TICKS], ["TAKE CONTROL"] * HANDBACK_TICKS)
+    self.assertEqual(shown[:HANDBACK_TICKS], ["Big Model Lost"] * HANDBACK_TICKS)
     self.assertEqual(set(shown[HANDBACK_TICKS + 1:]), {""})
 
   def test_a_disengage_clears_it_at_once(self):
     _, _, shown = self.drive(300, mads=True, disengage_at=100)
-    self.assertEqual(set(shown[:100]), {"TAKE CONTROL"})
+    self.assertEqual(set(shown[:100]), {"Big Model Lost"})
     self.assertEqual(set(shown[100:]), {""})
 
 

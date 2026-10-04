@@ -3,6 +3,8 @@ zoompilot vUNRELEASED
 **jetlink support!**
 * Run big models on a Mac, Jetson, Linux PC, iPhone/iPad or Android <3
 * Settings > Models > Jetlink.
+* The big model is offered only once the link has kept up for a second with the small model driving, so a slow or cold link never costs a take-over.
+* A dropped link says **Big Model Lost**, not TAKE CONTROL: the small model drives on.
 
 **Mazda steering**
 * Better torque learning at every speed.
