@@ -11,11 +11,13 @@ from openpilot.selfdrive.car.helpers import convert_carControlSP
 
 
 class TestConvertCarControlSP:
-  def test_capnp_only_substructs_do_not_crash(self):
-    """capnp CarControlSP can carry substructs that have no field on the opendbc dataclass;
-    the converter must drop them instead of passing them as kwargs."""
+  def test_capnp_only_fields_do_not_crash(self):
+    """capnp CarControlSP can carry substructs and fields that have no field on the opendbc
+    dataclass; the converter must drop them instead of passing them as kwargs. 2026-10-04:
+    mads.lateralHeld was one, and card crashed on its first control step of every drive."""
     msg = custom.CarControlSP.new_message()
     msg.mads.enabled = True
+    msg.mads.lateralHeld = True
     msg.leadOne.dRel = 12.5
     struct_dict = {**msg.as_reader().to_dict(), 'capnpOnlySubstruct': {'gain': 0.5}}
 

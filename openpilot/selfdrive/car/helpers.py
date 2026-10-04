@@ -1,4 +1,6 @@
 import capnp
+import dataclasses
+import functools
 from typing import Any
 
 from openpilot.cereal import custom
@@ -48,21 +50,28 @@ def convert_to_capnp(struct: structs.CarParamsSP | structs.CarStateSP) -> capnp.
   return struct_capnp
 
 
+# CarControlSP's sub-structs, converted from their dicts; params stays as to_dict gives it
+CAR_CONTROL_SP_SUBSTRUCTS = {
+  'mads': structs.ModularAssistiveDrivingSystem,
+  'leadOne': structs.LeadData,
+  'leadTwo': structs.LeadData,
+  'intelligentCruiseButtonManagement': structs.IntelligentCruiseButtonManagement,
+}
+
+
+@functools.cache
+def _field_names(cls) -> frozenset[str]:
+  return frozenset(f.name for f in dataclasses.fields(cls))
+
+
+def _build(cls, s: dict):
+  # only the dataclass's own fields: a capnp-only field (deprecated, or one opendbc does not
+  # carry, like mads.lateralHeld) would otherwise be an unexpected kwarg and crash card
+  names = _field_names(cls)
+  return cls(**{k: v for k, v in s.items() if k in names})
+
+
 def convert_carControlSP(struct: capnp.lib.capnp._DynamicStructReader) -> structs.CarControlSP:
-  # TODO: recursively handle any car struct as needed
-  def remove_deprecated(s: dict) -> dict:
-    return {k: v for k, v in s.items() if not k.endswith('DEPRECATED')}
-
   struct_dict = struct.to_dict()
-  # drop sub-structs: the known ones are converted below, capnp-only ones have no dataclass field
-  struct_dataclass = structs.CarControlSP(**remove_deprecated({k: v for k, v in struct_dict.items() if not isinstance(v, dict)}))
-
-  struct_dataclass.mads = structs.ModularAssistiveDrivingSystem(**remove_deprecated(struct_dict.get('mads', {})))
-  # struct_dataclass.params = [structs.CarControlSP.Param(**remove_deprecated(p)) for p in struct_dict.get('params', [])]
-  struct_dataclass.leadOne = structs.LeadData(**remove_deprecated(struct_dict.get('leadOne', {})))
-  struct_dataclass.leadTwo = structs.LeadData(**remove_deprecated(struct_dict.get('leadTwo', {})))
-  struct_dataclass.intelligentCruiseButtonManagement = structs.IntelligentCruiseButtonManagement(
-    **remove_deprecated(struct_dict.get('intelligentCruiseButtonManagement', {}))
-  )
-
-  return struct_dataclass
+  substructs = {k: _build(cls, struct_dict.get(k, {})) for k, cls in CAR_CONTROL_SP_SUBSTRUCTS.items()}
+  return _build(structs.CarControlSP, {**struct_dict, **substructs})
