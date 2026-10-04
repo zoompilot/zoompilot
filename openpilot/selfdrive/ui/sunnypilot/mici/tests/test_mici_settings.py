@@ -671,6 +671,27 @@ class TestAcceleratorProgressRenders:
     assert 'waiting for jetlink' in info
     assert '%' not in info
 
+  @pytest.mark.parametrize("msg, frac, shown", [
+    ('downloading the large model', 0.45, 'downloading 45%'),
+    ('talking to jetlink', 0.0, 'connecting'),
+    ('ready; re-engage to switch models', 0.0, 're-engage to switch'),
+    ('lost jetlink, reconnecting; link dropped 2 times this drive, check the USB cable or the phone app', 0.0,
+     'reconnecting, check cable (2 drops)'),
+    ('waiting for jetlink; link dropped 3 times this drive, check the USB cable or the phone app', 0.0,
+     'waiting for jetlink, check cable (3 drops)'),
+    ('some new message', 0.0, 'some new message'),
+  ])
+  def test_jetlink_text_is_shortened_for_the_card(self, params, msg, frac, shown):
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    saved = ui_state.jetlink
+    ui_state.jetlink = jetlink_status(present=True, progress={'stage': 'connect', 'frac': frac, 'msg': msg})
+    try:
+      from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
+      _, _, info = _model_info()
+    finally:
+      ui_state.jetlink = saved
+    assert info == shown
+
   def test_failure_says_so_rather_than_showing_100_percent(self, params):
     _, _, info = self._info('failed', 1.0)
     assert '100%' not in info
@@ -1071,7 +1092,7 @@ class TestAlphaLongitudinalPanelMici:
       assert type(pushed[-1]) is cls
 
   @pytest.mark.parametrize(("has_long", "badges"), [
-    (True, ["experimental", "speed assist"]),
+    (True, ["experimental", "assist"]),
     (False, None),  # alpha off: a grey "disabled" pill
   ])
   def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, badges):

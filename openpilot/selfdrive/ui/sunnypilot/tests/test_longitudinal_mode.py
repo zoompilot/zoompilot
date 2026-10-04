@@ -18,7 +18,7 @@ from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
   (True, False, True, True, ["chill"]),
   (True, True, True, True, ["experimental", "dec"]),  # speed assist never acts under DEC
   (True, True, False, False, ["experimental"]),
-  (True, True, False, True, ["experimental", "speed assist"]),
+  (True, True, False, True, ["experimental", "assist"]),
 ])
 def test_cruise_shows_the_mode_that_drives(has_long, experimental, dec, nudge, labels):
   ui_state = SimpleNamespace(has_longitudinal_control=has_long, experimental_mode=experimental,
