@@ -1069,7 +1069,7 @@ class TestAlphaLongitudinalPanelMici:
       assert type(pushed[-1]) is cls
 
   @pytest.mark.parametrize(("has_long", "badges"), [
-    (True, ["experimental", "assist"]),
+    (True, ["exp.", "speed assist"]),
     (False, None),  # alpha off: a grey "disabled" pill
   ])
   def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, badges):
