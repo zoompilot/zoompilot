@@ -18,7 +18,7 @@ zoompilot vUNRELEASED
 * A speed limit prompt no longer stalls a curve slowdown.
 
 **Fixes**
-* **Lane Keep Off:** dash button turns off steering, keeps cruise.
+* **Lane Keep Off:** dash button turns off steering, keeps cruise. Steering resumes when it's back on.
 * **False alert:** no "Steering Assist Temporarily Unavailable" with lane keep off.
 * **Export Mazdas:** CX-5 and CX-9 JM7 VINs recognised.
 * **NZ & AUS:** set speed matches the dash.
@@ -41,6 +41,7 @@ zoompilot vUNRELEASED
 * Auto high beams fixed.
 * Both distance buttons change personality.
 * Auto Hold off: stops release and resume again.
+* No creeping at a red light after stopping.
 
 zoompilot v2026.09.12-14
 ========================
