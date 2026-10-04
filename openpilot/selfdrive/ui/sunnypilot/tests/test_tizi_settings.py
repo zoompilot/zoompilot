@@ -53,7 +53,7 @@ def test_moved_switches_appear_once(params):
 
   alpha = AlphaLongitudinalToggles()
   assert [key for key, _ in alpha._refresh_toggles] == [
-    "AlphaLongitudinalEnabled", "ExperimentalMode", "DynamicExperimentalControl", "ExperimentalModeSetSpeed"]
+    "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed", "DynamicExperimentalControl"]
 
 
 def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
