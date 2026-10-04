@@ -53,7 +53,8 @@ def test_moved_switches_appear_once(params):
 
   alpha = AlphaLongitudinalToggles()
   assert [key for key, _ in alpha._refresh_toggles] == [
-    "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed", "DynamicExperimentalControl"]
+    "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed", "ExperimentalModeLeadGap",
+    "DynamicExperimentalControl"]
 
 
 def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
@@ -68,7 +69,7 @@ def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
   params.put_bool("ExperimentalModeSetSpeed", True, block=True)
   cruise = CruiseLayout()
   # plain toggles, no sub-panel
-  assert cruise._scroller._items[:4] == cruise._alpha_long.items
+  assert cruise._scroller._items[:len(cruise._alpha_long.items)] == cruise._alpha_long.items
   cruise.show_event()
   cruise._update_state()
   assert cruise._alpha_long._alpha_long_toggle.is_visible
