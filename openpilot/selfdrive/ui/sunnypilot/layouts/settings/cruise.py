@@ -25,7 +25,7 @@ class PanelType(IntEnum):
 ICBM_DESC = tr_noop("When enabled, zoompilot will attempt to manage the built-in cruise control buttons " +
                     "by emulating button presses for limited longitudinal control.")
 ICMB_UNAVAILABLE = tr_noop("Intelligent Cruise Button Management is currently unavailable on this platform.")
-ICMB_UNAVAILABLE_LONG_AVAILABLE = tr_noop("Disable the zoompilot Longitudinal Control (alpha) toggle to allow Intelligent Cruise Button Management.")
+ICMB_UNAVAILABLE_LONG_AVAILABLE = tr_noop("Disable the Alpha Longitudinal toggle to allow Intelligent Cruise Button Management.")
 ICMB_UNAVAILABLE_LONG_UNAVAILABLE = tr_noop("zoompilot Longitudinal Control is the default longitudinal control for this platform.")
 
 ACC_ENABLED_DESCRIPTION = tr_noop("Enable custom Short & Long press increments for cruise speed increase/decrease.")
@@ -52,12 +52,12 @@ class CruiseLayout(Widget):
       param="IntelligentCruiseButtonManagement")
 
     self.scc_v_toggle = toggle_item_sp(
-      title=tr("Smart Cruise Control - Vision"),
+      title=tr("Slow for Curves: Vision"),
       description=tr("Use vision path predictions to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlVision")
 
     self.scc_m_toggle = toggle_item_sp(
-      title=tr("Smart Cruise Control - Map"),
+      title=tr("Slow for Curves: Map"),
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
 
