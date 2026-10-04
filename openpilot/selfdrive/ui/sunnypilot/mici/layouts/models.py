@@ -4,7 +4,6 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-import re
 import time
 
 import pyray as rl
@@ -24,18 +23,6 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.scroller import NavScroller
 
-
-# jetlink's progress text is written for tici and the logs; under "big model" the
-# mici card has one short line. Text not listed shows as jetlink wrote it
-SHORT_PROGRESS = {
-  "downloading the large model": "downloading",
-  "looking up the model": "finding model",
-  "talking to jetlink": "connecting",
-  "ready; re-engage to switch models": "re-engage to switch",
-  "lost jetlink, reconnecting": "reconnecting",
-  "jetlink fell behind, reconnecting": "fell behind, reconnecting",
-}
-LINK_DROPS = re.compile(r"; link dropped (\d+) times this drive\b.*$")
 
 # the value line: the mode
 LINK_MODE_LABELS = {"off": "off", "usb": "usb", "ios": "iOS"}
@@ -75,14 +62,6 @@ class AcceleratorLinkToggle(BigMultiToggle):
     self._show()
 
 
-def _short_progress(msg: str) -> str:
-  """jetlink's progress message as the card shows it; a drop count becomes a cable hint."""
-  drops = LINK_DROPS.search(msg)
-  base = msg[:drops.start()] if drops else msg
-  short = tr(SHORT_PROGRESS.get(base, base))
-  return tr("{}, check cable ({} drops)").format(short, drops.group(1)) if drops else short
-
-
 def _model_info() -> tuple[str, str, str]:
   """(active model, info header, info text) for the panel. Runner-matched: the
   active line names what actually drives, and a notable big-model state takes
@@ -101,7 +80,7 @@ def _model_info() -> tuple[str, str, str]:
       return active_text, tr("big model"), tr("unavailable")
     # "waiting for jetlink" says more than "connect 0%"; no percentage for a stage
     # with nothing to measure
-    detail = _short_progress(msg) if msg else tr(stage)
+    detail = msg or tr(stage)
     return active_text, tr("big model"), f"{detail} {frac * 100:.0f}%" if frac > 0 else detail
   if state == 'failed':
     return active_text, tr("big model"), tr("unavailable")

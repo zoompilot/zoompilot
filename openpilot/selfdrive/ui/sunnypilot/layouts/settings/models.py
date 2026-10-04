@@ -236,7 +236,7 @@ class ModelsLayout(Widget):
   def _status_note(self) -> str:
     """The failover story for the Model Status row. A chestnut's is one-way big ->
     small and runner-matched: a Default big can only fall back to the Default
-    small (stock modeld), a custom big has no automatic fallback yet. An
+    small (stock modeld), a custom big has no automatic fallback yet.
     Jetlink's goes both ways, all drive."""
     view = ui_state.jetlink_view
     accelerator = view is not None

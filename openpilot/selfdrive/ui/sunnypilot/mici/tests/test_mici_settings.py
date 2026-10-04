@@ -638,10 +638,10 @@ class TestAcceleratorProgressRenders:
 
   STAGES = ['download', 'connect', 'upload', 'build', 'failed']
 
-  def _info(self, stage, frac):
+  def _info(self, stage, frac, msg='', drops=0, mode='usb'):
     from openpilot.selfdrive.ui.ui_state import ui_state
     saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, progress={'stage': stage, 'frac': frac, 'msg': ''})
+    ui_state.jetlink = jetlink_status(present=True, mode=mode, progress={'stage': stage, 'frac': frac, 'msg': msg, 'drops': drops})
     try:
       from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
       return _model_info()
@@ -657,40 +657,17 @@ class TestAcceleratorProgressRenders:
     _, _, info = self._info('download', 0.42)
     assert '42%' in info
 
-  def test_a_message_is_shown_instead_of_a_percentage_that_means_nothing(self, params):
+  @pytest.mark.parametrize("stage, frac, msg, drops, mode, shown", [
     # a join has nothing to measure, and "getting ready" alone does not separate an
     # unplugged Jetson from one six seconds from ready
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, progress={'stage': 'connect', 'frac': 0.0, 'msg': 'waiting for jetlink'})
-    try:
-      from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
-      _, _, info = _model_info()
-    finally:
-      ui_state.jetlink = saved
-    assert 'waiting for jetlink' in info
-    assert '%' not in info
-
-  @pytest.mark.parametrize("msg, frac, shown", [
-    ('downloading the large model', 0.45, 'downloading 45%'),
-    ('talking to jetlink', 0.0, 'connecting'),
-    ('ready; re-engage to switch models', 0.0, 're-engage to switch'),
-    ('lost jetlink, reconnecting; link dropped 2 times this drive, check the USB cable or the phone app', 0.0,
-     'reconnecting, check cable (2 drops)'),
-    ('waiting for jetlink; link dropped 3 times this drive, check the USB cable or the phone app', 0.0,
-     'waiting for jetlink, check cable (3 drops)'),
-    ('some new message', 0.0, 'some new message'),
+    ('connect', 0.0, 'waiting for jetlink', 0, 'usb', 'waiting for jetlink'),
+    ('download', 0.45, 'downloading', 0, 'usb', 'downloading 45%'),
+    # jetlink counts the drops; the card names the cable, and on iOS the phone app too
+    ('connect', 0.0, 'reconnecting', 2, 'usb', 'reconnecting, check cable (2 drops)'),
+    ('connect', 0.0, 'waiting for jetlink', 3, 'ios', 'waiting for jetlink, check cable or app (3 drops)'),
   ])
-  def test_jetlink_text_is_shortened_for_the_card(self, params, msg, frac, shown):
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, progress={'stage': 'connect', 'frac': frac, 'msg': msg})
-    try:
-      from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
-      _, _, info = _model_info()
-    finally:
-      ui_state.jetlink = saved
-    assert info == shown
+  def test_the_line_is_jetlinks_message(self, params, stage, frac, msg, drops, mode, shown):
+    assert self._info(stage, frac, msg, drops, mode)[2] == shown
 
   def test_failure_says_so_rather_than_showing_100_percent(self, params):
     _, _, info = self._info('failed', 1.0)

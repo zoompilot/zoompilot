@@ -38,7 +38,7 @@ def _raw_bundle(ref: str) -> dict:
 class TestCarryingModel(OpenpilotTestCase):
   """What the UI names as driving has to be what manager runs. The small model is
   the model manager's whatever the Jetlink setting says: the stored qcom bundle
-  drives until the accelerator joins, and again if it goes."""
+  drives until jetlink joins, and again if it goes."""
 
   def setUp(self):
     super().setUp()
