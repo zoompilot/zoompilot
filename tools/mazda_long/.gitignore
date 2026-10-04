@@ -20,6 +20,7 @@ rlogs_validation/
 .lkas_block_cache/
 .undelivered_cache/
 .protocol_cache/
+.lead_event_cache/
 *.zst
 *.csv
 tune_metrics_cache.jsonl
