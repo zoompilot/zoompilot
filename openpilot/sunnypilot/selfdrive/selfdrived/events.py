@@ -367,12 +367,14 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   # an accelerator lost or too slow while engaged: the small model drives on
-  # from a reset history and nothing disengages, so the warning is as loud as a
-  # soft disable. Raised for 5 s (accelerator_events); a disengage ends it
+  # from a reset history and nothing disengages. As loud as a soft disable for
+  # 5 s (accelerator_events), but it says what happened, not TAKE CONTROL:
+  # nothing has let go, and a driver told to take control on every drop read
+  # it as a disengage (2026-10-04). A disengage ends it
   EventNameSP.bigModelLinkLost: {
     ET.WARNING: Alert(
-      "TAKE CONTROL",
-      "Big model lost, small model driving",
+      "Big Model Lost",
+      "Using small model",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.MID, VisualAlert.steerRequired, AudibleAlert.warningSoft, .2),
   },

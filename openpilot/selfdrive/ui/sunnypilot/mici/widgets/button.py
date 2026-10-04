@@ -28,26 +28,20 @@ def speed_unit():
   return "km/h" if ui_state.is_metric else "mph"
 
 
-def draw_badge_pills(rect: rl.Rectangle, labels: list[str], grey: bool, dim: bool):
-  """Render labels as outlined pill chips in a bottom-anchored flow layout."""
+BADGE_FONT_SIZE, BADGE_H_PAD, BADGE_GAP = 28, 10, 8
+
+
+def badge_rows(labels: list[str], max_width: float) -> list[list[tuple[str, float, float]]]:
+  """Wrap labels into rows of (label, pill width, text width) no wider than max_width."""
   font = gui_app.font(FontWeight.BOLD)
-  font_size, h_pad, gap = 28, 10, 8
-  alpha_mult = 0.3 if dim else 1.0
-  border_base, text_base = BADGE_GREY if grey else BADGE_GREEN
-  border = rl.Color(border_base.r, border_base.g, border_base.b, int(border_base.a * alpha_mult))
-  text_color = rl.Color(text_base.r, text_base.g, text_base.b, int(text_base.a * alpha_mult))
-
-  specs = []
-  for label in labels:
-    text_w = measure_text_cached(font, label, font_size).x
-    specs.append((label, text_w + h_pad * 2, text_w))
-
   rows: list[list] = []
   current_row: list = []
   row_width = 0.0
-  for spec in specs:
-    needed = spec[1] + (gap if current_row else 0)
-    if current_row and row_width + needed > rect.width:
+  for label in labels:
+    text_w = measure_text_cached(font, label, BADGE_FONT_SIZE).x
+    spec = (label, text_w + BADGE_H_PAD * 2, text_w)
+    needed = spec[1] + (BADGE_GAP if current_row else 0)
+    if current_row and row_width + needed > max_width:
       rows.append(current_row)
       current_row, row_width = [spec], spec[1]
     else:
@@ -55,6 +49,19 @@ def draw_badge_pills(rect: rl.Rectangle, labels: list[str], grey: bool, dim: boo
       row_width += needed
   if current_row:
     rows.append(current_row)
+  return rows
+
+
+def draw_badge_pills(rect: rl.Rectangle, labels: list[str], grey: bool, dim: bool):
+  """Render labels as outlined pill chips in a bottom-anchored flow layout."""
+  font = gui_app.font(FontWeight.BOLD)
+  font_size, gap = BADGE_FONT_SIZE, BADGE_GAP
+  alpha_mult = 0.3 if dim else 1.0
+  border_base, text_base = BADGE_GREY if grey else BADGE_GREEN
+  border = rl.Color(border_base.r, border_base.g, border_base.b, int(border_base.a * alpha_mult))
+  text_color = rl.Color(text_base.r, text_base.g, text_base.b, int(text_base.a * alpha_mult))
+
+  rows = badge_rows(labels, rect.width)
 
   text_h = measure_text_cached(font, "Xg", font_size).y
   max_h = (rect.height - gap * (len(rows) - 1)) / len(rows) if len(rows) > 1 else rect.height

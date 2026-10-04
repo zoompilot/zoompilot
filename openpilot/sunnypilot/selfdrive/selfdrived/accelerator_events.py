@@ -8,11 +8,18 @@ Onroad events for an accelerator that joins mid-drive. The native big model bloc
 expects a board loaded before the first modelV2; an off-board one joins onto a
 modelV2 the small model already publishes and can leave and come back.
 
-It swaps in only while nothing is in control, so the driver is told when it is
-ready and re-engages to use it. For a second after a swap nothing engages while
-the large model builds its history, and the "Big Model Active" chime at the end
-of it says the driver can. When it leaves, the small model drives on and the
-driver is told to take control; nothing disengages.
+It swaps in only while nothing is in control, and only once it has kept up with
+the frames it shadows (jetlink's proof), so the driver is told when it is ready
+and re-engages to use it. For a second after a swap nothing engages while the
+large model builds its history, and the "Big Model Active" chime at the end of
+it says the driver can. When it leaves, the small model drives on and the
+driver is told it is on the small model; nothing disengages.
+
+Either way the switch costs modeld a frame or two, and a frame the camera
+dropped is an invalid pose from the model and a locationd soft disable on the
+next tick: every return of a user's big model was a TAKE CONTROL IMMEDIATELY
+(2026-10-04). So a switch is `settling` for a second, which selfdrived treats
+as it does a native board's load (big_model_settling).
 """
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import custom
@@ -43,8 +50,13 @@ class AcceleratorEvents:
   def __init__(self):
     self.offered = False
     self.big_model_running = False
-    # ticks left of each event
-    self.offer = self.handback = self.switching = 0
+    # ticks left of each event, and of the settling after a switch either way
+    self.offer = self.handback = self.switching = self.settle = 0
+
+  @property
+  def settling(self) -> bool:
+    """Within a second of the big model swapping in or handing back."""
+    return self.settle > 0
 
   def update(self, sm: messaging.SubMaster, in_control: bool, events: Events, events_sp: EventsSP) -> None:
     """`in_control`: openpilot or MADS is engaged, MADS even while its lateral
@@ -71,11 +83,15 @@ class AcceleratorEvents:
       status.acceleratorState != AcceleratorState.none
     if running_big and not self.big_model_running:
       self.switching = SWITCHING_TICKS + 1   # the no-entry, then the chime
+      self.settle = SWITCHING_TICKS + 1   # counted down below, this tick included
     elif self.big_model_running and not running_big:
       self.switching = 0
+      self.settle = SWITCHING_TICKS + 1   # counted down below, this tick included
       if in_control:
         self.handback = HANDBACK_TICKS
     self.big_model_running = running_big
+    if self.settle > 0:
+      self.settle -= 1
     if not in_control:
       self.handback = 0
 

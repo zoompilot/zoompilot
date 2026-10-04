@@ -3,6 +3,8 @@ zoompilot vUNRELEASED
 **jetlink support!**
 * Run big models on a Mac, Jetson, Linux PC, iPhone/iPad or Android <3
 * Settings > Models > Jetlink.
+* The big model is offered only once the link has kept up for a second with the small model driving, so a slow or cold link never costs a take-over.
+* A dropped link says **Big Model Lost**, not TAKE CONTROL: the small model drives on.
 
 **Mazda steering**
 * Better torque learning at every speed.
@@ -37,7 +39,7 @@ zoompilot vUNRELEASED
 * Alpha long, Experimental Mode and DEC are now under Cruise.
 * Remembers your cruise settings when you turn alpha long or ICBM off and on.
 * New: Experimental Mode Speed Assist, off by default. Experimental runs ~5 mph under set speed; this brings it up when the road is clear.
-* New: Experimental Mode Follow Assist, off by default. Experimental follows further back than your following distance; this closes up to it behind a steady car, never closer than chill would.
+* New: Experimental Mode Lead Follow Assist, off by default. Experimental follows further back than your following distance; this closes up to it behind a steady car, never closer than chill would.
 * Starts braking sooner for a slowing car ahead, using the driving model's forecast of where that car will be. Based on [openpilot #37824](https://github.com/commaai/openpilot/pull/37824).
 * Speed limits: ICBM on changes the set speed. ICBM off asks you to set 80 mph, then handles the limit.
 * Auto high beams fixed.

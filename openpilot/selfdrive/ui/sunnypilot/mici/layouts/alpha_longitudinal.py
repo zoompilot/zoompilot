@@ -25,7 +25,7 @@ class AlphaLongitudinalLayoutMici(NavScroller):
     self._experimental_toggle = BigToggle(tr("experimental mode"), toggle_callback=self._on_experimental_mode)
     self._dec_toggle = BigParamControl(tr("dynamic experimental control"), "DynamicExperimentalControl")
     self._set_speed_toggle = BigParamControl(tr("speed assist"), "ExperimentalModeSetSpeed")
-    self._lead_gap_toggle = BigParamControl(tr("follow assist"), "ExperimentalModeLeadGap")
+    self._lead_gap_toggle = BigParamControl(tr("lead follow assist"), "ExperimentalModeLeadGap")
 
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
