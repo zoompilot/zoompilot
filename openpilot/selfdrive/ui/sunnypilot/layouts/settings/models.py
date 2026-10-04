@@ -125,7 +125,7 @@ class ModelsLayout(Widget):
 
   @staticmethod
   def _link_description(status: str) -> str:
-    what = tr("Run big models over a connected device running Jetlink. Turns off ADB, which needs the same USB port.")
+    what = tr("Run big models over a connected device running Jetlink. Turns off ADB.")
     return f"{what} {status}".strip()
 
   def _refresh_accelerator_items(self):

@@ -275,7 +275,7 @@ class TestTiciModelsPanel(UITest):
     # a kernel without the CC pin in sysfs claims nothing rather than an empty port
     with jetlink(port=None):
       layout._refresh_accelerator_items()
-      assert layout.accelerator_link_item.description.endswith("which needs the same USB port.")
+      assert layout.accelerator_link_item.description.endswith("Turns off ADB.")
 
   def test_the_status_names_the_transport(self):
     # the setting names the host: USB for a Jetson, a Linux PC or a Mac, iOS for
