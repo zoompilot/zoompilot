@@ -8,7 +8,8 @@ import threading
 
 import pyray as rl
 
-from openpilot.selfdrive.ui.mici.layouts.settings.software import InstallUpdateButton, SoftwareLayoutMici, _split_description
+from openpilot.selfdrive.ui.mici.layouts.settings.software import (CheckUpdateButton, InstallUpdateButton, SoftwareLayoutMici,
+                                                                    TargetBranchButton, UpdaterState, _split_description)
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
@@ -82,9 +83,35 @@ class ReleaseNotesButton(BigButton):
       self.set_value(value)
 
 
+class CheckUpdateButtonSP(CheckUpdateButton):
+  """A downloaded update says so. Upstream's button goes back to "download update" once the
+  updater is idle, because UpdaterFetchAvailable (the remote differs from what is installed)
+  stays set until the install, and "install now" is the next item down: a user switching
+  branches read the download as having failed (2026-10-04). A tap still re-downloads."""
+  READY = "update ready\nscroll to install"
+
+  def _update_state(self):
+    super()._update_state()
+    if self._state == UpdaterState.IDLE and self.get_value() == "download update" and update_pending():
+      self.set_value(self.READY)
+      self.set_icon(self._txt_up_to_date_icon)
+
+  def _handle_mouse_release(self, mouse_pos):
+    if self.get_value() == self.READY:
+      self.set_value("download update")   # what upstream's handler reads to pick the download signal
+    super()._handle_mouse_release(mouse_pos)
+
+
 class SoftwareLayoutSP(SoftwareLayoutMici):
   def __init__(self):
     super().__init__()
+
+    # the check button says when the update is downloaded; the branch button rechecks through it
+    items = self._scroller.items
+    check = next(i for i, item in enumerate(items) if type(item) is CheckUpdateButton)
+    self._scroller.add_widget(CheckUpdateButtonSP())
+    items[check] = items.pop()
+    next(item for item in items if isinstance(item, TargetBranchButton))._check_update_btn = items[check]
 
     # add_widget wraps the touch callback, so append and then move it up behind "install now"
     self._scroller.add_widget(ReleaseNotesButton())
