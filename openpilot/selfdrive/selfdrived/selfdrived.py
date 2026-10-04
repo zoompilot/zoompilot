@@ -287,7 +287,8 @@ class SelfdriveD(CruiseHelper):
       car_events = self.car_events.update(CS, self.CS_prev, self.sm['carControl']).to_msg()
       self.events.add_from_msg(car_events)
 
-      car_events_sp = self.car_events_sp.update(CS, self.events, self.sm['carStateSP'], self.mads.enabled_toggle).to_msg()
+      car_events_sp = self.car_events_sp.update(CS, self.events, self.sm['carStateSP'], self.mads.enabled_toggle,
+                                               self.mads.enabled).to_msg()
       self.events_sp.add_from_msg(car_events_sp)
 
       if self.CP.notCar:
@@ -645,6 +646,7 @@ class SelfdriveD(CruiseHelper):
     mads.enabled = self.mads.enabled
     mads.active = self.mads.active
     mads.available = self.mads.enabled_toggle
+    mads.lateralHeld = self.mads.lateral_held
 
     icbm = ss_sp.intelligentCruiseButtonManagement
     icbm.state = self.icbm.state

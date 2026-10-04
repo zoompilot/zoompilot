@@ -100,7 +100,7 @@ class TestMazdaStockLkasOff:
     assert not events.contains(ET.PERMANENT), "the banner belongs to the MADS-off path"
     assert events_sp.has(EventNameSP.stockLkasOff)
     assert events_sp.contains(ET.NO_ENTRY)
-    assert events_sp.contains(ET.USER_DISABLE), "an enabled lateral has to drop"
+    assert not events_sp.contains(ET.USER_DISABLE), "MADS pauses on it; a disable would drop the panda's lateral"
 
   def test_mads_off_keeps_the_whole_system_no_entry(self):
     car_events = _car_events('mazda', MazdaFlags.GEN1)
@@ -125,3 +125,13 @@ class TestMazdaStockLkasOff:
     events_sp = car_events.update(self._cs(True), events, _car_state_sp(), True)
     assert events.has(EventName.invalidLkasSetting)
     assert not events_sp.has(EventNameSP.stockLkasOff)
+
+  def test_eps_arming_raises_the_sp_event_while_mads_is_enabled(self):
+    car_events = _car_events('mazda', MazdaFlags.GEN1 | MazdaFlags.STEER_TO_ZERO_EPS)
+    cs_sp = _car_state_sp()
+    cs_sp.zoompilot.lkasArming = True
+    events_sp = car_events.update(self._cs(False), _events(), cs_sp, True, True)
+    assert events_sp.has(EventNameSP.stockLkasArming)
+    assert not events_sp.contains(ET.NO_ENTRY), "lateral has to engage for the EPS to take torque"
+    assert not events_sp.contains(ET.USER_DISABLE)
+    assert not car_events.update(self._cs(False), _events(), cs_sp, True, False).has(EventNameSP.stockLkasArming)

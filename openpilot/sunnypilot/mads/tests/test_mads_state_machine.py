@@ -190,7 +190,7 @@ class TestMADSStateMachine(OpenpilotTestCase):
 
 
 class TestStockLkasOffLateralOnly(OpenpilotTestCase):
-  """Mazda's stockLkasOff: the selfdrive engages while the MADS machine alone refuses lateral."""
+  """Mazda's stockLkasOff: the selfdrive engages while the MADS machine alone holds lateral."""
 
   def setup_method(self):
     mocker = self._fixture("mocker")
@@ -204,11 +204,14 @@ class TestStockLkasOffLateralOnly(OpenpilotTestCase):
     self.events_sp.add(EventNameSP.stockLkasOff)
     enabled, _ = SelfdriveStateMachine().update(self.events)
     assert enabled
-    self.mads_machine.update()
-    assert self.mads_machine.state == State.disabled
+    enabled, active = self.mads_machine.update()
+    assert self.mads_machine.state == State.paused
+    assert enabled and not active
 
-  def test_lka_off_drops_an_enabled_lateral(self):
-    self.mads_machine.state = State.enabled
-    self.events_sp.add(EventNameSP.stockLkasOff)
-    self.mads_machine.update()
-    assert self.mads_machine.state == State.disabled
+  def test_lka_off_alone_never_disables(self):
+    for state in (State.enabled, State.paused):
+      self.mads_machine.state = state
+      self.events_sp.add(EventNameSP.stockLkasOff)
+      self.mads_machine.update()
+      assert self.mads_machine.state == state
+      self.events_sp.clear()

@@ -30,7 +30,7 @@ class CarSpecificEventsSP:
     self.low_speed_alert = False
     self.stock_ecu_prev = StockEcuState.notNeeded
 
-  def update(self, CS: structs.CarState, events: Events, CS_SP, mads_enabled_toggle: bool = False):
+  def update(self, CS: structs.CarState, events: Events, CS_SP, mads_enabled_toggle: bool = False, mads_enabled: bool = False):
     events_sp = EventsSP()
 
     if self.CP.brand == 'chrysler':
@@ -69,6 +69,9 @@ class CarSpecificEventsSP:
         # upstream's no-entry stands.
         events.remove(EventName.invalidLkasSetting)
         events_sp.add(EventNameSP.stockLkasOff)
+      if mads_enabled and CS_SP.zoompilot.lkasArming:
+        # LKA back on with lateral coming back, the EPS not delivering yet
+        events_sp.add(EventNameSP.stockLkasArming)
 
     # A SET/RES press before the stock ECU openpilot stands in for is owned lands on a body
     # that will not engage (Mazda route 0000020d: six presses, nothing shown): name what the

@@ -154,6 +154,8 @@ class UIStateSP:
     state = ss.state
     mads = ss_sp.mads
     mads_state = mads.state
+    # held by the car's own lane keep (mads.py update_stock_lkas): reads as lateral off
+    mads_enabled = mads.enabled and not mads.lateralHeld
 
     if state == OpenpilotState.preEnabled:
       return "override"
@@ -165,20 +167,20 @@ class UIStateSP:
       if any(e.overrideLongitudinal for e in onroad_evt):
         return "override"
 
-    if mads_state in (MADSState.paused, MADSState.overriding):
+    if mads_state in (MADSState.paused, MADSState.overriding) and not mads.lateralHeld:
       return "override"
 
     # MADS specific statuses
     if not mads.available:
       return "engaged" if ss.enabled else "disengaged"
 
-    if not mads.enabled and not ss.enabled:
+    if not mads_enabled and not ss.enabled:
       return "disengaged"
 
-    if mads.enabled and ss.enabled:
+    if mads_enabled and ss.enabled:
       return "engaged"
 
-    if mads.enabled:
+    if mads_enabled:
       return "lat_only"
 
     if ss.enabled:

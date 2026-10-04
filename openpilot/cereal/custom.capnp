@@ -15,6 +15,9 @@ struct ModularAssistiveDrivingSystem {
   enabled @1 :Bool;
   active @2 :Bool;
   available @3 :Bool;
+  # Enabled but held off by the car's own lane keep (switched off, or the EPS re-arming after it
+  # came back on): the UI shows lateral as off rather than paused or active.
+  lateralHeld @4 :Bool;
 
   enum ModularAssistiveDrivingSystemState {
     disabled @0;
@@ -374,6 +377,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     stockLkasOff @34;
     longitudinalEnableChime @35;
     longitudinalDisableChime @36;
+    stockLkasArming @37;
   }
 }
 
@@ -569,6 +573,9 @@ struct CarStateZP @0xc879af11c43cb400 {
   # The wheel's "farther" distance button, level. Upstream's one gapAdjustCruise button type
   # cycles the personality one way; selfdrived steps it the other way on this release.
   distanceFarther @2 :Bool;
+  # The car's own lane keep is back on after the driver switched it off, and the EPS has not
+  # applied torque since. MADS keeps the driver told lateral is disabled until it does.
+  lkasArming @3 :Bool;
 
   enum StockEcuState {
     notNeeded @0;

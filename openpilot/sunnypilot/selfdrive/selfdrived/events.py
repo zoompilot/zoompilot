@@ -10,7 +10,7 @@ from opendbc.car.structs import car
 from openpilot.common.constants import CV
 from openpilot.selfdrive.selfdrived.events import get_display_speed
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
-  NoEntryAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, AlertCallbackType, EmptyAlert, \
+  NoEntryAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, AlertCallbackType, \
   wrong_car_mode_alert
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import PCM_LONG_REQUIRED_MAX_SET_SPEED, CONFIRM_SPEED_THRESHOLD
 from openpilot.common.hardware import HARDWARE
@@ -154,16 +154,20 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventNameSP.stockLkasOff: {
-    # Mazda: invalidLkasSetting is swapped for this when MADS is on (CarSpecificEventsSP).
-    # No alert of its own: the button press on the same frame already speaks; the no-entry
-    # is for later enable attempts with LKA still off.
-    ET.USER_DISABLE: EmptyAlert,
+    # Mazda: invalidLkasSetting is swapped for this when MADS is on (CarSpecificEventsSP); MADS
+    # holds lateral paused on it (mads.py). mici gets a standing alert, tizi only its border.
     ET.NO_ENTRY: Alert(
       "Lateral Disabled",
       "LKAS is off",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.refuse, 3.),
+    **({ET.PERMANENT: NormalPermanentAlert("Lateral Disabled", "LKAS is off", priority=Priority.LOW)} if IS_MICI else {}),
   },
+
+  # LKA back on with lateral resuming, the EPS not delivering yet: still disabled to the driver.
+  EventNameSP.stockLkasArming: {
+    ET.PERMANENT: NormalPermanentAlert("Lateral Disabled", "Waiting for steering", priority=Priority.LOW),
+  } if IS_MICI else {},
 
   EventNameSP.manualLongitudinalRequired: {
     ET.WARNING: Alert(
