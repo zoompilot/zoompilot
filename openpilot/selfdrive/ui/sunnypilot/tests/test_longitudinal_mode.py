@@ -13,16 +13,19 @@ from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import alpha_longitudin
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 
 
-@pytest.mark.parametrize(("has_long", "experimental", "dec", "nudge", "labels"), [
-  (False, True, True, True, []),
-  (True, False, True, True, ["chill"]),
-  (True, True, True, True, ["exp.", "dynamic"]),  # speed assist never acts under DEC
-  (True, True, False, False, ["experimental"]),
-  (True, True, False, True, ["exp.", "speed assist"]),
+@pytest.mark.parametrize(("has_long", "experimental", "dec", "speed", "follow", "labels"), [
+  (False, True, True, True, True, []),
+  (True, False, True, True, True, ["chill"]),
+  (True, True, True, True, True, ["exp.", "dynamic"]),  # the assists never act under DEC
+  (True, True, False, False, False, ["experimental"]),
+  (True, True, False, True, False, ["exp.", "speed"]),
+  (True, True, False, False, True, ["exp.", "follow"]),
+  (True, True, False, True, True, ["exp.", "speed", "follow"]),
 ])
-def test_cruise_shows_the_mode_that_drives(has_long, experimental, dec, nudge, labels):
+def test_cruise_shows_the_mode_that_drives(has_long, experimental, dec, speed, follow, labels):
   ui_state = SimpleNamespace(has_longitudinal_control=has_long, experimental_mode=experimental,
-                             params=FakeParams(DynamicExperimentalControl=dec, ExperimentalModeSetSpeed=nudge))
+                             params=FakeParams(DynamicExperimentalControl=dec, ExperimentalModeSetSpeed=speed,
+                                               ExperimentalModeLeadGap=follow))
   assert longitudinal_mode_labels(ui_state) == labels
 
 

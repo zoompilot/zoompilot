@@ -1070,7 +1070,7 @@ class TestAlphaLongitudinalPanelMici:
       assert type(pushed[-1]) is cls
 
   @pytest.mark.parametrize(("has_long", "badges"), [
-    (True, ["exp.", "speed assist"]),
+    (True, ["exp.", "speed", "follow"]),
     (False, None),  # alpha off: a grey "disabled" pill
   ])
   def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, badges):
@@ -1079,13 +1079,16 @@ class TestAlphaLongitudinalPanelMici:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
     from openpilot.selfdrive.ui.ui_state import ui_state
+    from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import E2E_ASSISTS
+    from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import badge_rows
     from openpilot.system.ui.lib.application import gui_app
 
     monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=has_long))
     monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
     monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
     monkeypatch.setattr(ui_state, "experimental_mode", True)
-    params.put_bool("ExperimentalModeSetSpeed", True, block=True)
+    for param, _ in E2E_ASSISTS:
+      params.put_bool(param, True, block=True)
     try:
       cruise = CruiseLayoutMici()
       render(cruise)
@@ -1093,13 +1096,15 @@ class TestAlphaLongitudinalPanelMici:
       assert btn is cruise._alpha_long_btn
       assert btn._badge_labels == (badges or ["disabled"])
       assert btn._disabled == (badges is None)
+      assert len(badge_rows(btn._badge_labels, btn._subtitle_width_hint())) == 1  # the widest state stays on one row
 
       pushed = []
       monkeypatch.setattr(gui_app, "push_widget", lambda w: pushed.append(w))
       btn._click_callback()
       assert type(pushed[-1]) is AlphaLongitudinalLayoutMici
     finally:
-      params.remove("ExperimentalModeSetSpeed")
+      for param, _ in E2E_ASSISTS:
+        params.remove(param)
 
   def test_experimental_mode_waits_for_confirmation(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts import alpha_longitudinal

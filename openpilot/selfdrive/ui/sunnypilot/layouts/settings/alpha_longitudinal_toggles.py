@@ -56,7 +56,7 @@ class AlphaLongitudinalToggles:
       param="ExperimentalModeSetSpeed")
 
     self._lead_gap_toggle = toggle_item_sp(
-      title=lambda: tr("Experimental Mode Follow Assist"),
+      title=lambda: tr("Experimental Mode Lead Follow Assist"),
       description=lambda: tr("In Experimental Mode, gently close up to your following distance when the model hangs further back " +
                              "behind a steady car ahead. Never follows closer than chill mode would. " +
                              "Has no effect while Dynamic Experimental Control is on."),
