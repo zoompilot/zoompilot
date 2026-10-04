@@ -40,7 +40,7 @@ def bundles_for_source(source: str):
 
 def default_model(source: str) -> str:
   """What an empty slot runs. The big slot's is the chestnut's model in the tree
-  when a board is fitted; with none, the slot is the accelerator's, whose
+  when a board is fitted; with none, the slot is jetlink's, whose
   default is its own."""
   if source != 'chestnut':
     return DEFAULT_MODEL
@@ -64,8 +64,8 @@ def big_model_state() -> str | None:
 
 
 def big_model_progress() -> tuple[str, float, str] | None:
-  """(stage, 0..1, message) while an accelerator is working, else None. The message
-  is carried because a stage like "waiting for the accelerator" has no meaningful fraction"""
+  """(stage, 0..1, message) while jetlink is working, else None. The message
+  is carried because a stage like "waiting for jetlink" has no meaningful fraction"""
   jetlink = ui_state.jetlink
   progress = jetlink.progress if jetlink is not None else None
   if not progress:

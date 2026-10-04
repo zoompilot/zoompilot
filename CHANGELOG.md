@@ -2,7 +2,7 @@ zoompilot vUNRELEASED
 ========================
 **jetlink support!**
 * Run big models on a Mac, Jetson, Linux PC, iPhone/iPad or Android <3
-* Settings > Models > Accelerator Link.
+* Settings > Models > Jetlink.
 
 **Mazda steering**
 * Better torque learning at every speed.

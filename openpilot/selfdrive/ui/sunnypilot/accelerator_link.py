@@ -4,7 +4,7 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-The user's say over the accelerator link, shared by the mici and tici models panels:
+The user's say over the Jetlink setting, shared by the mici and tici models panels:
 Off, USB (a Jetson, a Linux PC or a Mac) or iOS (an iPhone), stored as an
 index into the adapter's MODES. The small model is picked as ever: manager
 runs whichever modeld that bundle needs and the link joins it, so the setting
@@ -50,7 +50,7 @@ def link_status() -> str:
   if jetlink is None:
     return ""
   if jetlink.present:
-    return f"{tr('Accelerator connected:')} {jetlink.transport}."
+    return f"{tr('Jetlink connected:')} {jetlink.transport}."
   if jetlink.port is None:
     return ""
   return tr("Nothing on the USB port.") if jetlink.port == "empty" else tr("A device is on the USB port.")

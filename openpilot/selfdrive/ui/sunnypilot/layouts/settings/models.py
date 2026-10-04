@@ -73,7 +73,7 @@ class ModelsLayout(Widget):
     # param-bound; disabled onroad in _refresh_accelerator_items, since the
     # gadget changes only once the car is parked
     self.accelerator_link_item = multiple_button_item_sp(
-      tr("Accelerator Link"),
+      tr("Jetlink"),
       self._link_description(""),
       buttons=[lambda m=m: tr(LINK_MODE_TITLES[m]) for m in LINK_MODES],
       param=LINK_PARAM, button_width=300, inline=False)
@@ -125,8 +125,7 @@ class ModelsLayout(Widget):
 
   @staticmethod
   def _link_description(status: str) -> str:
-    what = tr("Run the big driving model on an attached accelerator: USB for a Jetson, a Linux PC or a Mac, iOS for an iPhone. " +
-              "Turns off ADB, which needs the same USB port.")
+    what = tr("Run big models over a connected device running Jetlink. Turns off ADB, which needs the same USB port.")
     return f"{what} {status}".strip()
 
   def _refresh_accelerator_items(self):
@@ -238,7 +237,7 @@ class ModelsLayout(Widget):
     """The failover story for the Model Status row. A chestnut's is one-way big ->
     small and runner-matched: a Default big can only fall back to the Default
     small (stock modeld), a custom big has no automatic fallback yet. An
-    accelerator's goes both ways, all drive."""
+    Jetlink's goes both ways, all drive."""
     view = ui_state.jetlink_view
     accelerator = view is not None
     if not (ui_state.chestnut_present or accelerator):
@@ -246,7 +245,7 @@ class ModelsLayout(Widget):
     fallback_name = default_model_name("qcom")
     state = big_model_state()
     if accelerator:
-      # named by the accelerator: the slot's pick, or its default, which can be
+      # named by jetlink: the slot's pick, or its default, which can be
       # newer than the chestnut's. The small model the user picked drives in
       # its place, so it reads like a Default big
       big_name = view.model or tr("The big model")
@@ -270,7 +269,7 @@ class ModelsLayout(Widget):
       # nothing is in control
       return tr("{} is ready. Disengage fully, then re-engage to switch.").format(big_name)
     if accelerator and not view.ready:
-      return tr("{} will drive when the accelerator is ready.").format(big_name)
+      return tr("{} will drive when Jetlink is ready.").format(big_name)
     if accelerator:
       # it rejoins all drive and a drop is announced as it happens, so there is
       # no "until the next drive" to warn of

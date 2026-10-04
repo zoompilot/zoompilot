@@ -37,7 +37,7 @@ API = 1
 # the gadget owner, as manager names the process and selfdrived lists it
 OWNER = 'jetlinkd'
 
-# the Accelerator Link setting, stored as an index: jetlink.openpilot.MODES,
+# the Jetlink setting, stored as an index: jetlink.openpilot.MODES,
 # written out so the panels build the setting without a jetlink checkout
 MODES = ('off', 'usb', 'ios')
 

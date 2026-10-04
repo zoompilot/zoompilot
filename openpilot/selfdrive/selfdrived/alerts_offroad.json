@@ -46,7 +46,7 @@
     "severity": 0
   },
   "Offroad_AcceleratorUnavailable": {
-    "text": "Model accelerator unavailable: %1",
+    "text": "Jetlink unavailable: %1",
     "severity": 0
   },
   "Offroad_UnregisteredHardware": {

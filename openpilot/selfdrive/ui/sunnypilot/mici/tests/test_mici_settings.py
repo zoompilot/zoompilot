@@ -662,13 +662,13 @@ class TestAcceleratorProgressRenders:
     # unplugged Jetson from one six seconds from ready
     from openpilot.selfdrive.ui.ui_state import ui_state
     saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, progress={'stage': 'connect', 'frac': 0.0, 'msg': 'waiting for the accelerator'})
+    ui_state.jetlink = jetlink_status(present=True, progress={'stage': 'connect', 'frac': 0.0, 'msg': 'waiting for jetlink'})
     try:
       from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
       _, _, info = _model_info()
     finally:
       ui_state.jetlink = saved
-    assert 'waiting for the accelerator' in info
+    assert 'waiting for jetlink' in info
     assert '%' not in info
 
   def test_failure_says_so_rather_than_showing_100_percent(self, params):
@@ -858,7 +858,7 @@ class TestAcceleratorLinkToggle:
     params.remove(self.PARAM)
     toggle = AcceleratorLinkToggle()
     assert toggle.get_value() == "off"
-    for index, value in enumerate(("off", "usb: mac, linux", "iOS: iPhone, iPad")):
+    for index, value in enumerate(("off", "usb", "iOS")):
       params.put(self.PARAM, index, block=True)
       toggle.refresh()
       assert toggle.get_value() == value

@@ -54,7 +54,7 @@ class UIStateSP:
     # jetlink's snapshot (jetlink.openpilot.Status) from the params pass; None
     # with a chestnut fitted or no jetlink on this device
     self.jetlink = None
-    # the Accelerator Link holds the USB port, so ADB is off and its toggle greyed out
+    # Jetlink holds the USB port, so ADB is off and its toggle greyed out
     self.adb_blocked: bool = False
     self._accelerator_state_name: str = 'none'
     self.blindspot: bool = False
@@ -287,7 +287,7 @@ class UIStateSP:
       self.has_icbm = False
 
   def _enforce_usb_port(self) -> None:
-    """ADB and the Accelerator Link both need the comma's USB port: the link
+    """ADB and Jetlink both need the comma's USB port: the link
     on turns ADB off, and the developer panels grey its toggle out. Here, not
     in the panels, so a link set from sunnylink counts too. jetlink's owner
     retries the port in seconds while ADB's gadget still holds it."""
