@@ -92,12 +92,15 @@ class TestParams(OpenpilotTestCase):
     for parked in (True, False):
       params.put_bool(KEYS.offroad, parked, block=True)
       self.assertEqual(settings.offroad(), parked)
+    for charge in (True, False):
+      params.put_bool(KEYS.charge_phone, charge, block=True)
+      self.assertEqual(settings.charge_phone(), charge)
     before = settings.marks()[KEYS.big_model]
     params.put(KEYS.big_model, {'ref': 'a' * 40, 'displayName': 'x'}, block=True)
     self.assertNotEqual(settings.marks()[KEYS.big_model], before)
 
   def test_every_key_is_declared_with_its_type(self):
-    types = {'link': ParamKeyType.INT, 'offroad': ParamKeyType.BOOL}
+    types = {'link': ParamKeyType.INT, 'offroad': ParamKeyType.BOOL, 'charge_phone': ParamKeyType.BOOL}
     params = Params()
     for field, key in KEYS._asdict().items():
       self.assertEqual(params.get_type(key), types.get(field, ParamKeyType.JSON), key)

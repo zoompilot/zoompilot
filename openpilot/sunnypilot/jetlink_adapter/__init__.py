@@ -45,10 +45,10 @@ MODES = ('off', 'usb', 'ios')
 # and catalog are the model manager's big-model slot and catalog
 # (models.helpers.ACTIVE_BUNDLE_KEYS['chestnut'] and ModelFetcher's cache): the
 # owner cannot import the model manager, so they are written out here
-_Keys = namedtuple('_Keys', 'link offroad progress spec pointers big_model catalog')
+_Keys = namedtuple('_Keys', 'link offroad progress spec pointers big_model catalog charge_phone')
 KEYS = _Keys(link='JetlinkLink', offroad='IsOffroad', progress='AcceleratorProgress', spec='JetlinkSpec',
              pointers='JetlinkModelPointers', big_model='ModelManager_ActiveBundleChestnut',
-             catalog='ModelManager_ModelsCache_Chestnut')
+             catalog='ModelManager_ModelsCache_Chestnut', charge_phone='JetlinkChargePhone')
 
 # comma's chestnut, running and in its ROM (common.hardware.usb): the comma's
 # USB-C port hosts one and is never held as a jetlink device beside it. The
