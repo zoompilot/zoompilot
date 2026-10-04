@@ -1,3 +1,4 @@
+import glob
 import os
 import operator
 import platform
@@ -153,6 +154,37 @@ class RestartingPythonProcess(PythonProcess):
       self.started_at = now
     super().start()
 
+class AudioProcess(RestartingPythonProcess):
+  """micd and soundd: started once the sound card exists, which a slow boot can
+  register 30 s after manager wants them, longer than their stream retry waits.
+  Until then, and through a restart's backoff, they report shouldBeRunning with
+  nothing running, so processNotRunning keeps openpilot from engaging silently."""
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.wanted = False
+
+  @staticmethod
+  def sound_card_present() -> bool:
+    return PC or bool(glob.glob("/dev/snd/pcmC*"))
+
+  def start(self) -> None:
+    if self.proc is None and not self.sound_card_present():
+      self.wanted = True
+      return
+    super().start()  # its reap of a dead proc goes through stop()
+    self.wanted = True
+
+  def stop(self, *args, **kwargs):
+    self.wanted = False
+    return super().stop(*args, **kwargs)
+
+  def get_process_state_msg(self):
+    state = super().get_process_state_msg()
+    if self.wanted and self.proc is None:
+      state.name = self.name
+      state.shouldBeRunning = True
+    return state
+
 procs = [
   DaemonProcess("manage_athenad", "openpilot.system.athena.manage_athenad", "AthenadPid"),
 
@@ -165,7 +197,7 @@ procs = [
   PythonProcess("webcamerad", "openpilot.system.camerad.webcam.camerad", driverview, enabled=WEBCAM),
   PythonProcess("proclogd", "openpilot.system.proclogd", only_onroad, enabled=platform.system() != "Darwin"),
   PythonProcess("journald", "openpilot.system.journald", only_onroad, platform.system() != "Darwin"),
-  PythonProcess("micd", "openpilot.system.micd", iscar),
+  AudioProcess("micd", "openpilot.system.micd", iscar),
   PythonProcess("timed", "openpilot.system.timed", always_run, enabled=not PC),
 
   PythonProcess("modeld", "openpilot.selfdrive.modeld.modeld", and_(only_onroad, is_stock_model)),
@@ -173,7 +205,7 @@ procs = [
 
   PythonProcess("sensord", "openpilot.system.sensord.sensord", only_onroad, enabled=not PC),
   PythonProcess("ui", "openpilot.selfdrive.ui.ui", always_run),
-  PythonProcess("soundd", "openpilot.selfdrive.ui.soundd", driverview),
+  AudioProcess("soundd", "openpilot.selfdrive.ui.soundd", driverview),
   PythonProcess("locationd", "openpilot.selfdrive.locationd.locationd", only_onroad),
   NativeProcess("_pandad", "openpilot/selfdrive/pandad", ["./pandad"], always_run, enabled=False),
   PythonProcess("calibrationd", "openpilot.selfdrive.locationd.calibrationd", only_onroad),

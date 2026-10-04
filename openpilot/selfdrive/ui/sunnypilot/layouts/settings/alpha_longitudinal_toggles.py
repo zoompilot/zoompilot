@@ -55,10 +55,18 @@ class AlphaLongitudinalToggles:
                              "Has no effect while Dynamic Experimental Control is on."),
       param="ExperimentalModeSetSpeed")
 
+    self._lead_gap_toggle = toggle_item_sp(
+      title=lambda: tr("Experimental Mode Follow Assist"),
+      description=lambda: tr("In Experimental Mode, gently close up to your following distance when the model hangs further back " +
+                             "behind a steady car ahead. Never follows closer than chill mode would. " +
+                             "Has no effect while Dynamic Experimental Control is on."),
+      param="ExperimentalModeLeadGap")
+
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ExperimentalMode", self._experimental_toggle),
       ("ExperimentalModeSetSpeed", self._set_speed_toggle),
+      ("ExperimentalModeLeadGap", self._lead_gap_toggle),
       ("DynamicExperimentalControl", self._dec_toggle),
     )
     self.items = [item for _, item in self._refresh_toggles]
@@ -72,8 +80,10 @@ class AlphaLongitudinalToggles:
     self._alpha_long_toggle.set_visible(CP is not None and CP.alphaLongitudinalAvailable)
     self._experimental_toggle.action_item.set_enabled(CP is None or has_long)
     self._dec_toggle.action_item.set_enabled(has_long)
-    # DEC decides the mode on its own, and the set-speed floor never acts under it
-    self._set_speed_toggle.action_item.set_enabled(has_long and not self._dec_toggle.action_item.get_state())
+    # DEC decides the mode on its own, and the e2e assists never act under it
+    dec = self._dec_toggle.action_item.get_state()
+    self._set_speed_toggle.action_item.set_enabled(has_long and not dec)
+    self._lead_gap_toggle.action_item.set_enabled(has_long and not dec)
 
   def refresh(self):
     for key, item in self._refresh_toggles:
