@@ -73,6 +73,13 @@ A_TOTAL_MAX_V = [1.7, 3.2]
 
 T_IDXS = np.asarray(ModelConstants.T_IDXS)
 LAT_MASK = T_IDXS <= LAT_HORIZON
+SLOWDOWN_MASK = T_IDXS <= PLAN_SLOWDOWN_T
+
+
+def plan_drop(vel: np.ndarray) -> float:
+  """Most speed the model's plan loses within PLAN_SLOWDOWN_T, from its own v(0): a dip that recovers
+  by then counts too."""
+  return min(float(np.min(vel[SLOWDOWN_MASK])), float(np.interp(PLAN_SLOWDOWN_T, T_IDXS, vel))) - float(vel[0])
 
 
 class E2ESetSpeedController:
@@ -128,8 +135,9 @@ class E2ESetSpeedController:
     return None
 
   def update(self, sm: messaging.SubMaster, a_model: float, v_cruise: float, is_e2e: bool, reset_state: bool,
-             dec_active: bool, allow_throttle: bool, fcw: bool, accel_coast: float) -> float:
-    """Return the e2e candidate; a_model unchanged whenever the feature is off or idle."""
+             dec_active: bool, allow_throttle: bool, fcw: bool, accel_coast: float, steer_lat_accel: float = 0.) -> float:
+    """Return the e2e candidate; a_model unchanged whenever the feature is off or idle.
+    steer_lat_accel: lateral acceleration from the measured steering angle."""
     self.frame += 1
     self._update_params()
 
@@ -155,11 +163,11 @@ class E2ESetSpeedController:
       self._reset(Inhibit.invalid)
       return a_model
 
-    lat_accel = max(abs(curvature) * v_ego ** 2, float(np.max(np.abs(yaw_rate * vel)[LAT_MASK])))
-    plan_drop = float(np.interp(PLAN_SLOWDOWN_T, T_IDXS, vel)) - vel[0]
+    lat_accel = max(abs(curvature) * v_ego ** 2, float(np.max(np.abs(yaw_rate * vel)[LAT_MASK])), abs(steer_lat_accel))
+    plan_drop_v = plan_drop(vel)
     plan_min_v = float(np.min(vel[LAT_MASK]))
 
-    trip = self._trip(sm, a_model, v_ego, plan_drop, plan_min_v, lat_accel, allow_throttle, fcw)
+    trip = self._trip(sm, a_model, v_ego, plan_drop_v, plan_min_v, lat_accel, allow_throttle, fcw)
     if trip is not None:
       self.authority = max(0., self.authority - AUTHORITY_FALL * self.dt)
       self.hold_left = self.hold_frames
