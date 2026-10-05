@@ -9,6 +9,13 @@ See the LICENSE.md file in the root directory for more details.
 from collections.abc import Callable
 import os
 os.environ['GMMU'] = '0'
+from openpilot.common.hardware import COMMA_HARDWARE
+from openpilot.selfdrive.modeld.helpers import check_camera_jit, chestnut_present
+CHESTNUT_PRESENT = chestnut_present()
+# tinygrad picks its default device by opening every backend until one works, 2.6 s of every start
+# on a comma 4. Without a chestnut that is QCOM, so name it; tinygrad reads DEV once, at import
+if COMMA_HARDWARE and not CHESTNUT_PRESENT:
+  os.environ.setdefault('DEV', 'QCOM')
 import numpy as np
 import threading
 import time
@@ -16,15 +23,12 @@ from setproctitle import setproctitle
 from tinygrad.tensor import Tensor
 
 import openpilot.cereal.messaging as messaging
-from openpilot.common.hardware import COMMA_HARDWARE
-from openpilot.selfdrive.modeld.helpers import check_camera_jit, chestnut_present
 from openpilot.cereal import log
 from opendbc.car.structs import car
 from openpilot.cereal.services import SERVICE_LIST
 from openpilot.cereal.messaging import PubMaster, SubMaster
 from openpilot.cereal.visionipc import VisionStreamType
 from msgq.visionipc import VisionIpcClient, VisionBuf
-from opendbc.car.car_helpers import get_demo_car_params
 from openpilot.common.file_chunker import open_file_chunked
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
@@ -36,7 +40,6 @@ from openpilot.system import sentry
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value
-from openpilot.selfdrive.modeld.modeld import ChestnutState
 
 from openpilot.selfdrive.modeld.compile_modeld import (
   MODELD_INPUTS,
@@ -327,7 +330,7 @@ def main(demo=False):
   cloudlog.bind(daemon=PROCESS_NAME)
   setproctitle(PROCESS_NAME)
 
-  CHESTNUT = chestnut_present()
+  CHESTNUT = CHESTNUT_PRESENT
   if CHESTNUT:
     os.environ['HCQDEV_WAIT_TIMEOUT_MS'] = '3000'
   # before going realtime: prepare() starts tinygrad's device thread, which would inherit FIFO 54 on core 7
@@ -402,7 +405,11 @@ def main(demo=False):
   sm = SubMaster(["deviceState", "carState", "narrowRoadCameraState", "extrinsicsCalibration", "driverMonitoringState", "carControl", "lateralDelay"])
 
   publish_state = PublishState()
-  chestnut_state = ChestnutState(pm, model.chestnut) if CHESTNUT else None
+  chestnut_state = None
+  if CHESTNUT:
+    # upstream modeld's module imports every car interface (1.7 s on a comma 4), so only for a chestnut
+    from openpilot.selfdrive.modeld.modeld import ChestnutState
+    chestnut_state = ChestnutState(pm, model.chestnut)
 
   # setup filter to track dropped frames
   frame_dropped_filter = FirstOrderFilter(0., 10., 1. / model.constants.MODEL_FREQ)
@@ -420,6 +427,7 @@ def main(demo=False):
 
 
   if demo:
+    from opendbc.car.car_helpers import get_demo_car_params
     CP = get_demo_car_params()
   else:
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
