@@ -325,4 +325,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"MazdaTorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},
     // Tune version last seeded for the steer-to-zero Mazda EPS; a bump re-seeds everyone once.
     {"MazdaTorqueTuneSeeded", {PERSISTENT | BACKUP, FLOAT}},
+    // Ensures the torque defaults are seeded once on cars upstream self-tunes (torqued ALLOWED_CARS).
+    {"TorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},
 };
