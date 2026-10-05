@@ -111,9 +111,12 @@ class CruiseLayoutMici(NavScroller):
 
     self._icbm_toggle.set_enabled(icbm_available and offroad)
     self._alpha_long_btn.set_enabled(alpha_longitudinal_reachable(ui_state))
-    self._scc_v_toggle.set_enabled(has_long or has_icbm)
-    self._scc_m_toggle.set_enabled(has_long or has_icbm)
-    self._custom_acc_btn.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and offroad if cp_ready else False)
+    for toggle in (self._scc_v_toggle, self._scc_m_toggle):
+      toggle.set_superseded(not (has_long or has_icbm))
+    # has_long and has_icbm are False until CP is ready, so CP is not read before then
+    custom_acc_available = (has_long and not ui_state.CP.pcmCruise) or has_icbm
+    self._custom_acc_toggle.set_superseded(not custom_acc_available)
+    self._custom_acc_btn.set_enabled(custom_acc_available and offroad)
 
     # Remove dependent params only on a true-to-false transition.
     if not icbm_available and self._prev_icbm_available is not False:
@@ -164,7 +167,7 @@ class CruiseLayoutMici(NavScroller):
     self._custom_acc_toggle.refresh()
     self._acc_short.refresh()
     self._acc_long.refresh()
-    self._custom_acc_toggle.set_enabled(self._custom_acc_btn.enabled)
+    self._custom_acc_toggle.set_enabled(ui_state.is_offroad)
     # Lambda: short/long respond same-frame when toggle is tapped (see button.py docstring)
     self._acc_short.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)
     self._acc_long.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)
@@ -191,7 +194,9 @@ class CruiseLayoutMici(NavScroller):
     self._sl_source.refresh()
     self._sl_offset_type.refresh()
     self._sl_mode.set_enabled(True)
-    self._sl_source.set_enabled(True)
-    self._sl_offset_type.set_enabled(True)
-    self._sl_offset_value.set_enabled(offset_type != 0)  # 0 = off/none
+    # nothing reads these with the mode off
+    sl_on = self._sl_mode.value != SL_MODE_LABELS[SL_MODE_OFF]
+    self._sl_source.set_superseded(not sl_on)
+    self._sl_offset_type.set_superseded(not sl_on)
+    self._sl_offset_value.set_enabled(sl_on and offset_type != 0)  # 0 = off/none
     self._sl_offset_value.refresh()
