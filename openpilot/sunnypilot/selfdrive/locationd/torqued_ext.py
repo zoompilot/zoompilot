@@ -51,7 +51,7 @@ class TorqueEstimatorExt:
   Each bin runs upstream's total-least-squares fit on the quality-filtered points that fall
   in its speed range and publishes its own latAccelFactor and friction; the controller
   interpolates them by speed. Bins come from speed_dependent.toml, or the defaults above
-  seeded with the car's global offline values. Gated by SpeedDependentTorqueToggle.
+  seeded with the car's global offline values. Runs wherever self-tune does.
   """
 
   def __init__(self, CP: car.CarParams):
@@ -64,13 +64,7 @@ class TorqueEstimatorExt:
     self.use_live_torque_params = self._params.get_bool("LiveTorqueParamsToggle")
     self.custom_torque_params = self._params.get_bool("CustomTorqueParams")
     self.torque_override_enabled = self._params.get_bool("TorqueParamsOverrideEnabled")
-    # Speed-dep extends the self-tune learner, so it needs the same toggles the UI requires
-    # before its own; without them the per-bin fits would run with no consumer. The
-    # ALLOWED_CARS brand gate above is deliberately separate.
-    self.speed_binned = (self.CP.lateralTuning.which() == 'torque'
-                         and self._params.get_bool("SpeedDependentTorqueToggle")
-                         and self.enforce_torque_control_toggle
-                         and self.use_live_torque_params)
+    self.speed_binned = False  # set by initialize_custom_params, once torqued has set use_params
     # overwritten by TorqueEstimator.__init__ before initialize_custom_params runs
     self.min_bucket_points = RELAXED_MIN_BUCKET_POINTS
     self.factor_sanity = 0.0
@@ -82,6 +76,11 @@ class TorqueEstimatorExt:
     self._sp_pub_frame = -1
 
   def initialize_custom_params(self, decimated=False):
+    # Self-tune runs on upstream's brands (use_params, set by torqued), or wherever the toggle is
+    # on once torque control is enforced. Taken before update_use_params folds in the manual
+    # override, which only pauses the learner's output.
+    self_tune = self.use_live_torque_params if self.enforce_torque_control_toggle else self.use_params
+    self.speed_binned = self.CP.lateralTuning.which() == 'torque' and self_tune
     self.update_use_params()
 
     if self.enforce_torque_control_toggle:

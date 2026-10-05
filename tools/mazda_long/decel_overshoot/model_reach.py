@@ -51,7 +51,9 @@ from extract import MPH, route_files, routes
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KEYS = ('t', 'v', 'yaw', 'big', 'rz', 'vx', 'px', 'py')
-A_LAT = vc._A_LAT_REG_MAX * vc._PLAN_MARGIN  # m/s2; a bend needs slowing when sqrt(A_LAT / kappa) < v
+# m/s2; a bend needs slowing when sqrt(A_LAT / kappa) < v. Fixed at the planner's highway ceiling
+# (the set-speed table's 1.8 end) so runs against other ceilings, and curve_sim's scoring, compare
+A_LAT = 1.8 * vc._PLAN_MARGIN
 A_LENIENT = 1.5  # m/s2; lenient real-bend test
 V_LO, V_HI = 25 / MPH, 22.4  # m/s; 25 and 50 mph
 DIST_BP = [0, 20, 40, 60, 80, 100, 120, 140, 170, 200, 250]

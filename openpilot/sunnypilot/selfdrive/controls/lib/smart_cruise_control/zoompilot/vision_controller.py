@@ -29,7 +29,11 @@ VisionState = custom.LongitudinalPlanSP.SmartCruiseControl.VisionState
 ACTIVE_STATES = (VisionState.entering, VisionState.turning, VisionState.leaving)
 ENABLED_STATES = (VisionState.enabled, VisionState.overriding, *ACTIVE_STATES)
 
-_A_LAT_REG_MAX = 1.8  # m/s2; curves are taken at or below this lateral acceleration
+# Curves are taken at or below this lateral acceleration, m/s2. Keyed on the set speed, like the
+# escalation ceiling, so the ceiling does not rise as the car slows. Back roads (set 40 mph or
+# less) get the higher one; highway curves keep 1.8, where hard braking was the complaint (doc).
+_A_LAT_REG_V_BP = [17.9, 26.8]  # m/s set speed; 40 -> 60 mph
+_A_LAT_REG_V = [2.0, 1.8]
 # Reserve margin for actuation delay at the apex.
 _PLAN_MARGIN = 0.95
 
@@ -61,6 +65,9 @@ _ESCALATION_V_BP = _KAPPA_BIAS_V_BP
 
 # Use hysteresis below the commit threshold.
 _RELEASE_FRAC = 0.3
+# The car is still in a curve while the near field limits it below vEgo plus this; past it the
+# plan hands back and the ICBM restore stays capped at vAheadMin.
+_IN_CURVE_MARGIN = 1.0  # m/s
 
 # The near field is measured rather than predicted: it holds the planner through a curve and is
 # the only part of the path allowed to ask past the budget, so what bounds it is the model
@@ -140,17 +147,18 @@ class SmartCruiseControlVision:
     dist[1:] = np.cumsum(np.hypot(np.diff(x), np.diff(y)))
 
     lim = self.limits
+    a_lat_max = float(np.interp(self.v_cruise_setpoint, _A_LAT_REG_V_BP, _A_LAT_REG_V)) * _PLAN_MARGIN
     # The raw near field says whether the car is in a curve.
     near_d = max(self.v_ego, MIN_V) * (_NEAR_T_BIG if model.big else _NEAR_T)
     near = dist <= near_d  # dist[0] is 0, so never empty
-    self.v_near_min = float(np.min(allowed_speed(kappa[near], _A_LAT_REG_MAX * _PLAN_MARGIN)))
+    self.v_near_min = float(np.min(allowed_speed(kappa[near], a_lat_max)))
     # Publish near-path lateral acceleration for UI state.
     self.max_pred_lat_acc = float(np.max(kappa[near]) * self.v_ego ** 2)
 
     # Use corrected curvature for brake timing.
     fade = np.interp(self.v_ego, _KAPPA_BIAS_V_BP, _KAPPA_BIAS_V_FADE)
     kappa = kappa * (1. + (np.interp(dist, _KAPPA_BIAS_D, _KAPPA_BIAS_GAIN) - 1.) * fade)
-    v_allowed = allowed_speed(kappa, _A_LAT_REG_MAX * _PLAN_MARGIN)
+    v_allowed = allowed_speed(kappa, a_lat_max)
 
     # Stock ACC lead time includes the set-speed traversal to the lowest target.
     t_lead = lim.t_lead
@@ -191,7 +199,7 @@ class SmartCruiseControlVision:
     # Commit near the platform budget and retain control through the curve with hysteresis.
     commit = self.a_required >= COMMIT_FRAC * lim.a_budget
     seen = self.a_required >= _RELEASE_FRAC * lim.a_budget
-    in_curve = np.isfinite(self.v_near_min) and self.v_near_min < self.v_cruise_setpoint
+    in_curve = np.isfinite(self.v_near_min) and self.v_near_min < self.v_ego + _IN_CURVE_MARGIN
     self.solver_active = commit or (self.solver_active and (seen or in_curve or held))
     self.solver_valid = True
 
@@ -286,17 +294,19 @@ class SmartCruiseControlVision:
     if not self._controlling:
       return V_CRUISE_UNSET
 
-    # Lead vEgo by required deceleration for the unit-gain cruise candidate, then cap it by
-    # the solved profile.
     v_lead = self.v_ego + max(-self.a_required, A_PUB_MIN)
-    v = min(self.v_profile_now, v_lead)
-    if np.isfinite(self.v_dip_ahead):
-      if self.limits.op_long:
-        # Do not command below the plan minimum once the P candidate reaches its budget.
+    if self.limits.op_long:
+      # Lead vEgo by the required decel for the unit-gain cruise candidate, within the profile,
+      # and not below the plan minimum once the P candidate reaches its budget.
+      v = min(self.v_profile_now, v_lead)
+      if np.isfinite(self.v_dip_ahead):
         v = max(v, self.v_dip_ahead)
-      else:
-        # Pre-position the discrete stock-ACC setpoint at the horizon minimum.
-        v = min(v, self.v_dip_ahead)
+    else:
+      # Pre-position the discrete stock-ACC setpoint at the horizon minimum, and lead vEgo down
+      # only while braking: with nothing to brake for the dash follows the profile up.
+      v = min(self.v_profile_now, self.v_dip_ahead)
+      if self.a_required > 0.:
+        v = min(v, v_lead)
     return max(v, MIN_V)
 
   def update(self, sm: messaging.SubMaster, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float,

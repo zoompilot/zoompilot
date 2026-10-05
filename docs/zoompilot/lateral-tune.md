@@ -323,6 +323,19 @@ short of the car's 0.147. LAF stays: its halves land up to 20% either side of th
 2.10 at 6.5 m/s, 2.11 vs 2.53 at 12), and 34.5 and 37 m/s have no new points. seed_version
 stays 2: the scale is the same, and a bump would drop every learned cache.
 
+Learned values (2026-10-04). The six bins through 28 m/s take the test car's filtered values
+from its cache (develop e1255e6a7, seed_version 2, upstream decay at its 250 cap):
+
+| center (m/s) | 6.5 | 9.5 | 12.0 | 16.4 | 21.0 | 28.0 |
+|---|---|---|---|---|---|---|
+| LAF | 2.37 (was 2.41) | 2.63 (2.72) | 2.13 (2.29) | 1.74 (1.72) | 1.85 (1.75) | 2.27 (2.28) |
+| friction | 0.201 (0.232) | 0.145 (0.155) | 0.135 (0.145) | 0.134 (0.147) | 0.104 (0.094) | 0.084 (0.091) |
+
+A refit of the cached points (7,400 to 12,000 per bin) leads the filter the same way: LAF 12 to
+14% under the old seeds at 9.5 and 12 m/s, friction within 15% everywhere. The 10-01 friction
+refit overshot below 16.4 m/s. 34.5 and 37 m/s still have no points and keep their values;
+seed_version stays 2.
+
 ## Constants
 
 | name | value | measurement | route |

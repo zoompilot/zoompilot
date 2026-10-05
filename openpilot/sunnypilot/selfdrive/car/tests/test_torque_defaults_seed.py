@@ -16,7 +16,7 @@ from openpilot.sunnypilot.selfdrive.car.interfaces import (MAZDA_STEER_TO_ZERO_T
 
 CarParams = car.CarParams
 
-SEEDED_KEYS = ("EnforceTorqueControl", "LiveTorqueParamsToggle", "SpeedDependentTorqueToggle")
+SEEDED_KEYS = ("EnforceTorqueControl", "LiveTorqueParamsToggle")
 
 
 class FakeParams:

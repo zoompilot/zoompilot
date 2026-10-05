@@ -168,15 +168,6 @@ sections:
       - type: param
         key: LiveTorqueParamsToggle
         equals: true
-    - key: SpeedDependentTorqueToggle
-      widget: toggle
-      title: Speed-Dependent Self-Tune (Beta)
-      description: Learns separate torque parameters at different speeds. Improves steering at both low and high speeds for supported cars.
-      enablement:
-      - $ref: '#/macros/offroad'
-      - type: param
-        key: LiveTorqueParamsToggle
-        equals: true
     - key: CustomTorqueParams
       widget: toggle
       title: Enable Custom Tuning

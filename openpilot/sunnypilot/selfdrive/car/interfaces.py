@@ -37,7 +37,7 @@ def _seed_mazda_torque_defaults(CP: structs.CarParams, params: Params | None = N
   legacy firmware on the same hardware are covered.
   Both seeds sit behind markers, because manager_init materializes every declared default at
   boot: TorqueControlTune is already 0.0 on disk by the time card runs, so "unset" never
-  survives to here. The three toggles are seeded once behind MazdaTorqueDefaultsApplied. The
+  survives to here. The two toggles are seeded once behind MazdaTorqueDefaultsApplied. The
   tune is seeded once per value of MAZDA_STEER_TO_ZERO_TORQUE_TUNE, recorded in
   MazdaTorqueTuneSeeded, so a later bump moves everyone again while a choice made after the
   seed is kept. TorqueControlTune's declared default stays 0.0 for every other brand.
@@ -56,9 +56,8 @@ def _seed_mazda_torque_defaults(CP: structs.CarParams, params: Params | None = N
 
   params.put_bool("EnforceTorqueControl", True)     # torque lateral control
   params.put_bool("LiveTorqueParamsToggle", True)   # self-tune (live torque params)
-  params.put_bool("SpeedDependentTorqueToggle", True)  # per-speed-bin learning
   params.put_bool("MazdaTorqueDefaultsApplied", True)
-  cloudlog.warning("Seeded steer-to-zero Mazda torque-control defaults (EnforceTorqueControl, self-tune, speed-dependent)")
+  cloudlog.warning("Seeded steer-to-zero Mazda torque-control defaults (EnforceTorqueControl, self-tune)")
 
 
 def seed_car_defaults_offroad(params: Params) -> None:

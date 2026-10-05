@@ -179,15 +179,18 @@ to the budget (`publish_ramp`).
 
 ## Planning margin
 
-`_PLAN_MARGIN = 0.95`: plan to 95% of the 1.8 m/s^2 ceiling so actuation lag lands the
+`_PLAN_MARGIN = 0.95`: plan to 95% of the lateral ceiling so actuation lag lands the
 apex on it instead of over it. Swept against the corpus: at 1.0 the sim leaves 13% of
 fair apexes above 2.2 m/s^2; at 0.95 that drops to 5% for 1.4% of speed given up.
 
 ## Commit, hold, release
 
 Commit when `a_required >= COMMIT_FRAC * a_budget`. Once braking, hold while the near
-path stays below the setpoint (the car is in the curve) or while the required decel is
-above `_RELEASE_FRAC = 0.3` of the budget, so the gate does not chatter on noise. The
+path limits the car below `vEgo + _IN_CURVE_MARGIN` (1 m/s; the car is in the curve) or while
+the required decel is above `_RELEASE_FRAC = 0.3` of the budget, so the gate does not chatter
+on noise. Until 10-04 the near path was held against the set speed, and on a winding road any
+gentle bend kept the plan (and the dash) down through the whole exit. After release the ICBM
+restore is still capped at `vAheadMin`, so the dash only climbs to the next dip. The
 state machine (`entering`, `turning`, `leaving`) is display-only.
 
 Near convergence a bumper-distance constraint makes `required_decel` scream through its
@@ -288,11 +291,32 @@ too little data past 14 mph to say where it stops (`icbm.md`). The lever therefo
 gap to the limiter's request and caps it at the budget, so the budget is what the car
 actually does. On stock ACC the vision target is pre-positioned at the deepest dip on the
 horizon (a dash servo cannot track a continuous profile in 1 mph taps) and the decel gap
-does the shaping, tracking `vEgo` down rather than walking the dash to the dip; on
+does the shaping, tracking `vEgo` down rather than walking the dash to the dip. With
+nothing left to brake for (`a_required` 0) the stock target is the profile itself, so inside
+a long curve and on its exit the dash climbs to the allowed speed; until 10-04 it was capped
+at `vEgo` and the car could only lose speed while the plan held. On
 openpilot long the target leads `v_ego` by the required decel and never goes below the
 slowest point of the plan, past which the P candidate is already railed at the budget.
 
 ## Route sim, before and after
+
+### 10-04: target follows the profile, release on vEgo, set-speed ceiling
+
+Rebuilt on device_data (189 routes, refit plant), vision only, stock ACC, road curves. Base is
+the 09-30 planner; "fixes" is the target and release changes at the old flat 1.8; "all" adds the
+2.0 -> 1.8 set-speed ceiling. Time lost is against driving the window at the set speed; "back"
+counts curves where the car is within 2 mph of the set speed by 150 m past the apex.
+
+| set speed | curves | apex lat p50 | over 2.2 | time lost p50 / p90 s | back |
+|---|---|---|---|---|---|
+| <= 45 mph | 132 | 1.70 / 1.74 / 1.92 | 33 / 34 / 42 | 4.8/8.3, 4.4/7.6, 3.6/6.6 | 37 / 42 / 56 |
+| 50-55 mph | 38 | 1.78 / 1.77 / 1.80 | 10 / 10 / 10 | 2.6/5.4, 2.3/4.8, 2.0/4.5 | 4 / 4 / 8 |
+| 60+ mph | 15 | 1.74 / 1.74 / 1.74 | 4 / 4 / 4 | 1.3/4.5, 1.3/4.2, 1.3/4.2 | 0 / 0 / 0 |
+
+The fixes alone cost nothing in hot curves; the ceiling buys most of the time back at 45 mph and
+below for 8 more of 132 over 2.2 m/s^2 (path-reach caveat below applies; p90 apex is 3.2 in all
+three). Straight-road slowdowns over 2 mph: 8 -> 5 of 306 below 60 mph.
+
 
 `route_sim.py` replays real roads closed loop: the checked-out vision planner and ICBM servo
 drive the fitted plant along 399 logged routes (177 yield a scored window), and at each
@@ -353,7 +377,8 @@ for every brand with a measured plant (`icbm.md`).
 | name | value | measurement | route |
 |---|---|---|---|
 | `TUNED_BRANDS` | `('mazda',)` | brands with a measured stock ACC response | n/a |
-| `_A_LAT_REG_MAX` | 1.8 m/s^2 | lateral ceiling; 2.0 until 09-30, when route 260's entries felt late and hot (apexes 2.1-2.4); at 1.8 the sim enters them at 1.5-2.2, 1-2 mph slower, about a second earlier | route 260 |
+| `_A_LAT_REG_V_BP` / `_V` | 17.9 to 26.8 m/s set speed -> 2.0 to 1.8 m/s^2 | lateral ceiling, keyed on the set speed so it does not rise as the car slows. 2.0 until 09-30, when route 260's entries felt late and hot (apexes 2.1-2.4, with the near floor that released bends late, since removed); 1.8 everywhere until 10-04, when drivers called back roads too slow; the highway end keeps 1.8 | route 260, user reports |
+| `_IN_CURVE_MARGIN` | 1.0 m/s | the plan holds while the near field limits the car below `vEgo` plus this | user reports |
 | `_PLAN_MARGIN` | 0.95 | 13% -> 5% of fair apexes above 2.2 for 1.4% speed | corpus sim |
 | `COMMIT_FRAC` | 0.7 | swept with the margin | corpus sim |
 | `_RELEASE_FRAC` | 0.3 | hysteresis against gate chatter | n/a |

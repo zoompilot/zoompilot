@@ -80,7 +80,7 @@ class TestCentersToBounds:
 
 @needs_speed_dep_car
 class TestSpeedBinnedLearning:
-  """Toggle ON on a configured car."""
+  """Self-tune on, on a configured car."""
 
   def test_speed_bins_initialized(self, fake_params):
     for fingerprint in SPEED_DEP_CARS:
@@ -143,17 +143,33 @@ class TestSpeedBinnedLearning:
     assert len(est.filtered_points) == 0
 
 
-class TestToggleGate:
-  """Toggle OFF disables speed-binning even for configured cars."""
+class TestSelfTuneGate:
+  """Speed-dep runs wherever self-tune does, with no toggle of its own."""
 
-  def test_toggle_off_no_speed_bins(self, fake_params_off):
-    if SPEED_DEP_FINGERPRINT:
-      est = TorqueEstimator(make_cp(fingerprint=SPEED_DEP_FINGERPRINT))
-      assert not est.speed_binned
+  @staticmethod
+  def _cp(brand):
+    return make_cp(fingerprint=NON_SPEED_DEP_FINGERPRINT, brand=brand)
+
+  @pytest.mark.parametrize("brand, self_tunes_bare", [('toyota', True), ('mazda', False)])
+  def test_follows_self_tune(self, fake_params_off, brand, self_tunes_bare):
+    # bare: upstream's brand gate; under Enforce Torque Control: the Self-Tune toggle
+    assert TorqueEstimator(self._cp(brand)).speed_binned == self_tunes_bare
+    fake_params_off.bools.add("EnforceTorqueControl")
+    assert not TorqueEstimator(self._cp(brand)).speed_binned
+    fake_params_off.bools.add("LiveTorqueParamsToggle")
+    assert TorqueEstimator(self._cp(brand)).speed_binned
+
+  def test_manual_override_keeps_bins(self, fake_params):
+    # the override pauses the learner's output, not the learner
+    fake_params.bools.update({"CustomTorqueParams", "TorqueParamsOverrideEnabled"})
+    fake_params.store.update({"TorqueParamsOverrideLatAccelFactor": 2.0, "TorqueParamsOverrideFriction": 0.1})
+    est = TorqueEstimator(make_cp(fingerprint=NON_SPEED_DEP_FINGERPRINT))
+    assert est.speed_binned
+    assert not est.use_params
 
 
 class TestBackwardCompatibility:
-  """Cars with the toggle OFF are unaffected."""
+  """Cars without self-tune are unaffected."""
 
   def test_unconfigured_car_no_speed_bins(self, fake_params_off):
     est = TorqueEstimator(make_cp(fingerprint=NON_SPEED_DEP_FINGERPRINT))
@@ -192,8 +208,8 @@ class TestBackwardCompatibility:
       assert msg.lateralTorqueParameters.calPerc == 0
 
 
-class TestUnconfiguredCarToggleOn:
-  """An unconfigured car with speed-dep ON gets the default bins and the offline seeds."""
+class TestUnconfiguredCarSelfTuneOn:
+  """An unconfigured car with self-tune on gets the default bins and the offline seeds."""
 
   def test_default_bins_created(self, fake_params):
     est = TorqueEstimator(make_cp(fingerprint=NON_SPEED_DEP_FINGERPRINT))
@@ -327,8 +343,7 @@ class TestCustomTorqueParamsScale:
   def test_offline_values_on_steer_max(self, fake_params, brand, laf, friction):
     fake_params.store.update(TorqueParamsOverrideLatAccelFactor='1.2', TorqueParamsOverrideFriction='0.15')
     fake_params.bools.add('CustomTorqueParams')
-    CP = make_cp('MAZDA_CX5_2022')
-    CP.brand = brand
+    CP = make_cp('MAZDA_CX5_2022', brand=brand)
     if brand == 'mazda':
       CP.flags = int(MazdaFlags.GEN1 | MazdaFlags.STEER_TO_ZERO_EPS)
     est = TorqueEstimator(CP)

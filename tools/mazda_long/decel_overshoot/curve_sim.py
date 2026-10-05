@@ -39,13 +39,13 @@ except ImportError:  # a checkout from before the planner moved (a baseline work
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
 
 from extract import OUT, MPH
+from model_reach import A_LAT  # the fixed scoring reference; route_sim reads CS.A_LAT
 
 DT = 0.05
 T_IDXS = np.array(ModelConstants.T_IDXS)
 Src = custom.LongitudinalPlanSP.LongitudinalPlanSource
 Send = custom.IntelligentCruiseButtonManagement.SendButtonState
 SCENARIOS = [(35, 25), (45, 35), (45, 25), (55, 45), (55, 35), (55, 25), (65, 55), (65, 45), (65, 35), (75, 60), (75, 45)]
-A_LAT = vc._A_LAT_REG_MAX * vc._PLAN_MARGIN  # m/s2; the lateral accel the planner takes a bend at
 
 
 class Plant:

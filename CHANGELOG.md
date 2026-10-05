@@ -13,11 +13,16 @@ zoompilot vUNRELEASED
 * Dash "hands on wheel" warning matches zoompilot's.
 * 2022 CX-5: better default tune up to 63 mph.
 
+**Other torque cars**
+* Toyota, Hyundai, Honda, Rivian and VW learn their steering at every speed too.
+* The Speed Dependent setting is gone: it is always on with self-tune.
+
 **Curve speed (Mazda)**
 * Smart Cruise is now Slow for Curves: Vision and Map.
 * Decel Overshoot replaced by a Mazda tune: less hard braking for highway curves.
 * Smoother curve slowdowns.
 * A speed limit prompt no longer stalls a curve slowdown.
+* Speed comes back sooner in and after long curves.
 
 **Fixes**
 * **Lane Keep Off:** dash button turns off steering, keeps cruise. Steering resumes when it's back on.

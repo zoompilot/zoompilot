@@ -18,7 +18,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import vision_controller
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.vision_controller import SmartCruiseControlVision
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.tests.vision_harness import (
-  CURVE_KAPPA, CURVE_V, SETPOINT, V_EGO, VisionCase, curve_at, make_cp, patch_gain)
+  A_LAT_MAX, CURVE_KAPPA, CURVE_V, SETPOINT, V_EGO, VisionCase, curve_at, flat_ceiling, make_cp, patch_gain)
 
 VisionState = custom.LongitudinalPlanSP.SmartCruiseControl.VisionState
 
@@ -121,7 +121,7 @@ class TestArriveAtAllowedSpeed(VisionCase):
     assert self.scc_v.output_v_target == V_CRUISE_UNSET
 
   def test_hairpin_floors_at_min_v(self):
-    # kappa 0.12 allows 3.9 m/s at the 1.8 ceiling, below the 20 km/h operating floor
+    # kappa 0.12 allows about 4 m/s, below the 20 km/h operating floor
     self.run_road(6., curve_at(0., kappa=0.12), cur_curvature=0.12)
     assert self.scc_v.is_active
     assert self.scc_v.output_v_target == MIN_V
@@ -134,7 +134,7 @@ class TestFarFieldCurvatureBias(VisionCase):
     # planned speed back toward the truth instead of planning for the corner it was told
     road = curve_at(110., kappa=0.012)
     self.run_road(V_EGO, road, attenuate=True)
-    truth = (1.8 * 0.95 / 0.012) ** 0.5
+    truth = (A_LAT_MAX * vision_controller._PLAN_MARGIN / 0.012) ** 0.5
     with patch_gain([1.0] * len(vision_controller._KAPPA_BIAS_GAIN)):
       raw = SmartCruiseControlVision(make_cp())
       self.run_road(V_EGO, road, scc=raw, attenuate=True)
@@ -205,6 +205,7 @@ class TestFarFieldCurvatureBias(VisionCase):
       self.run_road(v, road, setpoint=v, scc=raw, attenuate=True)
     assert self.scc_v.v_dip_ahead < raw.v_dip_ahead - 1.
 
+  @flat_ceiling(1.8)
   def test_real_curve_commits_exactly_as_before_the_fade(self):
     # The fitted speed band retains the calibrated correction. Both paths bind at the 95.2 m
     # sample: 0.02 * 0.631 attenuation * 1.441 gain = 0.01819, allowed sqrt(1.71 / 0.01819) = 9.695
@@ -222,3 +223,45 @@ class TestFarFieldCurvatureBias(VisionCase):
     # lead walks only the tracking gap: 15.6 * (1.0 + 8 mph / 4 mph/s) = 46.8 m, over 48.41 m
     assert stock.a_required == pytest.approx(1.543, abs=2e-3)
     assert stock.output_v_target == pytest.approx(9.695, abs=2e-3)  # sent to the dip
+
+
+class TestCurveRecovery(VisionCase):
+  """Inside a curve on stock ACC the target follows the profile up, and the plan lets go once
+  the near field no longer limits the car."""
+  KAPPA = 0.01  # r = 100 m
+
+  def commit(self, scc, setpoint=SETPOINT):
+    # brake for the curve from the set speed, then drive into it
+    self.run_road(setpoint, curve_at(60., self.KAPPA), n=5, setpoint=setpoint, scc=scc, attenuate=True)
+    assert scc.solver_active
+    return scc
+
+  def in_curve(self, scc, v, setpoint=SETPOINT):
+    return self.run_road(v, lambda s: self.KAPPA, n=5, cur_curvature=self.KAPPA, setpoint=setpoint, scc=scc,
+                         attenuate=True)
+
+  def test_lateral_ceiling_follows_the_set_speed(self):
+    (sp_lo, sp_hi), (a_lo, a_hi) = vision_controller._A_LAT_REG_V_BP, vision_controller._A_LAT_REG_V
+    back_road, highway = self.stock(), self.stock()
+    self.in_curve(back_road, 12., setpoint=sp_lo)
+    self.in_curve(highway, 12., setpoint=sp_hi)
+    assert back_road.v_near_min == pytest.approx(highway.v_near_min * (a_lo / a_hi) ** 0.5)
+
+  def test_stock_target_rises_to_the_profile_below_the_allowed_speed(self):
+    scc = self.commit(self.stock())
+    v = 13.  # just under the curve's allowed speed
+    self.in_curve(scc, v)
+    assert scc.solver_active and scc.a_required == 0.
+    assert v < scc.v_near_min < v + 1.
+    assert scc.output_v_target > v
+    assert scc.output_v_target <= scc.v_dip_ahead
+
+  def test_releases_once_the_near_field_stops_limiting(self):
+    scc = self.commit(self.stock())
+    v = 11.  # well under the allowed speed, still far under the set speed
+    self.in_curve(scc, v)
+    assert scc.v_near_min < SETPOINT
+    assert not scc.solver_active
+    assert scc.output_v_target == V_CRUISE_UNSET
+    # the restore is still capped at the curve by the lookahead
+    assert scc.v_ahead_min < SETPOINT

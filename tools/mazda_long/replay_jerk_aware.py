@@ -109,7 +109,7 @@ def make_controller(fingerprint, jerk_aware=True):
   from opendbc.car.vehicle_model import VehicleModel
 
   params = Params()
-  for k in ("EnforceTorqueControl", "LiveTorqueParamsToggle", "SpeedDependentTorqueToggle"):
+  for k in ("EnforceTorqueControl", "LiveTorqueParamsToggle"):
     params.put_bool(k, True, block=True)
   params.put_bool("LateralJerkTorqueController", jerk_aware, block=True)
   params.put_bool("NeuralNetworkLateralControl", False, block=True)
