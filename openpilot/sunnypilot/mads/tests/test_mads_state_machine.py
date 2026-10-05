@@ -45,6 +45,8 @@ class MockMADS:
     self.selfdrive.state_machine = mocker.MagicMock()
     self.selfdrive.events = Events()
     self.selfdrive.events_sp = EventsSP()
+    self.selfdrive.model_startup.starting = False
+    self.selfdrive.big_model_loading = False
     self.button_owns_lateral = False
 
 
@@ -129,6 +131,20 @@ class TestMADSStateMachine(OpenpilotTestCase):
     self.state_machine.update()
     assert self.state_machine.state == State.paused
     self.clear_events()
+
+  def test_big_model_loading_pauses_except_for_modelds_first_load(self):
+    # a chestnut's load or a jetlink swap waits in paused; modeld's first load on every boot is refused,
+    # as the commIssue it stands in for was
+    for starting, chestnut_loading, expected in ((False, False, State.paused), (True, False, State.disabled),
+                                                 (True, True, State.paused)):
+      self.mads.selfdrive.model_startup.starting = starting
+      self.mads.selfdrive.big_model_loading = chestnut_loading
+      self.state_machine.state = State.disabled
+      self.events.add(EventName.bigModelLoading)
+      self.events_sp.add(make_event([ET.ENABLE]))
+      self.state_machine.update()
+      assert self.state_machine.state == expected
+      self.clear_events()
 
   def test_override_lateral(self):
     self.state_machine.state = State.enabled

@@ -27,6 +27,10 @@ GEARS_ALLOW_PAUSED_SILENT = [EventNameSP.silentWrongGear, EventNameSP.silentReve
 GEARS_ALLOW_PAUSED = [EventName.wrongGear, EventName.reverseGear, EventName.brakeHold,
                       EventName.doorOpen, EventName.seatbeltNotLatched, EventName.parkBrake,
                       EventName.bigModelLoading]
+# ...but not while it stands in for the commIssue of modeld's first load on every boot (model_startup.py):
+# that refused MADS, and paused it would steer silently once the last no-entry cleared, which another
+# still starting (calibration, a slow service) can stretch well into a drive
+GEARS_ALLOW_PAUSED_STARTING = [e for e in GEARS_ALLOW_PAUSED if e != EventName.bigModelLoading]
 
 
 class StateMachine:
@@ -56,7 +60,9 @@ class StateMachine:
     return bool(self._events.contains(event_type) or self._events_sp.contains(event_type))
 
   def check_contains_in_list(self) -> bool:
-    return bool(self._events.contains_in_list(GEARS_ALLOW_PAUSED) or self._events_sp.contains_in_list(GEARS_ALLOW_PAUSED_SILENT))
+    model_starting = self.selfdrive.model_startup.starting and not self.selfdrive.big_model_loading
+    gears = GEARS_ALLOW_PAUSED_STARTING if model_starting else GEARS_ALLOW_PAUSED
+    return bool(self._events.contains_in_list(gears) or self._events_sp.contains_in_list(GEARS_ALLOW_PAUSED_SILENT))
 
   def update(self):
     # soft disable timer and current alert types are from the state machine of openpilot

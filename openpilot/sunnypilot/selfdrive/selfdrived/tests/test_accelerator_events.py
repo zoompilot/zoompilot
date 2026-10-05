@@ -222,7 +222,8 @@ class TestSwitching(AcceleratorEventsTest):
     silentLkasEnable, is raised while it is paused, as mads.update_events does
     with no brake held. Returns (main, MADS) engaged at every tick."""
     main = StateMachine()
-    selfdrive = SimpleNamespace(state_machine=main, events=self.events, events_sp=self.events_sp, enabled=False)
+    selfdrive = SimpleNamespace(state_machine=main, events=self.events, events_sp=self.events_sp, enabled=False,
+                                model_startup=SimpleNamespace(starting=False), big_model_loading=False)
     madsm = MadsStateMachine(SimpleNamespace(selfdrive=selfdrive, button_owns_lateral=False))
     self.step(state='ready')
     engaged = []
