@@ -281,6 +281,8 @@ class BigToggle(BigButton):
     super()._load_images()
     self._txt_enabled_toggle = gui_app.texture("icons_mici/buttons/toggle_pill_enabled.png", 84, 66)
     self._txt_disabled_toggle = gui_app.texture("icons_mici/buttons/toggle_pill_disabled.png", 84, 66)
+    # on but greyed out by another setting: it applies again once that one is off
+    self._txt_inactive_toggle = gui_app.grayscale_texture("icons_mici/buttons/toggle_pill_enabled.png", 84, 66)
 
   def set_checked(self, checked: bool):
     self._checked = checked
@@ -293,7 +295,9 @@ class BigToggle(BigButton):
 
   def _draw_pill(self, x: float, y: float, checked: bool):
     # draw toggle icon top right
-    if checked:
+    if checked and not self.enabled:
+      rl.draw_texture_ex(self._txt_inactive_toggle, (x, y), 0, 1.0, rl.Color(255, 255, 255, int(255 * 0.6)))
+    elif checked:
       rl.draw_texture_ex(self._txt_enabled_toggle, (x, y), 0, 1.0, rl.WHITE)
     else:
       rl.draw_texture_ex(self._txt_disabled_toggle, (x, y), 0, 1.0, rl.WHITE)
