@@ -8,16 +8,16 @@ See the LICENSE.md file in the root directory for more details.
 Tests for the one-time torque-control default seeding.
 """
 
+import pytest
+
 from opendbc.car.mazda.values import MazdaFlags
 from opendbc.car.structs import car
 
-from openpilot.sunnypilot.selfdrive.car.interfaces import (MAZDA_STEER_TO_ZERO_TORQUE_TUNE, _seed_torque_defaults,
-                                                          seed_car_defaults_offroad)
+from openpilot.selfdrive.locationd.torqued import ALLOWED_CARS
+from openpilot.sunnypilot.selfdrive.car.interfaces import (MAZDA_STEER_TO_ZERO_TORQUE_TUNE, TORQUE_DEFAULT_TOGGLES as SEEDED_KEYS,
+                                                          _seed_torque_defaults, seed_car_defaults_offroad)
 
 CarParams = car.CarParams
-
-SEEDED_KEYS = ("EnforceTorqueControl", "LiveTorqueParamsToggle", "SpeedDependentTorqueToggle")
-
 
 class FakeParams:
   """Minimal dict-backed Params stand-in (avoids the stale on-disk params_pyx for new keys)."""
@@ -59,22 +59,22 @@ def _non_mazda_cp():
   return CarParams(brand="toyota", flags=int(MazdaFlags.STEER_TO_ZERO_EPS))
 
 
-def _torque_cp(brand):
+def _torque_cp(brand, tune='torque', angle=False):
   cp = CarParams(brand=brand)
-  cp.lateralTuning.init('torque')
+  cp.lateralTuning.init(tune)
+  if angle:
+    cp.steerControlType = CarParams.SteerControlType.angle
   return cp
 
 
-def _pid_cp(brand):
-  cp = CarParams(brand=brand)
-  cp.lateralTuning.init('pid')
-  return cp
+def _seeded(cp, **initial):
+  params = FakeParams(initial)
+  _seed_torque_defaults(cp, params)
+  return params
 
 
-def _angle_cp(brand):
-  cp = _torque_cp(brand)
-  cp.steerControlType = CarParams.SteerControlType.angle
-  return cp
+def _toggles(params):
+  return {params.get_bool(key) for key in SEEDED_KEYS}
 
 
 class TestMazdaTorqueDefaultsSeed:
@@ -117,49 +117,32 @@ class TestUpstreamSelfTuneSeed:
   """Cars upstream's torqued self-tunes (ALLOWED_CARS with a torque tune) get the same toggles,
   behind their own marker, and never the Mazda tune."""
 
-  def test_allowed_torque_brands_get_defaults(self):
-    from openpilot.selfdrive.locationd.torqued import ALLOWED_CARS
-    for brand in ALLOWED_CARS:
-      params = FakeParams()
-      _seed_torque_defaults(_torque_cp(brand), params)
-      for key in SEEDED_KEYS:
-        assert params.get_bool(key) is True, brand
-      assert params.get_bool("TorqueDefaultsApplied") is True
-      assert params.get_bool("MazdaTorqueDefaultsApplied") is False
-      assert params.get("TorqueControlTune") is None
+  @pytest.mark.parametrize("brand", ALLOWED_CARS)
+  def test_allowed_torque_brands_get_defaults(self, brand):
+    params = _seeded(_torque_cp(brand))
+    assert _toggles(params) == {True}
+    assert params.get_bool("TorqueDefaultsApplied") is True
+    assert params.get_bool("MazdaTorqueDefaultsApplied") is False
+    assert params.get("TorqueControlTune") is None
 
-  def test_brands_upstream_does_not_self_tune_are_not_seeded(self):
-    for brand in ("gm", "subaru", "chrysler", "mg"):
-      params = FakeParams()
-      _seed_torque_defaults(_torque_cp(brand), params)
-      for key in SEEDED_KEYS:
-        assert params.get_bool(key) is False, brand
-      assert params.get_bool("TorqueDefaultsApplied") is False
-
-  def test_pid_and_angle_cars_are_not_seeded(self):
-    for cp in (_pid_cp("honda"), _angle_cp("volkswagen")):
-      params = FakeParams()
-      _seed_torque_defaults(cp, params)
-      for key in SEEDED_KEYS:
-        assert params.get_bool(key) is False
-      assert params.get_bool("TorqueDefaultsApplied") is False
+  @pytest.mark.parametrize("cp", [_torque_cp("gm"), _torque_cp("subaru"), _torque_cp("chrysler"), _torque_cp("mg"),
+                                  _torque_cp("honda", tune='pid'), _torque_cp("volkswagen", angle=True)])
+  def test_other_cars_are_not_seeded(self, cp):
+    params = _seeded(cp)
+    assert _toggles(params) == {False}
+    assert params.get_bool("TorqueDefaultsApplied") is False
 
   def test_idempotent_respects_user_override(self):
-    params = FakeParams({"TorqueDefaultsApplied": True})
-    _seed_torque_defaults(_torque_cp("hyundai"), params)
-    for key in SEEDED_KEYS:
-      assert params.get_bool(key) is False
+    assert _toggles(_seeded(_torque_cp("hyundai"), TorqueDefaultsApplied=True)) == {False}
 
   def test_nnlc_car_is_marked_not_seeded(self):
-    # the UI holds torque control off under NNLC; turning NNLC off later must not seed either
-    params = FakeParams({"NeuralNetworkLateralControl": True})
-    _seed_torque_defaults(_torque_cp("hyundai"), params)
-    for key in SEEDED_KEYS:
-      assert params.get_bool(key) is False
+    # turning NNLC off later must not seed either
+    params = _seeded(_torque_cp("hyundai"), NeuralNetworkLateralControl=True)
+    assert _toggles(params) == {False}
     assert params.get_bool("TorqueDefaultsApplied") is True
     params.put_bool("NeuralNetworkLateralControl", False)
     _seed_torque_defaults(_torque_cp("hyundai"), params)
-    assert params.get_bool("EnforceTorqueControl") is False
+    assert _toggles(params) == {False}
 
 
 class TestMazdaTorqueTuneSeed:
