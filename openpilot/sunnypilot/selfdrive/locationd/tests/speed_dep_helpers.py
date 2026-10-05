@@ -26,7 +26,7 @@ SPEED_DEP_FINGERPRINT = next(iter(SPEED_DEP_CARS)) if SPEED_DEP_CARS else None
 NON_SPEED_DEP_FINGERPRINT = 'NOT_IN_SPEED_DEP_TOML'
 assert NON_SPEED_DEP_FINGERPRINT not in SPEED_DEP_CARS, f"{NON_SPEED_DEP_FINGERPRINT} unexpectedly in speed_dependent.toml"
 
-SPEED_DEP_TOGGLES = ("SpeedDependentTorqueToggle", "EnforceTorqueControl", "LiveTorqueParamsToggle")
+SELF_TUNE_KEYS = ("EnforceTorqueControl", "LiveTorqueParamsToggle")
 
 
 def get_car_bins(fingerprint):
@@ -43,17 +43,16 @@ def get_car_bins(fingerprint):
 
 class FakeParams:
   """Stands in for Params in both torqued (caches) and torqued_ext (toggles). Speed-dep
-  learning needs the whole activation chain the UI enforces (Enforce Torque Control,
-  Self-Tune, the speed-dep toggle), so speed_dep_on drives all three; everything else
+  learning runs wherever self-tune does, and make_cp's brand is not one upstream self-tunes,
+  so self_tune_on turns on Enforce Torque Control and Self-Tune together; everything else
   reads off. Caches are served from, and cache writes recorded in, one dict."""
 
-  def __init__(self, store=None, speed_dep_on=True):
+  def __init__(self, store=None, self_tune_on=True):
     self.store = dict(store or {})
-    self.speed_dep_on = speed_dep_on
-    self.bools = set()  # further toggles a test turns on
+    self.bools = set(SELF_TUNE_KEYS) if self_tune_on else set()  # toggles that read on
 
   def get_bool(self, key):
-    return self.speed_dep_on if key in SPEED_DEP_TOGGLES else key in self.bools
+    return key in self.bools
 
   def get(self, key, **kwargs):
     return self.store.get(key)
@@ -65,14 +64,14 @@ class FakeParams:
     self.store.pop(key, None)
 
 
-def make_cp(fingerprint=None, lat_accel_factor=1.25, friction=0.125):
+def make_cp(fingerprint=None, lat_accel_factor=1.25, friction=0.125, brand='test'):
   """A real CarParams with a torque tune. minSteerSpeed stays 0 (a steer-to-zero EPS), so
   entries flagged requires_steer_to_zero remain valid."""
   if fingerprint is None:
     fingerprint = SPEED_DEP_FINGERPRINT
   CP = car.CarParams.new_message()
   CP.carFingerprint = fingerprint
-  CP.brand = 'test'
+  CP.brand = brand
   CP.lateralTuning.init('torque')
   CP.lateralTuning.torque.friction = friction
   CP.lateralTuning.torque.latAccelFactor = lat_accel_factor

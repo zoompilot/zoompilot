@@ -317,7 +317,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LiveTorqueParamsRelaxedToggle", {PERSISTENT | BACKUP , BOOL}},
     {"TorqueControlTune", {PERSISTENT | BACKUP, FLOAT, "0.0"}},
     {"TorqueControlTuneBig", {PERSISTENT | BACKUP, FLOAT, "1.0"}},  // big-model tune
-    {"SpeedDependentTorqueToggle", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TorqueParamsOverrideEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TorqueParamsOverrideFriction", {PERSISTENT | BACKUP, FLOAT, "0.1"}},
     {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
@@ -325,6 +324,4 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"MazdaTorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},
     // Tune version last seeded for the steer-to-zero Mazda EPS; a bump re-seeds everyone once.
     {"MazdaTorqueTuneSeeded", {PERSISTENT | BACKUP, FLOAT}},
-    // Ensures the torque defaults are seeded once on cars upstream self-tunes (torqued ALLOWED_CARS).
-    {"TorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},
 };

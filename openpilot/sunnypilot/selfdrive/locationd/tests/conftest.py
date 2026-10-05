@@ -20,11 +20,11 @@ def _route_params(monkeypatch, fake):
 
 @pytest.fixture
 def fake_params(monkeypatch):
-  """One FakeParams behind both Params sites, speed-dep toggle chain on, caches empty."""
+  """One FakeParams behind both Params sites, Enforce Torque Control and Self-Tune on, caches empty."""
   return _route_params(monkeypatch, FakeParams())
 
 
 @pytest.fixture
 def fake_params_off(monkeypatch):
-  """Same, with the speed-dep toggle chain off."""
-  return _route_params(monkeypatch, FakeParams(speed_dep_on=False))
+  """Same, with Enforce Torque Control and Self-Tune off."""
+  return _route_params(monkeypatch, FakeParams(self_tune_on=False))

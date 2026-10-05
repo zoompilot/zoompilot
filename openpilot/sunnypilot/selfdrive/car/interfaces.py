@@ -30,53 +30,34 @@ def log_fingerprint(CP: structs.CarParams) -> None:
 MAZDA_STEER_TO_ZERO_TORQUE_TUNE = 2.0  # FLOAT param; the tune fitted to the 2022+ EPS (latcontrol_torque_v2.py)
 
 
-TORQUE_DEFAULT_TOGGLES = ("EnforceTorqueControl", "LiveTorqueParamsToggle", "SpeedDependentTorqueToggle")
+def _seed_mazda_torque_defaults(CP: structs.CarParams, params: Params | None = None) -> None:
+  """One-time: default the torque-control stack ON for Mazdas on the measured EPS hardware.
 
-
-def _is_steer_to_zero_mazda(CP: structs.CarParams) -> bool:
-  return CP.brand == "mazda" and bool(CP.flags & MazdaFlags.EPS_HW)
-
-
-def _is_upstream_self_tune_car(CP: structs.CarParams) -> bool:
-  if CP.steerControlType == structs.CarParams.SteerControlType.angle or CP.lateralTuning.which() != 'torque':
-    return False
-  from openpilot.selfdrive.locationd.torqued import ALLOWED_CARS  # lazy: only torque-tuned cars get this far
-  return CP.brand in ALLOWED_CARS
-
-
-def _seed_torque_defaults(CP: structs.CarParams, params: Params | None = None) -> None:
-  """One-time: default the torque-control stack ON for Mazdas on the measured EPS hardware and
-  for every car upstream's torqued already self-tunes.
-
-  The Mazda gate is the EPS hardware mask, not the model, so the CX-9 sharing this EPS, EPS swaps
-  and legacy firmware on the same hardware are covered.
+  Gated on the EPS hardware mask, not the model, so the CX-9 sharing this EPS, EPS swaps and
+  legacy firmware on the same hardware are covered.
   Both seeds sit behind markers, because manager_init materializes every declared default at
   boot: TorqueControlTune is already 0.0 on disk by the time card runs, so "unset" never
-  survives to here. The Mazda tune is seeded once per value of MAZDA_STEER_TO_ZERO_TORQUE_TUNE,
-  so a later bump moves everyone again while a choice made after the seed is kept.
+  survives to here. The two toggles are seeded once behind MazdaTorqueDefaultsApplied. The
+  tune is seeded once per value of MAZDA_STEER_TO_ZERO_TORQUE_TUNE, recorded in
+  MazdaTorqueTuneSeeded, so a later bump moves everyone again while a choice made after the
+  seed is kept. TorqueControlTune's declared default stays 0.0 for every other brand.
   """
   if params is None:
     params = Params()
 
-  if _is_steer_to_zero_mazda(CP):
-    marker = "MazdaTorqueDefaultsApplied"
-    if params.get("MazdaTorqueTuneSeeded") != MAZDA_STEER_TO_ZERO_TORQUE_TUNE:
-      params.put("TorqueControlTune", MAZDA_STEER_TO_ZERO_TORQUE_TUNE, block=True)  # controlsd reads it at startup
-      params.put("MazdaTorqueTuneSeeded", MAZDA_STEER_TO_ZERO_TORQUE_TUNE, block=True)
-      cloudlog.warning("Seeded steer-to-zero Mazda TorqueControlTune=%s", MAZDA_STEER_TO_ZERO_TORQUE_TUNE)
-  elif _is_upstream_self_tune_car(CP):
-    marker = "TorqueDefaultsApplied"
-  else:
+  if CP.brand != "mazda" or not (CP.flags & MazdaFlags.EPS_HW):
+    return
+  if params.get("MazdaTorqueTuneSeeded") != MAZDA_STEER_TO_ZERO_TORQUE_TUNE:
+    params.put("TorqueControlTune", MAZDA_STEER_TO_ZERO_TORQUE_TUNE, block=True)  # controlsd reads it at startup
+    params.put("MazdaTorqueTuneSeeded", MAZDA_STEER_TO_ZERO_TORQUE_TUNE, block=True)
+    cloudlog.warning("Seeded steer-to-zero Mazda TorqueControlTune=%s", MAZDA_STEER_TO_ZERO_TORQUE_TUNE)
+  if params.get_bool("MazdaTorqueDefaultsApplied"):
     return
 
-  if params.get_bool(marker):
-    return
-
-  if not params.get_bool("NeuralNetworkLateralControl"):  # the UI holds torque control off under NNLC
-    for key in TORQUE_DEFAULT_TOGGLES:
-      params.put_bool(key, True)
-    cloudlog.warning("Seeded %s torque-control defaults %s", CP.brand, TORQUE_DEFAULT_TOGGLES)
-  params.put_bool(marker, True)
+  params.put_bool("EnforceTorqueControl", True)     # torque lateral control
+  params.put_bool("LiveTorqueParamsToggle", True)   # self-tune (live torque params)
+  params.put_bool("MazdaTorqueDefaultsApplied", True)
+  cloudlog.warning("Seeded steer-to-zero Mazda torque-control defaults (EnforceTorqueControl, self-tune)")
 
 
 def seed_car_defaults_offroad(params: Params) -> None:
@@ -93,7 +74,7 @@ def seed_car_defaults_offroad(params: Params) -> None:
   except Exception:
     cloudlog.exception("seed_car_defaults_offroad: could not parse CarParamsPersistent")
     return
-  _seed_torque_defaults(CP, params)
+  _seed_mazda_torque_defaults(CP, params)
 
 def _enforce_torque_lateral_control(CP: structs.CarParams, params: Params | None = None, enabled: bool = False) -> bool:
   if params is None:
@@ -165,7 +146,7 @@ def _cleanup_unsupported_params(CP: structs.CarParams, CP_SP: structs.CarParamsS
 
 
 def setup_interfaces(CI: CarInterfaceBase, params: Params | None = None) -> None:
-  _seed_torque_defaults(CI.CP, params)
+  _seed_mazda_torque_defaults(CI.CP, params)
   enforce_torque = _enforce_torque_lateral_control(CI.CP, params)
   nnlc_enabled = _initialize_neural_network_lateral_control(CI.CP, CI.CP_SP, params)
   _initialize_intelligent_cruise_button_management(CI.CP, CI.CP_SP, params)

@@ -229,17 +229,17 @@ class TestSubPanelSelfRefresh:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
 
     params.put_bool("LiveTorqueParamsToggle", False, block=True)
-    params.put_bool("SpeedDependentTorqueToggle", True, block=True)
+    params.put_bool("LiveTorqueParamsRelaxedToggle", True, block=True)
     layout = SteeringLayoutMici()
 
     render(layout._tq_self_tune_view)
-    assert layout._tq_speed_dep._checked and layout._tq_speed_dep.superseded, "inert child shows its value, greyed"
-    assert not layout._tq_speed_dep.enabled
-    assert params.get_bool("SpeedDependentTorqueToggle"), "and must keep its value"
+    assert layout._tq_relaxed._checked and layout._tq_relaxed.superseded, "inert child shows its value, greyed"
+    assert not layout._tq_relaxed.enabled
+    assert params.get_bool("LiveTorqueParamsRelaxedToggle"), "and must keep its value"
 
     params.put_bool("LiveTorqueParamsToggle", True, block=True)
     render(layout._tq_self_tune_view)
-    assert layout._tq_speed_dep.enabled and not layout._tq_speed_dep.superseded, "applies again when self-tune returns"
+    assert layout._tq_relaxed.enabled and not layout._tq_relaxed.superseded, "applies again when self-tune returns"
 
 
 class TestSteeringLayoutBadges:
