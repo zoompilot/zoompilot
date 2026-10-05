@@ -50,7 +50,9 @@ Silencing the radar too early after a cold boot latches an i-ACTIVSENSE fault th
 roughly 15 min power-down clears. The camera (FSC) runs a radar-presence check in the seconds
 after its boot settles. On the setup/teardown drives the check faulted when the radar went quiet
 1.9 s after the camera's boot-settle broadcast and passed from 5.8 s; waiting about 8 s was
-proven clean, and `FSC_SETTLE_T` is 10 s. The check's verdict is invisible until first motion, so
+proven clean. `FSC_SETTLE_T` was 10 s until 2026-10-05 and is now 7 s, which takes about 3 s off
+alpha long's readiness after ignition (the radar takeover is the last thing it waits on); on-car
+pending. The check's verdict is invisible until first motion, so
 the gate is a timer on the camera's settle signal, not any fault bit.
 
 The settle signal is CAM_LANEINFO.NO_ERR_BIT, a pure boot marker that clears at 2.8 to 6.0 s
@@ -720,7 +722,7 @@ the dash lane indicators, so those two stay zeroed.
 | `LONG_STEP` | 2 frames (50 Hz) | stock CRZ_INFO / CRZ_CTRL rate | corpus |
 | `RADAR_STEP` | 10 frames (10 Hz) | stock radar static and track rate | corpus |
 | `RADAR_UDS_STEP` | 50 frames (2 Hz) | tester present cadence, well inside S3 = 5 s | 000000fe |
-| `FSC_SETTLE_T` | 10.0 s | radar-presence check faulted at 1.9 s, passed from 5.8 s | setup/teardown drives |
+| `FSC_SETTLE_T` | 7.0 s | radar-presence check faulted at 1.9 s, passed from 5.8 s (10 s until 2026-10-05) | setup/teardown drives |
 | `CAM_LANEINFO_PERIOD_T` | 0.563 s | longest CAM_LANEINFO period, 26+ segments, two cars | corpus |
 | `CAM_LANEINFO_FRESH_T` | 1.5 s | 2.7x the longest period | derived |
 | `STOCK_RADAR_ALIVE_T` | 0.05 s | stock gap p99.99 31.0 ms | 7.25M frames, 166 routes |
