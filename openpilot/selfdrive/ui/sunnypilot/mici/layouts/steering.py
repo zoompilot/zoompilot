@@ -80,14 +80,17 @@ class SteeringLayoutMici(NavScroller):
     self._mads_toggle.set_enabled(ui_state.is_offroad)
     # Read the live toggle so dependent controls update in the same frame.
     self._mads_main_cruise = BigParamControlSP(tr("main cruise toggle"), "MadsMainCruiseAllowed",
-                                               depends_on=lambda: self._mads_toggle._checked and not self._mads_limited)
+                                               depends_on=self._mads_engagement_applies)
     self._mads_unified = BigParamControlSP(tr("unified engagement"), "MadsUnifiedEngagementMode",
-                                           depends_on=lambda: self._mads_toggle._checked and not self._mads_limited)
+                                           depends_on=self._mads_engagement_applies)
+    # a limited platform fixes both, and the fixed values still apply
+    for item in (self._mads_main_cruise, self._mads_unified):
+      item.set_enabled(lambda: not self._mads_limited)
     self._mads_steering = BigMultiParamToggleSP(tr("steering on brake"), "MadsSteeringMode", MADS_STEERING_MODE_LABELS)
     # Mazda trims with the physical TJA button: it becomes the only lateral switch, so main
     # cruise and unified engagement stop touching MADS. Fingerprint cannot tell, so ask.
-    self._mads_tja = BigParamControlSP(tr("tja button"), "MazdaTjaButton",
-                                       depends_on=lambda: self._mads_toggle._checked and ui_state.is_offroad())
+    self._mads_tja = BigParamControlSP(tr("tja button"), "MazdaTjaButton", depends_on=lambda: self._mads_toggle._checked)
+    self._mads_tja.set_enabled(ui_state.is_offroad)
     self._mads_tja.set_visible(self._is_mazda)
     self._mads_view = self._mads_settings_btn.link_sub_panel([self._mads_toggle, self._mads_main_cruise, self._mads_unified,
                                                               self._mads_steering, self._mads_tja])
@@ -123,8 +126,8 @@ class SteeringLayoutMici(NavScroller):
     # (v2 only when every model size runs it; see torque_tune.jerk_aware_has_effect).
     self._jerk_aware_toggle = BigParamControl(tr("jerk aware"), "LateralJerkTorqueController")
     self._jerk_aware_toggle.set_enabled(lambda: ui_state.is_offroad() and
-                                        not ui_state.params.get_bool("NeuralNetworkLateralControl") and
-                                        jerk_aware_has_effect(ui_state.params))
+                                        not ui_state.params.get_bool("NeuralNetworkLateralControl"))
+    self._jerk_aware_toggle.set_superseded(lambda: not jerk_aware_has_effect(ui_state.params))
 
     # An unset version resolves through the param default. Keep a fallback for unreadable metadata.
     tq_versions = versions_by_label() or {tr("default"): 2.0}
@@ -137,12 +140,14 @@ class SteeringLayoutMici(NavScroller):
     self._tq_self_tune_btn.set_subtitle_font_size(24)
     # Third-level panels do not run this layout's update loop, so gate their controls directly.
     self._tq_self_tune = BigParamControl(tr("enable self-tune"), "LiveTorqueParamsToggle")
+    # torqued drops the live estimate while manual realtime overrides it
     self._tq_self_tune.set_enabled(ui_state.is_offroad)
+    self._tq_self_tune.set_superseded(self._tq_overridden)
     # torqued reads both settings at startup.
-    self._tq_relaxed = BigParamControlSP(tr("less restrict"), "LiveTorqueParamsRelaxedToggle",
-                                         depends_on=lambda: self._tq_self_tune._checked and ui_state.is_offroad())
-    self._tq_speed_dep = BigParamControlSP(tr("speed dependent"), "SpeedDependentTorqueToggle",
-                                           depends_on=lambda: self._tq_self_tune._checked and ui_state.is_offroad())
+    self._tq_relaxed = BigParamControlSP(tr("less restrict"), "LiveTorqueParamsRelaxedToggle", depends_on=self._tq_live_applies)
+    self._tq_speed_dep = BigParamControlSP(tr("speed dependent"), "SpeedDependentTorqueToggle", depends_on=self._tq_live_applies)
+    for item in (self._tq_relaxed, self._tq_speed_dep):
+      item.set_enabled(ui_state.is_offroad)
     self._tq_self_tune_view = self._tq_self_tune_btn.link_sub_panel([self._tq_self_tune, self._tq_relaxed, self._tq_speed_dep])
 
     self._tq_custom_btn = BigButtonSP(tr("custom tune"))
@@ -166,7 +171,8 @@ class SteeringLayoutMici(NavScroller):
       item.set_enabled(lambda: self._enforce_torque)
     # controlsd builds both tunes at startup.
     for item in self._tq_versions:
-      item.set_enabled(lambda: self._enforce_torque and ui_state.is_offroad())
+      item.set_enabled(ui_state.is_offroad)
+      item.set_superseded(lambda: not self._enforce_torque)  # torque-tuned cars run v0 without it
     self._tq_view = self._torque_settings_btn.link_sub_panel([self._torque_toggle, self._jerk_aware_toggle,
                                                               *self._tq_versions] + self._tq_items_rest)
 
@@ -247,7 +253,8 @@ class SteeringLayoutMici(NavScroller):
     self._prev_mads_limited = is_mads_limited
 
     # The platform lockout cannot be expressed as a control dependency.
-    self._mads_steering.set_enabled(not is_mads_limited and ui_state.params.get_bool("Mads"))
+    self._mads_steering.set_enabled(not is_mads_limited)
+    self._mads_steering.set_superseded(not ui_state.params.get_bool("Mads"))
 
   @staticmethod
   def _is_mazda() -> bool:
@@ -257,6 +264,17 @@ class SteeringLayoutMici(NavScroller):
   def _bsm_applies(alc_val: int) -> bool:
     """Return whether the selected lane-change mode uses the BSM delay."""
     return alc_val > AutoLaneChangeMode.NUDGE
+
+  def _mads_engagement_applies(self) -> bool:
+    """Main cruise and unified engagement do nothing with MADS off, or with the TJA button owning lateral."""
+    # _is_mazda reads params, so only once the TJA toggle is on
+    return self._mads_toggle._checked and not (self._mads_tja._checked and self._is_mazda())
+
+  def _tq_overridden(self) -> bool:
+    return self._tq_custom._checked and self._tq_manual_rt._checked
+
+  def _tq_live_applies(self) -> bool:
+    return self._tq_self_tune._checked and not self._tq_overridden()
 
   @staticmethod
   def _car_has_bsm() -> bool:

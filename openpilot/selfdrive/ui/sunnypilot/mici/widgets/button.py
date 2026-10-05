@@ -184,23 +184,17 @@ class SubPanelSP(NavScroller):
 
 
 class BigParamControlSP(BigParamControl):
-  """Disable input and display state while a control dependency is unmet.
+  """Lock the control while a control dependency is unmet.
 
-  The stored value remains unchanged and becomes visible again when the dependency is met.
-  The callable dependency lets parent-toggle changes take effect in the same frame.
+  The stored value stays on screen, an on pill drawn grey, and applies again once the dependency is met.
+  The callable dependency lets parent-toggle changes take effect in the same frame. Other locks, like
+  onroad, go through set_enabled and keep the pill green.
   """
 
   def __init__(self, text: str, param: str, depends_on: Callable[[], bool] | None = None, **kwargs):
     super().__init__(text, param, **kwargs)
-    self._depends_on = depends_on
     if depends_on is not None:
-      self.set_enabled(depends_on)
-
-  def refresh(self):
-    if self._depends_on is not None and not self._depends_on():
-      self.set_checked(False)  # shown off; the param is not read, let alone written
-    else:
-      super().refresh()
+      self.set_superseded(lambda: not depends_on())
 
 
 class BigMultiParamToggleSP(BigMultiParamToggle):

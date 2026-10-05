@@ -51,10 +51,12 @@ class AlphaLongitudinalLayoutMici(NavScroller):
     has_long = CP is not None and ui_state.has_longitudinal_control
     self._alpha_long_toggle.set_visible(CP is not None and CP.alphaLongitudinalAvailable and not ui_state.is_release)
     self._experimental_toggle.set_enabled(CP is None or has_long)
-    self._dec_toggle.set_enabled(has_long)
+    # these only act in experimental mode: locked without it, keeping their values
+    idle = not has_long or not self._experimental_toggle._checked
+    self._dec_toggle.set_superseded(idle)
     # DEC decides the mode on its own, and the e2e assists never act under it
-    self._set_speed_toggle.set_enabled(has_long and not self._dec_toggle._checked)
-    self._lead_gap_toggle.set_enabled(has_long and not self._dec_toggle._checked)
+    for toggle in (self._set_speed_toggle, self._lead_gap_toggle):
+      toggle.set_superseded(idle or self._dec_toggle._checked)
 
   def _refresh(self):
     for key, item in self._refresh_toggles:
