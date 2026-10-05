@@ -44,7 +44,7 @@ zoompilot vUNRELEASED
 * Speed limits: ICBM on changes the set speed. ICBM off asks you to set 80 mph, then handles the limit.
 * Auto high beams fixed.
 * Both distance buttons change personality.
-* Auto Hold off: stops release and resume again.
+* CX-9 and other Mazdas without Auto Hold: alpha long fixed, stops release and resume again.
 * No creeping at a red light after stopping.
 
 zoompilot v2026.09.12-14
