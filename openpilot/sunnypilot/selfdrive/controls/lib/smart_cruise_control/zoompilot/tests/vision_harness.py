@@ -12,6 +12,7 @@ geometry in the tests moves with them.
 """
 import contextlib
 from typing import Any
+from unittest import mock
 
 import numpy as np
 
@@ -25,8 +26,10 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.
 
 V_EGO = 20.
 SETPOINT = 20.
-CURVE_KAPPA = 0.02  # r = 50 m -> allowed sqrt(1.8 / 0.02) = 9.5 m/s at the 1.8 ceiling, 9.25 planned (0.95 margin)
-CURVE_V = 9.5
+# the lateral ceiling at SETPOINT, before the planning margin
+A_LAT_MAX = float(np.interp(SETPOINT, vision_controller._A_LAT_REG_V_BP, vision_controller._A_LAT_REG_V))
+CURVE_KAPPA = 0.02  # r = 50 m
+CURVE_V = (A_LAT_MAX / CURVE_KAPPA) ** 0.5  # allowed speed at the ceiling, ~9.9 m/s
 
 
 def make_cp(op_long: bool = True) -> structs.CarParams:
@@ -88,6 +91,11 @@ def patch_gain(gain):
     yield
   finally:
     vision_controller._KAPPA_BIAS_GAIN = saved
+
+
+def flat_ceiling(a_lat: float):
+  """A flat lateral ceiling, for tests whose geometry pins numbers to one ceiling."""
+  return mock.patch.object(vision_controller, '_A_LAT_REG_V', [a_lat, a_lat])
 
 
 class VisionCase:

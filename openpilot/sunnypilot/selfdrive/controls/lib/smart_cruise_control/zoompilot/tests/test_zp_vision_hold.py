@@ -16,7 +16,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_prof
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import vision_controller
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.vision_controller import SmartCruiseControlVision
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.tests.vision_harness import (
-  VisionCase, curve_at, make_cp)
+  VisionCase, curve_at, flat_ceiling, make_cp)
 
 V = 15.  # m/s, inside the hold band
 BEND_S, BEND_L, BEND_KAPPA = 130., 20., 0.015  # a short r=67 m bend, first read 130 m out
@@ -143,7 +143,9 @@ class TestEscalationCeiling(VisionCase):
     return scc
 
   def test_ceiling_follows_the_set_speed(self):
-    lo, mid, hi = (self.run_setpoint(sp) for sp in (20., 24.6, 27.))
+    # a flat lateral ceiling isolates the escalation fade from the set-speed ceiling
+    with flat_ceiling(1.8):
+      lo, mid, hi = (self.run_setpoint(sp) for sp in (20., 24.6, 27.))
     budget = lo.limits.a_budget
     # cruising at 45 mph arriving hot costs more than braking hard
     assert lo.a_needed > 2 * budget
