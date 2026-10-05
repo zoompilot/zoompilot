@@ -30,16 +30,13 @@ def gui():
 
 
 @pytest.fixture
-def params(gui):
-  # the widgets read ui_state.params, a singleton made under whichever prefix imported it
-  # first (another test module's, when the files run together), so write through it
-  from openpilot.selfdrive.ui.ui_state import ui_state
-  p = ui_state.params
-  p.put("UpdaterState", "idle", block=True)
-  p.put_bool("UpdaterFetchAvailable", True, block=True)
-  p.put_bool("UpdateAvailable", False, block=True)
-  p.put("UpdateFailedCount", 0, block=True)
-  return p
+def updater_params(params):
+  # the shared conftest's fresh params, with the updater idle and an update available remotely
+  params.put("UpdaterState", "idle", block=True)
+  params.put_bool("UpdaterFetchAvailable", True, block=True)
+  params.put_bool("UpdateAvailable", False, block=True)
+  params.put("UpdateFailedCount", 0, block=True)
+  return params
 
 
 def render(widget):
@@ -47,7 +44,7 @@ def render(widget):
   widget.render(rl.Rectangle(0, 0, 536, 240))
 
 
-def test_the_panel_swaps_in_the_button_and_the_branch_button_follows(gui, params):
+def test_the_panel_swaps_in_the_button_and_the_branch_button_follows(gui, updater_params):
   from openpilot.selfdrive.ui.mici.layouts.settings.software import CheckUpdateButton, TargetBranchButton
   from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import CheckUpdateButtonSP, SoftwareLayoutSP
   layout = SoftwareLayoutSP()
@@ -59,12 +56,12 @@ def test_the_panel_swaps_in_the_button_and_the_branch_button_follows(gui, params
   assert checks[0]._touch_valid_callback is not None, "added through the scroller, so its touch gate is wrapped"
 
 
-def test_a_downloaded_update_reads_ready_and_a_tap_downloads_again(gui, params):
+def test_a_downloaded_update_reads_ready_and_a_tap_downloads_again(gui, updater_params):
   from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import CheckUpdateButtonSP
   btn = CheckUpdateButtonSP()
   render(btn)
   assert btn.get_value() == "download update", "upstream's wording while nothing is staged"
-  params.put_bool("UpdateAvailable", True, block=True)
+  updater_params.put_bool("UpdateAvailable", True, block=True)
   render(btn)
   render(btn)
   assert btn.get_value() == CheckUpdateButtonSP.READY
