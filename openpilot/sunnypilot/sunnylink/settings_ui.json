@@ -739,7 +739,7 @@
               "key": "ExperimentalModeLeadGap",
               "widget": "toggle",
               "title": "Experimental Mode Lead Follow Assist",
-              "description": "In Experimental Mode, gently close up to your following distance when the model hangs further back behind a steady car ahead. Never follows closer than chill mode would. Has no effect while Dynamic Experimental Control is on.",
+              "description": "Closes the gap to your driving personality's following distance behind a steady car. Never closer than chill mode. No effect while Dynamic Experimental Control is on.",
               "visibility": [
                 {
                   "type": "capability",
