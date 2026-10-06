@@ -32,7 +32,7 @@ from pathlib import Path
 
 # the version of jetlink.openpilot's API this adapter is written to; any other
 # is treated as jetlink being absent, with the reason as the offroad alert
-API = 1
+API = 2
 
 # the gadget owner, as manager names the process and selfdrived lists it
 OWNER = 'jetlinkd'
@@ -192,25 +192,6 @@ class Adapter:
     return ModelFace(parser=Parser, frame_size=lambda w, h: get_nv12_info(w, h)[3], desire_len=ModelConstants.DESIRE_LEN,
                      constants=V2ModelConstants, lat_smooth_seconds=LAT_SMOOTH_SECONDS,
                      long_smooth_seconds=LONG_SMOOTH_SECONDS, get_action_from_model=get_action_from_model)
-
-  def engagement(self):
-    """A poller over selfdrived and the car: the large model swaps in only
-    while nothing is in control."""
-    import openpilot.cereal.messaging as messaging
-    services = ('selfdriveState', 'selfdriveStateSP', 'carState', 'carControl')
-    sm = messaging.SubMaster(list(services))
-
-    def engaged(timeout_ms: int) -> bool:
-      sm.update(timeout_ms)
-      # a service that is missing, late or invalid counts as engaged
-      valid = all(sm.seen[s] and sm.alive[s] and sm.valid[s] for s in services)
-      cc = sm['carControl']
-      # MADS engaged counts while its lateral is paused too (a stop, a blinker,
-      # the brake): it steers again on its own, and the switch waits for the
-      # driver to turn it off. False on a car without MADS
-      return (not valid or sm['selfdriveState'].enabled or sm['selfdriveStateSP'].mads.enabled or
-              cc.latActive or cc.longActive)
-    return engaged
 
   def event(self, name: str, **fields) -> None:
     self.log.event(name, **fields)
@@ -378,6 +359,24 @@ def prepare() -> bool:
   The GPU's setup has to happen now, or its threads inherit the frame loop's
   realtime priority and core."""
   return _api().prepare()
+
+
+# what in_control() reads; both modelds subscribe to all three
+IN_CONTROL = ('carState', 'carControl', 'carControlSP')
+
+
+@_guarded(True)
+def in_control(sm) -> bool:
+  """modeld, before every frame, onto the model: is openpilot or MADS in
+  control? jetlink's large model swaps in only while it is not. selfdrived's
+  own answer (enabled or mads.enabled, what accelerator_events is handed),
+  as controlsd republishes it, read off modeld's SubMaster. MADS counts with
+  its lateral paused (a stop, a blinker, the brake): it steers again on its
+  own. A service late or invalid counts as in control; without carState a
+  card that died would have the swap land on stale controls."""
+  if not (sm.all_alive(IN_CONTROL) and sm.all_valid(IN_CONTROL)):
+    return True
+  return bool(sm['carControl'].enabled or sm['carControlSP'].mads.enabled)
 
 
 @_guarded(None)
