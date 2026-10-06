@@ -14,13 +14,13 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 import jetlink.openpilot as jl
 from jetlink.openpilot.interface import Openpilot, OwnerConfig, conformance, load_adapter
 from jetlink.openpilot.settings import FileParams, Settings
 
+from openpilot.cereal import messaging
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params, ParamKeyType
 from openpilot.common.test import OpenpilotTestCase
@@ -167,47 +167,32 @@ class TestModeld(OpenpilotTestCase):
     self.assertEqual((face.lat_smooth_seconds, face.long_smooth_seconds), (modeld.LAT_SMOOTH_SECONDS, modeld.LONG_SMOOTH_SECONDS))
     self.assertIs(face.get_action_from_model, modeld.get_action_from_model)
 
-  def test_engagement_closes_the_swap_window_on_anything_in_control_or_unknown(self):
-    services = ('selfdriveState', 'selfdriveStateSP', 'carState', 'carControl')
-    states = {'selfdriveState': SimpleNamespace(enabled=False),
-              'selfdriveStateSP': SimpleNamespace(mads=SimpleNamespace(enabled=False, active=False)),
-              'carState': SimpleNamespace(standstill=True),
-              'carControl': SimpleNamespace(latActive=False, longActive=False)}
-    sm = mock.MagicMock()
-    sm.__getitem__.side_effect = states.__getitem__
+  def test_in_control_shuts_the_swap_window_on_anything_in_control_or_unknown(self):
+    sm = messaging.SubMaster(list(jetlink_adapter.IN_CONTROL))
 
     def healthy():
-      sm.seen = dict.fromkeys(services, True)
-      sm.alive = sm.seen.copy()
-      sm.valid = sm.seen.copy()
+      for service in sm.services:
+        sm.data[service] = getattr(messaging.new_message(service), service)
+        sm.alive[service] = sm.valid[service] = True
 
-    with mock.patch('openpilot.cereal.messaging.SubMaster', return_value=sm) as submaster:
-      engaged = Adapter().engagement()
-    submaster.assert_called_once_with(list(services))
-    for failed in services:
-      for check in ('seen', 'alive', 'valid'):
+    for failed in sm.services:
+      for check in (sm.alive, sm.valid):
         healthy()
-        self.assertFalse(engaged(0))
-        getattr(sm, check)[failed] = False
-        # no news on this poll: a service that went quiet still counts
-        self.assertTrue(engaged(0), f"{failed} not {check}")
+        self.assertFalse(jetlink_adapter.in_control(sm))
+        check[failed] = False
+        self.assertTrue(jetlink_adapter.in_control(sm), failed)
     healthy()
-    states['carState'].standstill = False
-    # MADS: lateral or longitudinal control active while not enabled
-    for active in ('latActive', 'longActive'):
-      states['carControl'].latActive = active == 'latActive'
-      states['carControl'].longActive = active == 'longActive'
-      self.assertTrue(engaged(0), active)
-    states['carControl'].latActive = states['carControl'].longActive = False
+    sm['carControl'].enabled = True
+    self.assertTrue(jetlink_adapter.in_control(sm))
+    sm['carControl'].enabled = False
     # MADS engaged with its lateral paused (a stop, a blinker, the brake):
-    # latActive is false, but MADS steers again on its own, so no swap
-    states['selfdriveStateSP'].mads.enabled = True
-    self.assertTrue(engaged(0))
-    states['selfdriveStateSP'].mads.enabled = False
-    self.assertFalse(engaged(0))
-    states['selfdriveState'].enabled = True
-    self.assertTrue(engaged(0))
-    self.assertEqual(sm.update.call_args_list[-1], mock.call(0))
+    # nothing steers, but MADS does again on its own, so no swap
+    sm['carControlSP'].mads.enabled = True
+    self.assertTrue(jetlink_adapter.in_control(sm))
+    sm['carControlSP'].mads.enabled = False
+    self.assertFalse(jetlink_adapter.in_control(sm))
+    # a rule that fails on the frame thread holds the swap off, never modeld
+    self.assertIs(jetlink_adapter.in_control(None), True)
 
   def test_telemetry_is_a_cloudlog_event(self):
     op = Adapter()
@@ -461,7 +446,7 @@ assert not a.should_extend_catalog() and a.extend_catalog(c) is c
 
   def test_another_api_turns_the_link_off_and_says_why(self):
     params = Params()
-    for api, name, why in ((2, 'API', "jetlink package API 2, this build expects 1"),
+    for api, name, why in ((1, 'API', "jetlink package API 1, this build expects 2"),
                            (None, 'openpilot', "jetlink package too old for this build")):
       if name == 'API':
         patch = mock.patch.object(jl, 'API', api)

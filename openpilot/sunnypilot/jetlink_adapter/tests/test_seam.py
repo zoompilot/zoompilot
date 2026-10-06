@@ -47,9 +47,9 @@ HARDWARED = OPENPILOT / 'system' / 'hardware' / 'hardwared.py'
 BASELINE = 'develop'
 
 # everything modeld may call on the adapter: prepare() before the process goes
-# realtime, attach() once the camera is up. A name added here without a plan
-# entry is a widened seam
-HOOKS = {'prepare', 'attach'}
+# realtime, attach() once the camera is up, in_control() onto the model before
+# every frame. A name added here without a plan entry is a widened seam
+HOOKS = {'prepare', 'attach', 'in_control'}
 ADAPTER = 'jetlink_adapter'
 
 
@@ -345,8 +345,8 @@ class NativeEquivalence(OpenpilotTestCase):
 
 
 class Footprint:
-  """Shared by both modelds: two adapter calls, the decision before realtime,
-  chestnut blocks that never reach the adapter, and the UI's field."""
+  """Shared by both modelds: three adapter calls, the decision before
+  realtime, chestnut blocks that never reach the adapter, and the UI's field."""
   PATH: Path
 
   @classmethod
@@ -356,14 +356,24 @@ class Footprint:
     cls.tree = ast.parse(cls.src)
     cls.body = _main(cls.src).body
 
-  def test_the_adapter_is_reachable_from_two_calls_in_two_hunks(self):
+  def test_the_adapter_is_reachable_from_three_calls_in_three_hunks(self):
     lines = self.src.splitlines()
     calls = sorted(_calls(self.tree))
     detail = '\n'.join(f"  {self.PATH.name}:{lineno} {lines[lineno - 1].strip()}" for lineno, _ in calls)
-    self.assertEqual({attr for _, attr in calls}, HOOKS, f"the seam widened:\n{detail}")
-    self.assertEqual(len(calls), 2, f"expected prepare and attach and nothing else:\n{detail}")
+    self.assertEqual([attr for _, attr in calls], ['prepare', 'attach', 'in_control'],
+                     f"expected prepare, attach and in_control and nothing else:\n{detail}")
     # the decision and the load; the acceleratorState line reads the model
     self.assertGreater(calls[1][0] - calls[0][0], 8, f"one hunk where two were expected:\n{detail}")
+    # and in_control once a frame, onto the model, as frame_drop_ratio is
+    loop = _frame_loop(self.body)
+    self.assertEqual(sorted(attr for s in loop for _, attr in _calls(s)), ['in_control'])
+
+  def test_modeld_reads_everything_in_control_does(self):
+    # a service missing from modeld's SubMaster reads as in control forever:
+    # the large model would wait for a window that never opens, and say nothing
+    submaster = next(n for n in ast.walk(self.tree) if isinstance(n, ast.Call) and getattr(n.func, 'id', None) == 'SubMaster')
+    services = {e.value for e in submaster.args[0].elts}
+    self.assertLessEqual(set(jetlink_adapter.IN_CONTROL), services)
 
   def test_the_link_is_decided_after_chestnut_and_before_realtime(self):
     decide = _index(self.body, _prepares, 'the jetlink_adapter.prepare() call')
@@ -496,11 +506,7 @@ class Footprint:
       stop.wait(5)
       raise ConnectionError("no link in this test")
 
-    def engagement():
-      return lambda timeout_ms: stop.wait(timeout_ms / 1000) or True
-
-    joining = JoiningModelState(small, connect, build=None, progress=mock.MagicMock(), engagement=engagement,
-                                log=mock.MagicMock())
+    joining = JoiningModelState(small, connect, build=None, progress=mock.MagicMock(), log=mock.MagicMock())
     try:
       missing = []
       for name in sorted(loads):
@@ -523,8 +529,8 @@ class Footprint:
 # had left seconds before. Nor for the blocking shutdown(): deviceState would
 # stop for up to 25 s
 SEAM = {
-  'selfdrive/modeld/modeld.py': {'prepare', 'attach'},
-  'sunnypilot/modeld_v2/modeld.py': {'prepare', 'attach'},
+  'selfdrive/modeld/modeld.py': HOOKS,
+  'sunnypilot/modeld_v2/modeld.py': HOOKS,
   'system/manager/process_config.py': {'OWNER', '__name__', 'should_run'},
   'sunnypilot/selfdrive/selfdrived/accelerator_events.py': {'OWNER'},
   'system/hardware/hardwared.py': {'reason', 'request_shutdown', 'shutdown_pending'},

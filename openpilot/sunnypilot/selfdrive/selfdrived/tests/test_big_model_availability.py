@@ -13,8 +13,8 @@ class TestBigModelAvailability(OpenpilotTestCase):
   test_selfdrived_traces.py beside this one.
 
   The large model swaps in only while nothing is in control (the adapter's
-  engagement poller: openpilot or MADS engaged, MADS even with its lateral
-  paused). Ready while something is, the driver is told once to re-engage;
+  in_control, which modeld writes onto the model every frame: openpilot or
+  MADS engaged, MADS even with its lateral paused). Ready while something is, the driver is told once to re-engage;
   ready while nothing is, it swaps at once and bigModelReady says so."""
 
   def setUp(self):
