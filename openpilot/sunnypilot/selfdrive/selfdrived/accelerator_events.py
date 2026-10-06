@@ -8,10 +8,10 @@ Onroad events for an accelerator that joins mid-drive. The native big model bloc
 expects a board loaded before the first modelV2; an off-board one joins onto a
 modelV2 the small model already publishes and can leave and come back.
 
-It swaps in only while nothing is in control, and only once it has kept up with
-the frames it shadows (jetlink's proof), so the driver is told when it is ready
-and re-engages to use it. For a second after a swap nothing engages while the
-large model builds its history, and the "Big Model Active" chime at the end of
+It swaps in only while nothing is in control, so the driver is told when it is
+ready and re-engages to use it. For a second after a swap nothing engages while
+the large model builds its history and proves it keeps up (jetlink hands back
+on a held frame in that second), and the "Big Model Active" chime at the end of
 it says the driver can. When it leaves, the small model drives on and the
 driver is told it is on the small model; nothing disengages.
 
