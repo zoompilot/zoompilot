@@ -10,6 +10,7 @@ import time
 
 from openpilot.common.hardware.hw import Paths
 from openpilot.selfdrive.ui.ui_state import ui_state, ChestnutState
+from openpilot.sunnypilot import jetlink_adapter
 from openpilot.sunnypilot.models.fetcher import get_cached_bundles
 from openpilot.sunnypilot.models.helpers import get_active_source, get_selected_bundle, resolve_bundle_by_ref
 from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL, DEFAULT_MODEL
@@ -83,14 +84,31 @@ def big_model_progress() -> tuple[str, float, str] | None:
   return stage, float(progress.get('frac', 0.0)), msg
 
 
+def standin_model() -> str | None:
+  """The big model jetlink drives while the pick is still being downloaded or
+  built: the last one the Jetson built. None with a chestnut fitted."""
+  jetlink = None if ui_state.chestnut_present else ui_state.jetlink
+  return getattr(jetlink, 'standin', None) if jetlink is not None else None
+
+
+def big_model_note(ref: str) -> str | None:
+  """What jetlink says of one big model for the picker's list: built on the
+  Jetson, or downloaded to the comma. None with a chestnut fitted."""
+  if ui_state.chestnut_present or ui_state.jetlink is None:
+    return None
+  return {'ready': tr("ready on Jetson"), 'downloaded': tr("downloaded")}.get(jetlink_adapter.model_state(ref))
+
+
 def carrying_model() -> tuple[str | None, str | None, str | None]:
   """(source, internal name, display name) of what actually drives. Runner-matched:
   when a Default big cannot carry, stock modeld runs the Default small, never the
-  small slot's pick; a custom big has no automatic fallback yet -> (None, None, None)."""
+  small slot's pick; a custom big has no automatic fallback yet -> (None, None, None).
+  With jetlink driving, a pick still being prepared is carried by the last model
+  the Jetson built (standin_model)."""
   # only when no board is fitted does the chestnut state describe the jetlink view
   if not ui_state.chestnut_present and ui_state.chestnut_state == ChestnutState.ACTIVE:
     jetlink = ui_state.jetlink
-    name = jetlink.active_model if jetlink is not None else None
+    name = (jetlink.active_model or standin_model()) if jetlink is not None else None
     if name is not None:
       return 'accelerator', name, name
   source = active_source()

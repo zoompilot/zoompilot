@@ -670,6 +670,35 @@ class TestAcceleratorProgressRenders:
   def test_the_line_is_jetlinks_message(self, params, stage, frac, msg, drops, mode, shown):
     assert self._info(stage, frac, msg, drops, mode)[2] == shown
 
+  def test_the_stand_in_is_named_while_the_pick_is_not_ready(self, params):
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
+    saved = ui_state.jetlink
+    ui_state.jetlink = jetlink_status(enabled=True, mode='usb', present=True, model='ResAction Preview',
+                                      standin='Cinque Terre V3')
+    try:
+      assert _model_info()[1:] == ('big model', 'cinque terre v3 for now')
+    finally:
+      ui_state.jetlink = saved
+
+  def test_a_jetlink_only_pick_downloading_with_no_files_renders(self, params):
+    # the model manager reports such a pick downloading with no files for a
+    # moment; dividing its progress by zero killed the UI (2026-10-06)
+    from unittest import mock
+    from openpilot.cereal import messaging
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
+    msg = messaging.new_message('modelManagerSP')
+    bundle = msg.modelManagerSP.selectedBundle
+    bundle.status = 'downloading'
+    bundle.internalName = 'RESACT'
+    bundle.init('models', 0)
+    layout = ModelsLayoutMici()
+    with mock.patch.object(ModelsLayoutMici, 'model_manager', new_callable=mock.PropertyMock,
+                           return_value=msg.modelManagerSP):
+      render(layout)
+      render(layout)
+    assert not layout.cancel_download_btn.is_visible
+
   def test_failure_says_so_rather_than_showing_100_percent(self, params):
     _, _, info = self._info('failed', 1.0)
     assert '100%' not in info

@@ -410,6 +410,15 @@ def shutdown_pending() -> bool:
   return getattr(_api(), 'shutdown_pending', lambda: False)()
 
 
+@_guarded(None)
+def model_state(ref: str) -> str | None:
+  """The big-model list, when it opens: 'ready' when the Jetson has built the
+  model, 'downloaded' when its file is on the comma, else None. None from a
+  jetlink that predates it."""
+  ask = getattr(_api(), 'model_state', None)
+  return ask(ref) if ask is not None else None
+
+
 @_guarded(False)
 def should_extend_catalog() -> bool:
   """Should the big-model catalog carry the models newer catalogs list?
