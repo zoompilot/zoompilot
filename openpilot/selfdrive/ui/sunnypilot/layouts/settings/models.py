@@ -269,10 +269,10 @@ class ModelsLayout(Widget):
       # the swap window, not the model, is what is missing now: it opens when
       # nothing is in control
       return tr("{} is ready. Disengage fully, then re-engage to switch.").format(big_name)
-    if accelerator and not view.ready and (standin := standin_model()):
-      # the last model the Jetson built drives until the pick is downloaded and built
-      return tr("{} drives until {} is ready.").format(standin, big_name)
     if accelerator and not view.ready:
+      if standin := standin_model():
+        # the last model the Jetson built drives until the pick is downloaded and built
+        return tr("{} drives until {} is ready.").format(standin, big_name)
       return tr("{} will drive when Jetlink is ready.").format(big_name)
     if accelerator:
       # it rejoins all drive and a drop is announced as it happens, so there is

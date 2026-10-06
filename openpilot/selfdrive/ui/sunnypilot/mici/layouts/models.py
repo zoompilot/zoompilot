@@ -312,11 +312,7 @@ class ModelsLayoutMici(NavScroller):
       self.current_model_info.info_header.set_text(tr("error") + self._download_progress)
       self.current_model_info.info_text.set_text(tr("download failed"))
 
-    elif (manager.selectedBundle and manager.selectedBundle.status == custom.ModelManagerSP.DownloadStatus.downloading
-          and len(manager.selectedBundle.models) > 0):
-      # a jetlink-only model has no files for the model manager to fetch, and
-      # it reports downloading with none for a moment: jetlink's own progress,
-      # from _model_info above, is the story (a divide by zero crashed the UI)
+    elif manager.selectedBundle and manager.selectedBundle.status == custom.ModelManagerSP.DownloadStatus.downloading:
       self.cancel_download_btn.set_visible(True)
       device.set_override_interactive_timeout(5)
       progress = 0.0

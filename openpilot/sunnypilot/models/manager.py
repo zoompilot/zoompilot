@@ -263,7 +263,11 @@ class ModelManagerSP:
     models = [] if source == "chestnut" and not self.chestnut_present else self.selected_bundle.models
     for model in models:
       model.artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.downloading
-    self._report_status()
+    if models:
+      # a bundle with nothing to fetch goes straight to downloaded below: said
+      # to be downloading with no files, it showed a download that never ran,
+      # and the mici panel divided its progress by zero (2026-10-06)
+      self._report_status()
     os.makedirs(destination_path, exist_ok=True)
 
     try:

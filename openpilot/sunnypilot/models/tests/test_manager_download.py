@@ -724,9 +724,17 @@ class TestBigModelSlotWithoutChestnut(ManagerDownloadTestBase):
 
   def test_no_chestnut_stores_the_slot_without_fetching(self):
     self.manager.chestnut_present = False
-    with mock.patch.object(self.manager, '_process_artifact', new=mock.AsyncMock()) as fetch:
+    statuses = []
+
+    def report():
+      statuses.append(self.manager.selected_bundle.status)
+    with mock.patch.object(self.manager, '_process_artifact', new=mock.AsyncMock()) as fetch, \
+         mock.patch.object(self.manager, '_report_status', side_effect=report):
       self.manager.download(self._big_bundle(), self.dest, "chestnut")
     fetch.assert_not_called()
+    # never said to be downloading: nothing is fetched, and with no files the
+    # mici panel divided a download's progress by zero (2026-10-06)
+    assert statuses == [custom.ModelManagerSP.DownloadStatus.downloaded]
     stored = [c for c in self.manager.params.put.call_args_list if c.args[0] == ACTIVE_BUNDLE_KEYS["chestnut"]]
     assert len(stored) == 1 and stored[0].args[1]["ref"] == "big"
 

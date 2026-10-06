@@ -87,8 +87,7 @@ def big_model_progress() -> tuple[str, float, str] | None:
 def standin_model() -> str | None:
   """The big model jetlink drives while the pick is still being downloaded or
   built: the last one the Jetson built. None with a chestnut fitted."""
-  jetlink = None if ui_state.chestnut_present else ui_state.jetlink
-  return getattr(jetlink, 'standin', None) if jetlink is not None else None
+  return None if ui_state.chestnut_present else getattr(ui_state.jetlink, 'standin', None)
 
 
 def big_model_note(ref: str) -> str | None:
@@ -102,13 +101,12 @@ def big_model_note(ref: str) -> str | None:
 def carrying_model() -> tuple[str | None, str | None, str | None]:
   """(source, internal name, display name) of what actually drives. Runner-matched:
   when a Default big cannot carry, stock modeld runs the Default small, never the
-  small slot's pick; a custom big has no automatic fallback yet -> (None, None, None).
-  With jetlink driving, a pick still being prepared is carried by the last model
-  the Jetson built (standin_model)."""
+  small slot's pick; a custom big has no automatic fallback yet -> (None, None, None)."""
   # only when no board is fitted does the chestnut state describe the jetlink view
   if not ui_state.chestnut_present and ui_state.chestnut_state == ChestnutState.ACTIVE:
     jetlink = ui_state.jetlink
-    name = (jetlink.active_model or standin_model()) if jetlink is not None else None
+    # jetlink's stand-in, while the pick is prepared, is its active model
+    name = jetlink.active_model if jetlink is not None else None
     if name is not None:
       return 'accelerator', name, name
   source = active_source()
