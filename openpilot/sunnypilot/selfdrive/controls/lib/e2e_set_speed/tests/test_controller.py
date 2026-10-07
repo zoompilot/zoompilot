@@ -19,6 +19,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers imp
 V_EGO = 20.
 V_CRUISE = 24.  # floor (24 - 20) / 8 = 0.5
 HOLD_FRAMES = round(c.HOLD_TIME / DT)
+SOFT_HOLD_FRAMES = round(c.SOFT_HOLD_TIME / DT)
 RISE_FRAMES = round(1. / (c.AUTHORITY_RISE * DT))
 FALL_FRAMES = math.ceil(1. / (c.AUTHORITY_FALL * DT))
 
@@ -67,7 +68,7 @@ def test_idle_resets_at_once(kwargs, reason):
 def test_holds_then_rises():
   ctl = new_controller()
   sm = build_sm(V_EGO)
-  assert run(ctl, HOLD_FRAMES, sm) == 0.
+  assert run(ctl, SOFT_HOLD_FRAMES, sm) == 0.
   assert ctl.inhibit == Inhibit.hold
   run(ctl, RISE_FRAMES // 2, sm)
   assert ctl.inhibit == Inhibit.none
@@ -139,6 +140,7 @@ def _plan(f):
   ({"yaw_rate": _plan(lambda t: 1.2 / V_EGO if t >= 6. else 0.)}, {}, 0., Inhibit.lateral),
 ])
 def test_trips_drop_authority_fast_and_hold(sm_kwargs, update_kwargs, a_model, reason):
+  hold = SOFT_HOLD_FRAMES if reason in c.SOFT_TRIPS else HOLD_FRAMES
   ctl = armed()
   sm = build_sm(V_EGO, **sm_kwargs)
   run(ctl, 1, sm, a_model=a_model, **update_kwargs)
@@ -147,7 +149,66 @@ def test_trips_drop_authority_fast_and_hold(sm_kwargs, update_kwargs, a_model, r
   assert run(ctl, FALL_FRAMES, sm, a_model=a_model, **update_kwargs) == a_model
   assert ctl.authority == 0.
   # clear: nothing until the hold has run out
-  assert run(ctl, HOLD_FRAMES, build_sm(V_EGO)) == 0.
+  assert run(ctl, hold, build_sm(V_EGO)) == 0.
+  run(ctl, 1, build_sm(V_EGO))
+  assert ctl.authority > 0.
+
+
+@pytest.mark.parametrize("trip, clear, between", [
+  # (tripping frame, value that clears it while re-arming, value inside the hysteresis band)
+  ({"a_model": -0.25}, {"a_model": 0.}, {"a_model": -0.15}),
+  ({"sm": {"curvature": 1.2 / V_EGO ** 2}}, {}, {"sm": {"curvature": 0.9 / V_EGO ** 2}}),
+  ({"sm": {"plan_v": _plan(lambda t: V_EGO - 0.2 * t)}}, {}, {"sm": {"plan_v": _plan(lambda t: V_EGO - 0.12 * t)}}),
+])
+def test_soft_trips_rearm_only_past_the_hysteresis_band(trip, clear, between):
+  def step(n, kw):
+    return run(ctl, n, build_sm(V_EGO, **kw.get("sm", {})), a_model=kw.get("a_model", 0.))
+  ctl = armed()
+  step(1, trip)
+  inhibit = ctl.inhibit
+  # inside the band: still tripped, so the soft hold never runs out
+  step(SOFT_HOLD_FRAMES + 20, between)
+  assert ctl.inhibit == inhibit and ctl.authority == 0.
+  # the same value with full authority does not trip
+  fresh = armed()
+  run(fresh, 1, build_sm(V_EGO, **between.get("sm", {})), a_model=between.get("a_model", 0.))
+  assert fresh.inhibit == Inhibit.none
+  # cleared: re-arms after the soft hold
+  step(SOFT_HOLD_FRAMES, clear)
+  assert ctl.inhibit == Inhibit.hold
+  step(1, clear)
+  assert ctl.authority > 0.
+
+
+def test_repeated_plan_slowdown_gets_the_full_hold():
+  slowing = build_sm(V_EGO, plan_v=_plan(lambda t: V_EGO - 0.2 * t))
+  ctl = armed()
+  run(ctl, 1, slowing)
+  run(ctl, SOFT_HOLD_FRAMES + 2, build_sm(V_EGO))
+  assert ctl.authority > 0.
+  # back within HOLD_TIME: a slowdown in progress (a red-light approach), frozen through the full hold
+  run(ctl, 1, slowing)
+  frozen = ctl.authority
+  run(ctl, HOLD_FRAMES, build_sm(V_EGO))
+  assert ctl.authority == frozen
+  run(ctl, 1, build_sm(V_EGO))
+  assert ctl.authority > frozen
+  # a lone one later gets the short hold again
+  run(ctl, HOLD_FRAMES + 20, build_sm(V_EGO))
+  run(ctl, 1, slowing)
+  frozen = ctl.authority
+  run(ctl, SOFT_HOLD_FRAMES + 1, build_sm(V_EGO))
+  assert ctl.authority > frozen
+
+
+@pytest.mark.parametrize("kwargs, hold", [
+  ({"dec_active": True}, HOLD_FRAMES),
+  ({"is_e2e": False}, SOFT_HOLD_FRAMES),
+])
+def test_leaving_dec_holds_like_a_hazard(kwargs, hold):
+  ctl = armed()
+  run(ctl, 1, build_sm(V_EGO), **kwargs)
+  assert run(ctl, hold, build_sm(V_EGO)) == 0.
   run(ctl, 1, build_sm(V_EGO))
   assert ctl.authority > 0.
 

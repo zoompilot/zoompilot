@@ -17,7 +17,7 @@ V = 20.
 STANDARD = log.LongitudinalPersonality.standard
 FAR = desired_gap(V, V, STANDARD) + 30.  # well past the band
 A_MPC = 1.0  # the MPC wants to close in
-SETTLED = int((c.nudge.HOLD_TIME + 1. / c.nudge.AUTHORITY_RISE + CAP[int(STANDARD)] / c.BOOST_RISE) / DT) + 10
+SETTLED = int((c.nudge.HOLD_TIME + 1. / c.AUTHORITY_RISE + CAP[int(STANDARD)] / c.BOOST_RISE) / DT) + 10
 
 
 def run(sm, frames=SETTLED, a_model=0., a_mpc=A_MPC, enabled=True, ctl=None, **overrides):

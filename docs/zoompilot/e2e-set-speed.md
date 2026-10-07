@@ -40,8 +40,12 @@ gain  = interp(a_model, [-0.2, -0.05], [0, 1])
 ```
 
 `v_target` is the planner's target after SCC vision, SCC map and SLA, so curve and limit
-targets are never pushed past. Authority rises 0.5/s, falls 4/s on a trip, and re-arms only
-3 s after the last trip; it freezes through that hold. The boost rises at most 0.5 m/s^3.
+targets are never pushed past. Authority rises 1/s, falls 4/s on a trip, and freezes through a
+hold after the last trip: 3 s after a hazard (FCW, hard brake, forceDecel, stop, lead, driver,
+lane change), 0.5 s after the model's own slowdown signals (model braking, plan slowing, lateral,
+coast, low speed). Those re-arm only once clear of a wider band (model accel -0.1, plan drop
+0.5 m/s, lateral 0.8 m/s^2) until authority is full again, and a plan-slowing trip within 3 s of
+the last trip is a slowdown in progress and gets the full hold. The boost rises at most 0.5 m/s^3.
 Off, not in e2e, long control reset, DEC active or invalid input: the model passes through
 untouched and the state resets.
 
@@ -61,9 +65,10 @@ add under DEC.
 | `TAU` | 8 s | stock MRCC set-speed steps close with ~7.7 s |
 | `FLOOR_MAX` | 0.6 m/s^2 | stock MRCC peak, median 0.57, p90 0.72 |
 | `MIN_SPEED`, `FULL_SPEED` | 5, 8 m/s | v5 trip cannot see a stop below this; floor 1.2-1.6 against a creeping model |
-| `AUTHORITY_RISE` | 0.5 /s | |
+| `AUTHORITY_RISE` | 1 /s | 0.5 on the first drive: full authority 5 s after every trip, felt as lag |
 | `AUTHORITY_FALL` | 4 /s | p90 overridden decel on purposeful slowdowns 0.28 -> 0.11 m/s vs 2/s |
-| `HOLD_TIME` | 3 s | override on purposeful slowdowns 21% -> 7% (open loop) |
+| `HOLD_TIME` | 3 s, hazards | override on purposeful slowdowns 21% -> 7% (open loop) |
+| `SOFT_HOLD_TIME` | 0.5 s + hysteresis | see "Re-arm lag" |
 | `BOOST_RISE` | 0.5 m/s^3 | removes 34 of 35 target-restore steps (48 in 2 h, p50 0.15, max 0.46) |
 | `GAIN_BP` | -0.2, -0.05 | model accel sd 0.11-0.19 in cruise, below 0.3 Hz; purposeful pushes 11% -> 4% |
 | `MODEL_BRAKE_ACCEL` | -0.2 | blocks 62% of purposeful slowdowns, 1.1% of drift |
@@ -115,3 +120,22 @@ model accel under -0.05 held at full authority. If that is common, lower `FLOOR_
 - Making DEC the answer: radarless DEC only blends to slow down, and its mode flips step the
   output.
 - Shifting the model's velocity plan: a floor in disguise, bypassed on action-head bundles.
+
+## Re-arm lag (10-07)
+
+On the first drive (`0000028a--4df8cbb84b`) the floor reached full authority exactly 5 s after
+every trip (3 s hold, 2 s rise), and 18 of 29 clear stretches tripped again before getting
+there, mostly on bends and easings. A single hold for every trip treats a curve that has ended
+like a lead or a stop. Hazards keep the 3 s; the model's own slowdown signals re-arm after 0.5 s
+with hysteresis, which is what the hold did for them (a signal hovering at its threshold). Red-light
+approaches flicker plan slowing for 10-20 s, so a repeat inside 3 s gets the full hold; model
+braking is not escalated because the gain already fades the boost out as the model brakes.
+Leaving DEC (FCW, standstill or a predicted stop on this car) or invalid model output holds 3 s
+like a hazard; engaging experimental mode gets the short hold, since a lead or stop trips at once.
+
+Open loop over 281 experimental-mode segments: re-arm median 5.0 -> 2.3 s (p90 5 -> 4 s, the
+hazards); boost in the 20 s before 48 stops unchanged (mean 0.13 -> 0.12 m/s); none in 12 min of
+cornering over 1.0 m/s^2 either way; full authority while the model asked for under -0.05 12.1% ->
+12.2% of boosting. Without the escalation the stops rose to 0.19 m/s and 17% over 0.3 m/s. A lead
+as a soft trip was rejected: vision leads flicker and it added speed before leads appeared.
+Lead Follow Assist keeps the old 0.5/s rise.
