@@ -393,24 +393,15 @@ def attach(small, cam_w: int, cam_h: int):
 def request_shutdown(reason: str = '') -> bool:
   """hardwared, once, when the comma is about to power off for good: ask for
   the far end to go down with it. Returns at once: True when the request now
-  waits for jetlinkd, which shutdown_pending() follows.
-
-  A jetlink of API 1 from before the non-blocking power-off has no
-  request_shutdown: it is asked the old way, blocking up to 25 s, so the
-  Jetson is never left on for want of a method."""
-  api = _api()
-  ask = getattr(api, 'request_shutdown', None)
-  if ask is None:
-    api.shutdown(reason, 25.0)
-    return False
-  return ask(reason)
+  waits for jetlinkd, which shutdown_pending() follows."""
+  return _api().request_shutdown(reason)
 
 
 @_guarded(False)
 def shutdown_pending() -> bool:
   """hardwared, every loop after request_shutdown(), until it puts DoShutdown:
   has jetlinkd still to take the request? A stat."""
-  return getattr(_api(), 'shutdown_pending', lambda: False)()
+  return _api().shutdown_pending()
 
 
 @_guarded(None)

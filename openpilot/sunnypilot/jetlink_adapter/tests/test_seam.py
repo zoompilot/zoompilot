@@ -526,8 +526,7 @@ class Footprint:
 # every file outside the adapter that names it, and what each may use: the
 # whole seam between this fork and jetlink. hardwared never asks for status():
 # a snapshot keeps presence warm, and power-off would wait on a Jetson that
-# had left seconds before. Nor for the blocking shutdown(): deviceState would
-# stop for up to 25 s
+# had left seconds before
 SEAM = {
   'selfdrive/modeld/modeld.py': HOOKS,
   'sunnypilot/modeld_v2/modeld.py': HOOKS,
@@ -536,6 +535,7 @@ SEAM = {
   'system/hardware/hardwared.py': {'reason', 'request_shutdown', 'shutdown_pending'},
   'sunnypilot/models/fetcher.py': {'should_extend_catalog', 'extend_catalog'},
   'selfdrive/ui/sunnypilot/ui_state.py': {'status'},
+  'selfdrive/ui/sunnypilot/model_info.py': {'model_state'},
   'selfdrive/ui/sunnypilot/accelerator_link.py': {'KEYS', 'MODES'},
 }
 
