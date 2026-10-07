@@ -48,7 +48,7 @@ pushes harder than chill mode would at that moment; the excess uses the closer o
 leadTwo. The gain fades the lift out as the model starts braking, so the car settles where the
 model pushes back rather than overruling it.
 
-Authority reuses the nudge's scheme (rise 0.5/s, fall 4/s, 3 s hold after the last trip) with
+Authority reuses the nudge's scheme (rise 0.5/s, fall 4/s, 3 s hold after any trip) with
 lead trips added: no lead or a lead change (position more than 3 m off where the last frame's
 lead should be: cut-in, lane change ahead, vision swap) drop authority to zero at once; a lead
 under 5 m/s, below 0.8 probability, braking (aLeadK < -0.5) or forecast to lose 1 m/s within

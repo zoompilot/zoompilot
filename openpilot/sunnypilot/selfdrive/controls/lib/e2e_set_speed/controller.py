@@ -45,11 +45,17 @@ FLOOR_MAX = 0.6  # m/s^2
 MIN_SPEED = 5.0  # m/s
 FULL_SPEED = 8.0  # m/s
 
-# Authority re-arms slowly after a hold and drops fast. Single-frame trips are early warnings,
-# so they are not filtered; the hold keeps a flickering trip from re-arming mid-slowdown.
-AUTHORITY_RISE = 0.5  # 1/s
+# Authority re-arms after a hold and drops fast. Single-frame trips are early warnings, so they
+# are not filtered; the hold keeps a flickering trip from re-arming mid-slowdown.
+AUTHORITY_RISE = 1.0  # 1/s
 AUTHORITY_FALL = 4.0  # 1/s
 HOLD_TIME = 3.0  # s
+# The model's own slowdown signals re-arm sooner, which is most of what the driver feels as lag
+# after a bend or an easing. Hysteresis does the hold's job for them: while re-arming they trip
+# again from the wider *_CLEAR band until authority is back to full, so a signal hovering at its
+# threshold cannot re-arm mid-slowdown. A planSlowing trip within HOLD_TIME of the last trip is a
+# slowdown in progress (red-light approaches flicker it for 10-20 s) and gets the full hold.
+SOFT_HOLD_TIME = 0.5  # s
 # A speed target restored with full authority (SCC-V or SLA releasing) must not step the boost in.
 BOOST_RISE = 0.5  # m/s^3
 
@@ -57,12 +63,15 @@ BOOST_RISE = 0.5  # m/s^3
 # outside that band, and it is already zero where the hard trip fires.
 GAIN_BP = [-0.2, -0.05]  # m/s^2
 MODEL_BRAKE_ACCEL = -0.2  # m/s^2
+MODEL_BRAKE_CLEAR = -0.1  # m/s^2
 # Speed the plan loses over 5 s, measured from its own v(0): vEgo reads 2-3% low against GPS.
 PLAN_SLOWDOWN = 0.75  # m/s
+PLAN_SLOWDOWN_CLEAR = 0.5  # m/s
 PLAN_SLOWDOWN_T = 5.0  # s
 # Lateral acceleration now or anywhere on the plan. The look-ahead fired before every curve
 # entry in the logs, a median 5 s ahead; trips on deceleration alone missed half of them.
 LAT_ACCEL_MAX = 1.0  # m/s^2
+LAT_ACCEL_CLEAR = 0.8  # m/s^2
 LAT_HORIZON = 10.0  # s
 STOP_SPEED = 2.0  # m/s; a plan dipping below this is a stop
 
@@ -76,6 +85,9 @@ LAT_MASK = T_IDXS <= LAT_HORIZON
 SLOWDOWN_MASK = T_IDXS <= PLAN_SLOWDOWN_T
 
 
+SOFT_TRIPS = (Inhibit.modelBraking, Inhibit.planSlowing, Inhibit.lateral, Inhibit.coast, Inhibit.lowSpeed)
+
+
 def plan_drop(vel: np.ndarray) -> float:
   """Most speed the model's plan loses within PLAN_SLOWDOWN_T, from its own v(0): a dip that recovers
   by then counts too."""
@@ -87,6 +99,7 @@ class E2ESetSpeedController:
     self.params = params or Params()
     self.dt = dt
     self.hold_frames = int(round(HOLD_TIME / dt))
+    self.soft_hold_frames = int(round(SOFT_HOLD_TIME / dt))
     self.params_frames = int(PARAMS_UPDATE_PERIOD / dt)
     self.frame = -1
     self.enabled = False
@@ -97,7 +110,11 @@ class E2ESetSpeedController:
     self.gain = 0.
     self.floor = 0.
     self.boost = 0.
-    self.hold_left = self.hold_frames
+    # DEC here means FCW, standstill or a predicted stop, and invalid means no model to trust: both
+    # hazards. Engaging or leaving experimental mode is not.
+    hazard = reason in (Inhibit.decActive, Inhibit.invalid)
+    self.hold_left = self.hold_frames if hazard else self.soft_hold_frames
+    self.last_trip_frame = self.frame - self.hold_frames - 1
     self.inhibit = reason
 
   def _update_params(self) -> None:
@@ -106,8 +123,12 @@ class E2ESetSpeedController:
 
   @staticmethod
   def _trip(sm: messaging.SubMaster, a_model: float, v_ego: float, plan_drop: float, plan_min_v: float,
-            lat_accel: float, allow_throttle: bool, fcw: bool):
+            lat_accel: float, allow_throttle: bool, fcw: bool, rearming: bool):
     CS, md, rs = sm['carState'], sm['modelV2'], sm['radarState']
+    if rearming:
+      brake_accel, slowdown, lat_max = MODEL_BRAKE_CLEAR, PLAN_SLOWDOWN_CLEAR, LAT_ACCEL_CLEAR
+    else:
+      brake_accel, slowdown, lat_max = MODEL_BRAKE_ACCEL, PLAN_SLOWDOWN, LAT_ACCEL_MAX
     if fcw:
       return Inhibit.fcw
     if md.meta.hardBrakePredicted:
@@ -120,11 +141,11 @@ class E2ESetSpeedController:
       return Inhibit.lead
     if CS.gasPressed or CS.brakePressed:
       return Inhibit.driver
-    if a_model < MODEL_BRAKE_ACCEL:
+    if a_model < brake_accel:
       return Inhibit.modelBraking
-    if plan_drop < -PLAN_SLOWDOWN:
+    if plan_drop < -slowdown:
       return Inhibit.planSlowing
-    if lat_accel > LAT_ACCEL_MAX:
+    if lat_accel > lat_max:
       return Inhibit.lateral
     if not allow_throttle:
       return Inhibit.coast
@@ -167,10 +188,16 @@ class E2ESetSpeedController:
     plan_drop_v = plan_drop(vel)
     plan_min_v = float(np.min(vel[LAT_MASK]))
 
-    trip = self._trip(sm, a_model, v_ego, plan_drop_v, plan_min_v, lat_accel, allow_throttle, fcw)
+    trip = self._trip(sm, a_model, v_ego, plan_drop_v, plan_min_v, lat_accel, allow_throttle, fcw,
+                      rearming=self.authority < 1.)
     if trip is not None:
+      # a slowdown in progress: planSlowing again within the hold of the last trip (not this run's)
+      since_trip = self.frame - self.last_trip_frame
+      escalate = trip == Inhibit.planSlowing and 1 < since_trip <= self.hold_frames
+      self.last_trip_frame = self.frame
       self.authority = max(0., self.authority - AUTHORITY_FALL * self.dt)
-      self.hold_left = self.hold_frames
+      soft = trip in SOFT_TRIPS and not escalate
+      self.hold_left = max(self.hold_left, self.soft_hold_frames if soft else self.hold_frames)
       self.inhibit = trip
     elif self.hold_left > 0:
       self.hold_left -= 1

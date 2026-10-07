@@ -19,9 +19,9 @@ This lifts the e2e candidate toward the MPC's, the plan that holds the personali
 It can at most tie the MPC candidate, so the planner's min() never follows closer or accelerates
 harder than chill mode would at that moment. weight opens with the gap excess and ego speed, gain
 fades the lift out as the model starts braking (so it settles where the model pushes back rather
-than overruling it), and the cap is per personality. Authority uses the nudge's trip, hold and
-re-arm scheme with the lead conditions on top: a new or changed lead, a lead that is braking or
-slow, or a forecast that has it slowing. Design and data: docs/zoompilot/e2e-lead-gap.md.
+than overruling it), and the cap is per personality. Authority uses the nudge's original trips and
+single 3 s hold (none of its soft holds or hysteresis) with the lead conditions on top: a new or
+changed lead, a lead that is braking or slow, or a forecast that has it slowing. Design and data: docs/zoompilot/e2e-lead-gap.md.
 """
 import math
 
@@ -62,6 +62,8 @@ LEAD_PROB = 0.8
 LEAD_JUMP = 3.0  # m off where the last frame's lead should be
 # A gentler lift than the no-lead nudge; it is closing on a car.
 BOOST_RISE = 0.25  # m/s^3
+# Re-arms at the nudge's original rate: behind a lead the picture changes faster than on an empty road.
+AUTHORITY_RISE = 0.5  # 1/s
 
 LEAD_T_IDXS = np.asarray(ModelConstants.LEAD_T_IDXS)
 T_IDXS = nudge.T_IDXS
@@ -177,7 +179,7 @@ class E2ELeadGapController:
       self.hold_left -= 1
       self.inhibit = Inhibit.hold
     else:
-      self.authority = min(1., self.authority + nudge.AUTHORITY_RISE * self.dt)
+      self.authority = min(1., self.authority + AUTHORITY_RISE * self.dt)
       self.inhibit = Inhibit.none
 
     personality = int(getattr(sm['selfdriveState'].personality, 'raw', sm['selfdriveState'].personality))
