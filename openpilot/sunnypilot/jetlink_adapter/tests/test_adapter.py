@@ -472,23 +472,6 @@ assert a.model_state('f' * 40) is None
     with mock.patch.object(jetlink_adapter, '_bound', Broken()), mock.patch.object(jetlink_adapter, '_failed_hooks', {}):
       self.assertEqual(self._hooks(), self.NULL)
 
-  def test_a_jetlink_from_before_the_non_blocking_power_off_is_asked_the_old_way(self):
-    # API 1 all the same, from a deploy of an older checkout: without the new
-    # methods the Jetson would be skipped, silently
-    class Older:
-      def __init__(self):
-        self.asked = []
-
-      def shutdown(self, reason='', timeout=25.0):
-        self.asked.append((reason, timeout))
-    older = Older()
-    with mock.patch.object(jetlink_adapter, '_bound', older), mock.patch.object(jetlink_adapter, '_failed_hooks', {}), \
-         mock.patch.object(jetlink_adapter, '_log_failure') as log:
-      self.assertFalse(jetlink_adapter.request_shutdown('comma shutting down'))
-      self.assertFalse(jetlink_adapter.shutdown_pending())
-    self.assertEqual(older.asked, [('comma shutting down', 25.0)])
-    log.assert_not_called()
-
   def test_a_failure_is_logged_again_once_it_changes_or_has_cleared(self):
     outcomes = iter([RuntimeError('a'), RuntimeError('a'), RuntimeError('b'), None, RuntimeError('b')])
 

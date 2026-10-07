@@ -536,6 +536,7 @@ SEAM = {
   'system/hardware/hardwared.py': {'reason', 'request_shutdown', 'shutdown_pending'},
   'sunnypilot/models/fetcher.py': {'should_extend_catalog', 'extend_catalog'},
   'selfdrive/ui/sunnypilot/ui_state.py': {'status'},
+  'selfdrive/ui/sunnypilot/model_info.py': {'model_state'},
   'selfdrive/ui/sunnypilot/accelerator_link.py': {'KEYS', 'MODES'},
 }
 
