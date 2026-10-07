@@ -8,6 +8,7 @@
 # compiles one at runtime; a device without a warp runs the small model.
 import glob
 import os
+import sys
 
 from SCons.Script import Action
 
@@ -46,6 +47,16 @@ if arch == 'comma_arm64' and os.path.isfile(capture):
     File("#openpilot/system/camerad/cameras/nv12_info.py"),  # the frame layout the graph indexes
   ]
 
+  # the lossless warp (Wi-Fi) also makes the frame's MED errors in its graph,
+  # beside the plain one under jetlink's name for it. jetlink last on the path
+  # here too
+  lossless_capture = os.path.join(jetlink_repo, 'jetlink', 'openpilot', 'lossless.py')
+  lossless_path = None
+  if os.path.isfile(lossless_capture):
+    sys.path.append(jetlink_repo)
+    from jetlink.openpilot.warp import lossless_path
+  lossless_files = [File(lossless_capture), File(os.path.join(jetlink_repo, 'jetlink', 'lossless.py'))]
+
   for cam_w, cam_h in camera_configs:
     # the target is the path modeld opens, from the adapter, so the two cannot drift
     pkl = str(jetlink_adapter.warp_path(cam_w, cam_h, model_w, model_h))
@@ -59,3 +70,8 @@ if arch == 'comma_arm64' and os.path.isfile(capture):
     cmd = (f'{"" if prebuilt else "-"}python3 -m jetlink.openpilot.warp --adapter {jetlink_adapter.__name__} '
            f'--camera {cam_w}x{cam_h} --model {model_w}x{model_h} --output {pkl}')
     lenv.Command(pkl, tinygrad_files + script_files, Action(cmd, "  [JETLINK WARP] $TARGET"))
+    if lossless_path is not None:
+      lossless_pkl = str(lossless_path(pkl))
+      cmd = (f'{"" if prebuilt else "-"}python3 -m jetlink.openpilot.warp --adapter {jetlink_adapter.__name__} '
+             f'--camera {cam_w}x{cam_h} --model {model_w}x{model_h} --output {lossless_pkl} --lossless')
+      lenv.Command(lossless_pkl, tinygrad_files + script_files + lossless_files, Action(cmd, "  [JETLINK WARP] $TARGET"))
