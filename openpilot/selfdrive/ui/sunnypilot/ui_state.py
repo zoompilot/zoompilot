@@ -290,8 +290,9 @@ class UIStateSP:
     """ADB and Jetlink both need the comma's USB port: the link
     on turns ADB off, and the developer panels grey its toggle out. Here, not
     in the panels, so a link set from sunnylink counts too. jetlink's owner
-    retries the port in seconds while ADB's gadget still holds it."""
-    self.adb_blocked = self.jetlink is not None and self.jetlink.enabled
+    retries the port in seconds while ADB's gadget still holds it. Over Wi-Fi
+    the link leaves the port alone, and ADB with it."""
+    self.adb_blocked = self.jetlink is not None and self.jetlink.enabled and self.jetlink.mode != "wifi"
     if self.adb_blocked and self.params.get_bool("AdbEnabled"):
       self.params.put_bool("AdbEnabled", False, block=True)
 

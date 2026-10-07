@@ -146,13 +146,28 @@ class TestTheCommandBuilds(OpenpilotTestCase):
     # the path the build has, less anywhere this runner finds jetlink
     base = os.pathsep.join(p for p in sys.path if p and not (Path(p) / 'jetlink').exists())
     with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as out:
-      [(cmd, env)] = run_sconscript(CAMERAS[:1], jetlink=checkout, pythonpath=base, root=root).values()
+      commands = run_sconscript(CAMERAS[:1], jetlink=checkout, pythonpath=base, root=root)
+      [(cmd, env)] = [command for target, command in commands.items() if '_lossless_' not in target]
       pkl = Path(out) / 'warp.pkl'
       cmd = cmd.removeprefix('-').rsplit(' --output ', 1)[0] + f' --output {pkl}'
       done = subprocess.run(cmd.replace('python3', sys.executable, 1), shell=True, capture_output=True, text=True,
                             cwd=out, env={**os.environ, **env, 'DEV': 'CPU'}, timeout=600)
       self.assertEqual(done.returncode, 0, done.stderr)
       self.assertTrue(pkl.is_file())
+
+
+class TestTheLosslessWarp(OpenpilotTestCase):
+  def test_a_jetlink_with_lossless_frames_gets_its_warp_beside_the_plain_one(self):
+    import jetlink
+    from jetlink.openpilot.warp import lossless_path
+    checkout = Path(jetlink.__file__).resolve().parents[1]
+    w, h = CAMERAS[0]
+    plain = str(jetlink_adapter.Adapter().warp_path(w, h, *MODEL))
+    lossless = str(lossless_path(plain))
+    targets = run_sconscript(CAMERAS[:1], jetlink=checkout)
+    self.assertEqual(set(targets), {plain, lossless})
+    self.assertTrue(targets[lossless][0].endswith(f'--output {lossless} --lossless'))
+    self.assertNotIn('--lossless', targets[plain][0])
 
 
 class TestOnlyTheBuildCompiles(OpenpilotTestCase):

@@ -667,6 +667,7 @@ class TestAcceleratorProgressRenders:
     # jetlink counts the drops; the card names the cable, and on iOS the phone app too
     ('connect', 0.0, 'reconnecting', 2, 'usb', 'reconnecting, check cable (2 drops)'),
     ('connect', 0.0, 'waiting for jetlink', 3, 'ios', 'waiting for jetlink, check cable or app (3 drops)'),
+    ('connect', 0.0, 'reconnecting', 4, 'wifi', 'reconnecting, check Wi-Fi or app (4 drops)'),
   ])
   def test_the_line_is_jetlinks_message(self, params, stage, frac, msg, drops, mode, shown):
     assert self._info(stage, frac, msg, drops, mode)[2] == shown
@@ -890,11 +891,11 @@ class TestAcceleratorLinkToggle:
 
     params.remove(self.PARAM)
     assert link_mode() == "off"
-    for index, mode in enumerate(("off", "usb", "ios")):
+    for index, mode in enumerate(("off", "usb", "ios", "wifi")):
       params.put(self.PARAM, index, block=True)
       assert link_mode() == mode
 
-  def test_tap_cycles_off_usb_ios(self, params):
+  def test_tap_cycles_off_usb_ios_wifi(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle
     from openpilot.system.ui.lib.application import MousePos
 
@@ -904,7 +905,7 @@ class TestAcceleratorLinkToggle:
     # the small model is the model manager's: the toggle never touches the runner cache
     with mock.patch.object(params, "remove", wraps=params.remove) as remove, \
          mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=True):
-      for index in (1, 2, 0):
+      for index in (1, 2, 3, 0):
         toggle._handle_mouse_release(MousePos(0, 0))
         assert params.get(self.PARAM) == index
     assert "ModelRunnerTypeCache" not in {c.args[0] for c in remove.call_args_list}
@@ -936,7 +937,7 @@ class TestAcceleratorLinkToggle:
     with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=True):
       assert toggle.enabled
       toggle._handle_mouse_release(MousePos(0, 0))
-      assert params.get(self.PARAM) == 0
+      assert params.get(self.PARAM) == 3
 
   def test_layout_hides_the_toggle_until_it_means_something(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici

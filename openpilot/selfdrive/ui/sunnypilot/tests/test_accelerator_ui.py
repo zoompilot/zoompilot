@@ -284,7 +284,7 @@ class TestTiciModelsPanel(UITest):
     # a kernel without the CC pin in sysfs claims nothing rather than an empty port
     with jetlink(port=None):
       layout._refresh_accelerator_items()
-      assert layout.accelerator_link_item.description.endswith("Turns off ADB.")
+      assert layout.accelerator_link_item.description.endswith("USB and iOS turn off ADB.")
 
   def test_the_status_names_the_transport(self):
     # the setting names the host: USB for a Jetson, a Linux PC or a Mac, iOS for
@@ -295,6 +295,13 @@ class TestTiciModelsPanel(UITest):
     with jetlink(installed=False):
       assert link_status() == ""
 
+  def test_over_wifi_the_status_is_the_hotspot_not_the_port(self):
+    from openpilot.selfdrive.ui.sunnypilot.accelerator_link import link_status
+    with jetlink(present=True, mode='wifi', transport='Wi-Fi (172.20.10.1)'):
+      assert link_status() == "Jetlink connected: Wi-Fi (172.20.10.1)."
+    with jetlink(present=False, mode='wifi', port='host'):
+      assert link_status() == "Join the device's hotspot and open Jetlink there."
+
   def test_the_buttons_are_bound_to_the_one_param(self):
     # the small model is the model manager's: the link does not decide which modeld runs
     from openpilot.selfdrive.ui.sunnypilot.accelerator_link import link_mode
@@ -302,7 +309,7 @@ class TestTiciModelsPanel(UITest):
       layout = self._layout()
       action = layout.accelerator_link_item.action_item
       assert action.param_key == "JetlinkLink"
-      for index, mode in enumerate(("off", "usb", "ios")):
+      for index, mode in enumerate(("off", "usb", "ios", "wifi")):
         self.params.put("JetlinkLink", index, block=True)
         layout._refresh_accelerator_items()
         assert action.get_selected_button() == index
@@ -458,10 +465,10 @@ class TestTheUsbPort(UITest):
     self.ui.jetlink = self.saved
     super().tearDown()
 
-  def set(self, adb, link):
+  def set(self, adb, link, mode='usb'):
     """link is jetlink's snapshot: None (a chestnut, or no jetlink) or enabled or not."""
     self.params.put_bool("AdbEnabled", adb, block=True)
-    self.ui.jetlink = None if link is None else snapshot(enabled=link)
+    self.ui.jetlink = None if link is None else snapshot(enabled=link, mode=mode)
     self.ui._enforce_usb_port()
     return self.params.get_bool("AdbEnabled"), self.ui.adb_blocked
 
@@ -471,6 +478,10 @@ class TestTheUsbPort(UITest):
   def test_the_link_off_leaves_adb_alone(self):
     self.assertEqual(self.set(adb=True, link=False), (True, False))
     self.assertEqual(self.set(adb=False, link=False), (False, False))
+
+  def test_the_link_over_wifi_leaves_adb_alone(self):
+    # no gadget: the port stays ADB's
+    self.assertEqual(self.set(adb=True, link=True, mode='wifi'), (True, False))
 
   def test_no_jetlink_snapshot_leaves_adb_alone(self):
     # a fitted chestnut, or no jetlink on this device

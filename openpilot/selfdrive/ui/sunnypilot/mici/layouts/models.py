@@ -26,11 +26,11 @@ from openpilot.system.ui.widgets.scroller import NavScroller
 
 
 # the value line: the mode
-LINK_MODE_LABELS = {"off": "off", "usb": "usb", "ios": "iOS"}
+LINK_MODE_LABELS = {"off": "off", "usb": "usb", "ios": "iOS", "wifi": "wi-fi"}
 
 
 class AcceleratorLinkToggle(BigMultiToggle):
-  """off, usb, ios, a pill each, and the value line names the mode.
+  """off, usb, ios, wi-fi, a pill each, and the value line names the mode.
   The pills follow the param, not a tap. Locked while onroad and drawn so, like
   the model buttons beside it: jetlink switches the link only parked."""
 

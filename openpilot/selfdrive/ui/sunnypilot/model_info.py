@@ -78,8 +78,8 @@ def big_model_progress() -> tuple[str, float, str] | None:
     return None
   msg = tr(str(progress.get('msg', '')))
   if drops := progress.get('drops'):
-    # on iOS the phone app is the other suspect
-    hint = tr("check cable or app") if jetlink.mode == 'ios' else tr("check cable")
+    # on iOS the phone app is the other suspect; over Wi-Fi there is no cable
+    hint = {'ios': tr("check cable or app"), 'wifi': tr("check Wi-Fi or app")}.get(jetlink.mode, tr("check cable"))
     msg = tr("{}, {} ({} drops)").format(msg, hint, drops)
   return stage, float(progress.get('frac', 0.0)), msg
 
