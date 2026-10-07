@@ -75,7 +75,6 @@ def _model_info() -> tuple[str, str, str]:
     carry_display = big.displayName if big else default_model_name("chestnut")
   active_text = (carry_display or active_name).lower()
   provisioning = big_model_progress()
-  standin = standin_model()
   if provisioning is not None:
     stage, frac, msg = provisioning
     if stage == 'failed':
@@ -84,7 +83,7 @@ def _model_info() -> tuple[str, str, str]:
     # with nothing to measure
     detail = msg or tr(stage)
     return active_text, tr("big model"), f"{detail} {frac * 100:.0f}%" if frac > 0 else detail
-  if standin:
+  if standin := standin_model():
     # the last model the Jetson built drives until the pick is downloaded and built
     return active_text, tr("big model"), tr("{} for now").format(standin.lower())
   if state == 'failed':

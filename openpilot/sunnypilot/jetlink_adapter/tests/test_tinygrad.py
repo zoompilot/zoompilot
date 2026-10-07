@@ -97,7 +97,7 @@ from unittest import mock
 import numpy as np
 
 from openpilot.sunnypilot import jetlink_adapter
-from jetlink.openpilot.warp import Warps, call_warp, compile_warp, init_device, warm
+from jetlink.openpilot.warp import Warp, Warps, call_warp, compile_warp, init_device
 from jetlink.spec import ModelSpec
 
 CAM, MODEL = (1928, 1208), (512, 256)
@@ -111,11 +111,11 @@ found = {'init_failed': log.exception.called}
 
 graph, size = op.make_warp(*CAM, *MODEL)
 compile_warp(graph, size, op.warp_path())
-warp = Warps(op).load(*CAM, *MODEL)
-found['names'] = list(warp.captured.expected_names)
+jit = Warps(op).load(*CAM, *MODEL)
+found['names'] = list(jit.captured.expected_names)
 face = op.model_face()
 found['frame_size'] = size == face.frame_size(*CAM)
-warm(warp, face.frame_size(*CAM))
+warp = Warp(jit, face.frame_size(*CAM), log)
 
 # Cinque Terre V3's inputs and output layout, read off its ONNX
 SLICES = {'lane_lines': (0, 528), 'lane_lines_prob': (528, 536), 'road_edges': (536, 800), 'meta': (800, 855),
@@ -133,7 +133,7 @@ class Client:
     self.sent, self.last_timings, self.last_state, self.dead = [], (0, 0, 0), {'gpu_temp': 40.0}, False
     self.last_output, self.unanswered = None, 0
     self.t = SimpleNamespace(link_info=lambda: {'kind': 'usb'})
-  def infer_begin(self, data, packed, frame_id, reset=False, want_state=False):
+  def infer_begin(self, data, packed, frame_id, reset=False, want_state=False, skip_if_busy=False):
     self.sent.append((bytes(data), np.array(packed), reset, want_state))
     return frame_id
   def infer_end(self, seq, deadline=None, hold=None):
@@ -144,7 +144,7 @@ class Client:
 
 from jetlink.openpilot.model_state import JetlinkModelState
 client, events = Client(), []
-model = JetlinkModelState(*CAM, client, spec, warp, face=face, log=log, event=lambda name, **f: events.append(name))
+model = JetlinkModelState(client, spec, warp, face=face, log=log, event=lambda name, **f: events.append(name))
 rng = np.random.default_rng(1)
 frames = {k: rng.integers(0, 256, face.frame_size(*CAM), dtype=np.uint8) for k in ('img', 'big_img')}
 bufs = {k: SimpleNamespace(data=v) for k, v in frames.items()}
@@ -159,7 +159,7 @@ for i in range(3):
 from tinygrad.device import Device
 from tinygrad.tensor import Tensor
 blobs = {k: Tensor.from_blob(v.ctypes.data, (v.size,), dtype='uint8', device=Device.DEFAULT) for k, v in frames.items()}
-direct = call_warp(warp, Tensor(tfm['img'], device='NPY').realize(), Tensor(tfm['big_img'], device='NPY').realize(),
+direct = call_warp(jit, Tensor(tfm['img'], device='NPY').realize(), Tensor(tfm['big_img'], device='NPY').realize(),
                    blobs['img'], blobs['big_img']).numpy().tobytes()
 found.update(device=Device.DEFAULT, sent=len(client.sent), bytes=len(client.sent[0][0]), expected=int(np.prod(spec.warped_shape)),
              same=client.sent[-1][0] == direct, resets=[s[2] for s in client.sent], asks=[s[3] for s in client.sent],

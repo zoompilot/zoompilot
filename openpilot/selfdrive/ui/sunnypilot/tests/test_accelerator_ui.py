@@ -232,6 +232,15 @@ class TestTiciModelsPanel(UITest):
   """The big model is the model manager's slot for chestnut and accelerator alike;
   the panel adds only the link toggle and a status line."""
 
+  def setUp(self):
+    super().setUp()
+    self.ui_state = ui_state_module().ui_state
+    saved = self.ui_state.jetlink, self.ui_state.chestnut_present
+
+    def restore():
+      self.ui_state.jetlink, self.ui_state.chestnut_present = saved
+    self.addCleanup(restore)
+
   @staticmethod
   def _layout():
     from openpilot.selfdrive.ui.sunnypilot.layouts.settings.models import ModelsLayout
@@ -325,29 +334,19 @@ class TestTiciModelsPanel(UITest):
 
   def test_the_note_names_the_model_that_drives_until_the_pick_is_ready(self):
     # the last model the Jetson built drives while the pick downloads and builds
-    ui_state = ui_state_module().ui_state
-    saved = ui_state.jetlink, ui_state.chestnut_present
-    try:
-      ui_state.chestnut_present = False
-      with jetlink(present=True, enabled=True, model='ResAction Preview', standin='Cinque Terre V3'), \
-           mock.patch("openpilot.selfdrive.ui.sunnypilot.layouts.settings.models.big_model_state", return_value=None):
-        assert self._layout()._status_note() == "Cinque Terre V3 drives until ResAction Preview is ready."
-    finally:
-      ui_state.jetlink, ui_state.chestnut_present = saved
+    self.ui_state.chestnut_present = False
+    with jetlink(present=True, enabled=True, model='ResAction Preview', standin='Cinque Terre V3'), \
+         mock.patch("openpilot.selfdrive.ui.sunnypilot.layouts.settings.models.big_model_state", return_value=None):
+      assert self._layout()._status_note() == "Cinque Terre V3 drives until ResAction Preview is ready."
 
   def test_a_big_model_line_says_whether_it_is_built_or_here(self):
     from openpilot.sunnypilot import jetlink_adapter
-    ui_state = ui_state_module().ui_state
-    saved = ui_state.jetlink, ui_state.chestnut_present
     bundle = mock.Mock(ref='r1', displayName='Cinque Terre V3', internalName='CTV3')
-    try:
-      ui_state.chestnut_present = False
-      with jetlink(present=True, enabled=True), mock.patch.object(jetlink_adapter, 'model_state', return_value='ready'):
-        layout = self._layout()
-        assert layout._bundle_to_node(bundle, noted=True).data['display_name'] == "Cinque Terre V3 · ready on Jetson"
-        assert layout._bundle_to_node(bundle).data['display_name'] == "Cinque Terre V3"
-    finally:
-      ui_state.jetlink, ui_state.chestnut_present = saved
+    self.ui_state.chestnut_present = False
+    with jetlink(present=True, enabled=True), mock.patch.object(jetlink_adapter, 'model_state', return_value='ready'):
+      layout = self._layout()
+      assert layout._bundle_to_node(bundle, noted=True).data['display_name'] == "Cinque Terre V3 · ready on Jetson"
+      assert layout._bundle_to_node(bundle).data['display_name'] == "Cinque Terre V3"
 
   def test_the_note_says_what_the_switch_is_waiting_for(self):
     ui_state = ui_state_module().ui_state

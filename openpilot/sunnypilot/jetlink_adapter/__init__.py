@@ -250,6 +250,9 @@ class _Absent:
   def extend_catalog(self, catalog: dict) -> dict:
     return catalog
 
+  def model_state(self, ref: str) -> str | None:
+    return None
+
 
 _bound = None
 _binding = threading.Lock()
@@ -413,9 +416,8 @@ def shutdown_pending() -> bool:
 @_guarded(None)
 def model_state(ref: str) -> str | None:
   """The big-model list, when it opens: 'ready' when the Jetson has built the
-  model, 'downloaded' when its file is on the comma, else None. None from a
-  jetlink that predates it."""
-  return getattr(_api(), 'model_state', lambda ref: None)(ref)
+  model, 'downloaded' when its file is on the comma, else None."""
+  return _api().model_state(ref)
 
 
 @_guarded(False)
