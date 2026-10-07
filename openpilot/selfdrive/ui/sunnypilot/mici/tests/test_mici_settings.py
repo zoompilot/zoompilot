@@ -639,10 +639,11 @@ class TestAcceleratorProgressRenders:
 
   STAGES = ['download', 'connect', 'upload', 'build', 'failed']
 
-  def _info(self, stage, frac, msg='', drops=0, mode='usb'):
+  def _info(self, stage=None, frac=0.0, msg='', drops=0, mode='usb', **fields):
     from openpilot.selfdrive.ui.ui_state import ui_state
     saved = ui_state.jetlink
-    ui_state.jetlink = jetlink_status(present=True, mode=mode, progress={'stage': stage, 'frac': frac, 'msg': msg, 'drops': drops})
+    progress = {'stage': stage, 'frac': frac, 'msg': msg, 'drops': drops} if stage else None
+    ui_state.jetlink = jetlink_status(present=True, mode=mode, progress=progress, **fields)
     try:
       from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import _model_info
       return _model_info()
@@ -669,6 +670,10 @@ class TestAcceleratorProgressRenders:
   ])
   def test_the_line_is_jetlinks_message(self, params, stage, frac, msg, drops, mode, shown):
     assert self._info(stage, frac, msg, drops, mode)[2] == shown
+
+  def test_the_stand_in_is_named_while_the_pick_is_not_ready(self, params):
+    assert self._info(enabled=True, model='ResAction Preview', standin='Cinque Terre V3')[1:] == \
+      ('big model', 'cinque terre v3 for now')
 
   def test_failure_says_so_rather_than_showing_100_percent(self, params):
     _, _, info = self._info('failed', 1.0)

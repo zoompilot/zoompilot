@@ -250,6 +250,9 @@ class _Absent:
   def extend_catalog(self, catalog: dict) -> dict:
     return catalog
 
+  def model_state(self, ref: str) -> str | None:
+    return None
+
 
 _bound = None
 _binding = threading.Lock()
@@ -408,6 +411,13 @@ def shutdown_pending() -> bool:
   """hardwared, every loop after request_shutdown(), until it puts DoShutdown:
   has jetlinkd still to take the request? A stat."""
   return getattr(_api(), 'shutdown_pending', lambda: False)()
+
+
+@_guarded(None)
+def model_state(ref: str) -> str | None:
+  """The big-model list, when it opens: 'ready' when the Jetson has built the
+  model, 'downloaded' when its file is on the comma, else None."""
+  return _api().model_state(ref)
 
 
 @_guarded(False)

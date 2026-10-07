@@ -419,11 +419,12 @@ class TestWithoutAUsableJetlink(OpenpilotTestCase):
       'shutdown_pending': jetlink_adapter.shutdown_pending(),
       'should_extend_catalog': jetlink_adapter.should_extend_catalog(),
       'extend_catalog': jetlink_adapter.extend_catalog(catalog) is catalog,
+      'model_state': jetlink_adapter.model_state('f' * 40),
     }
 
   NULL = {'should_run': False, 'status': None, 'reason': None, 'prepare': False, 'attach': None,
           'request_shutdown': False, 'shutdown_pending': False,
-          'should_extend_catalog': False, 'extend_catalog': True}
+          'should_extend_catalog': False, 'extend_catalog': True, 'model_state': None}
 
   def test_without_a_checkout_every_hook_is_the_link_off(self):
     # an empty jetlink_repo: manager, the UI, hardwared and modeld must not care
@@ -439,6 +440,7 @@ assert a.status() is None and a.reason() is None
 assert not a.prepare() and a.attach(object(), 1, 1) is None
 assert not a.request_shutdown('test') and not a.shutdown_pending()
 assert not a.should_extend_catalog() and a.extend_catalog(c) is c
+assert a.model_state('f' * 40) is None
 '''
     # under this test's prefix, which the child inherits
     out = run_fresh(code)

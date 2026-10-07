@@ -14,8 +14,9 @@ from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.selfdrive.ui.sunnypilot.accelerator_link import LINK_MODES, LINK_MODE_TITLES, LINK_PARAM, link_mode, \
   link_status, link_toggle_meaningful
-from openpilot.selfdrive.ui.sunnypilot.model_info import (big_model_state, bundles_for_source, carrying_model, default_model_name,
-                                                           model_cache_size_mb, queued_name, refresh_in_progress, refresh_model_list)
+from openpilot.selfdrive.ui.sunnypilot.model_info import (big_model_note, big_model_state, bundles_for_source, carrying_model,
+                                                           default_model_name, model_cache_size_mb, queued_name, refresh_in_progress,
+                                                           refresh_model_list, standin_model)
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import DialogResult, Widget
@@ -269,6 +270,9 @@ class ModelsLayout(Widget):
       # nothing is in control
       return tr("{} is ready. Disengage fully, then re-engage to switch.").format(big_name)
     if accelerator and not view.ready:
+      if standin := standin_model():
+        # the last model the Jetson built drives until the pick is downloaded and built
+        return tr("{} drives until {} is ready.").format(standin, big_name)
       return tr("{} will drive when Jetlink is ready.").format(big_name)
     if accelerator:
       # it rejoins all drive and a drop is announced as it happens, so there is
@@ -317,10 +321,13 @@ class ModelsLayout(Widget):
     return resolved[0] if resolved else None
 
   @staticmethod
-  def _bundle_to_node(bundle):
-    return TreeNode(bundle.ref, {'display_name': bundle.displayName, 'short_name': bundle.internalName})
+  def _bundle_to_node(bundle, noted: bool = False):
+    # a big model's line says whether the Jetson has built it or the comma has it
+    note = big_model_note(bundle.ref) if noted else None
+    name = f"{bundle.displayName} · {note}" if note else bundle.displayName
+    return TreeNode(bundle.ref, {'display_name': name, 'short_name': bundle.internalName})
 
-  def _get_folders(self, favorites, bundles):
+  def _get_folders(self, favorites, bundles, noted: bool = False):
     folders = {}
     for bundle in bundles:
       folders.setdefault(next((ov_ride.value for ov_ride in bundle.overrides if ov_ride.key == "folder"), ""), []).append(bundle)
@@ -329,10 +336,10 @@ class ModelsLayout(Widget):
     for folder, folder_bundles in sorted(folders.items(), key=lambda x: max((bundle.index for bundle in x[1]), default=-1), reverse=True):
       folder_bundles.sort(key=lambda bundle: bundle.index, reverse=True)
       name = folder + (f" - (Updated: {m.group(1)})" if folder_bundles and (m := re.search(r'\(([^)]*)\)[^(]*$', folder_bundles[0].displayName)) else "")
-      folders_list.append(TreeFolder(name, [self._bundle_to_node(bundle) for bundle in folder_bundles]))
+      folders_list.append(TreeFolder(name, [self._bundle_to_node(bundle, noted) for bundle in folder_bundles]))
 
     if favorites and (fav_bundles := [bundle for bundle in bundles if bundle.ref in favorites]):
-      folders_list.insert(0, TreeFolder("Favorites", [self._bundle_to_node(bundle) for bundle in fav_bundles]))
+      folders_list.insert(0, TreeFolder("Favorites", [self._bundle_to_node(bundle, noted) for bundle in fav_bundles]))
     return folders_list
 
   def _open_source_dialog(self, source):
@@ -352,7 +359,7 @@ class ModelsLayout(Widget):
     if not bundles:
       return []
     folders_list = [TreeFolder("", [TreeNode("Default", {'display_name': default_model_name(source)})])]
-    folders_list.extend(self._get_folders(favorites, bundles))
+    folders_list.extend(self._get_folders(favorites, bundles, noted=source == "chestnut"))
     return folders_list
 
   @staticmethod

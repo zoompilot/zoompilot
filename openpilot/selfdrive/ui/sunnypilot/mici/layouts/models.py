@@ -14,9 +14,10 @@ from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_selected
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigMultiToggle
 from openpilot.selfdrive.ui.ui_state import ui_state, device
 from openpilot.selfdrive.ui.sunnypilot.accelerator_link import LINK_MODES, LINK_PARAM, link_mode, link_toggle_meaningful
-from openpilot.selfdrive.ui.sunnypilot.model_info import (active_source, big_model_progress, big_model_state, bundles_for_source,
-                                                           carrying_model, default_model_name, model_cache_size_mb, model_info,
-                                                           queued_name, refresh_in_progress, refresh_model_list)
+from openpilot.selfdrive.ui.sunnypilot.model_info import (active_source, big_model_note, big_model_progress, big_model_state,
+                                                           bundles_for_source, carrying_model, default_model_name,
+                                                           model_cache_size_mb, model_info, queued_name, refresh_in_progress,
+                                                           refresh_model_list, standin_model)
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import Widget
@@ -77,11 +78,14 @@ def _model_info() -> tuple[str, str, str]:
   if provisioning is not None:
     stage, frac, msg = provisioning
     if stage == 'failed':
-      return active_text, tr("big model"), tr("unavailable")
+      return active_text, tr("big model"), msg or tr("unavailable")
     # "waiting for jetlink" says more than "connect 0%"; no percentage for a stage
     # with nothing to measure
     detail = msg or tr(stage)
     return active_text, tr("big model"), f"{detail} {frac * 100:.0f}%" if frac > 0 else detail
+  if standin := standin_model():
+    # the last model the Jetson built drives until the pick is downloaded and built
+    return active_text, tr("big model"), tr("{} for now").format(standin.lower())
   if state == 'failed':
     return active_text, tr("big model"), tr("unavailable")
   if state == 'loading':
@@ -247,7 +251,8 @@ class ModelsLayoutMici(NavScroller):
 
     btns = []
     for bundle in bundles:
-      btn = BigButton(bundle.displayName.lower())
+      note = big_model_note(bundle.ref) if source == "chestnut" else None
+      btn = BigButton(bundle.displayName.lower(), value=note.lower() if note else "")
       btn.set_click_callback(lambda b=bundle: self._select_model(b))
       btns.append(btn)
     self._push_selection_view(btns)
