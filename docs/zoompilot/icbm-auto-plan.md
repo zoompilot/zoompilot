@@ -139,6 +139,8 @@ danger-unstable after phase 2 for driving.
   latched at boot.
 - Remove the toggle from UI + sunnylink; rewrite the consumer gating; mirror the param.
 - Fix the SLA demotion check.
+- The migration, with unit tests over every (capability, long mode, old ICBM, consumer)
+  combination.
 - Exit: replay identical for a route with no consumers on (= ICBM off today); a route with
   SCC-V on and ICBM on today replays identical. This alone is shippable.
 
@@ -163,8 +165,8 @@ Deactivating while engaged stays out of scope.
 ### Phase 5: docs and release
 
 `docs/zoompilot/icbm.md` (activation section), `cruise-arbiter.md` (owner switch),
-release notes naming the users whose cars start pressing buttons: anyone with a
-consumer on and ICBM off today.
+release notes (the toggle is gone; turning on a cruise feature now enables the buttons;
+the migration turned off features that were doing nothing).
 
 ## Upstream merge strategy
 
@@ -180,15 +182,43 @@ consumer on and ICBM off today.
 - When sunnypilot adds an ICBM consumer: add it to `demand.py`. When sunnypilot touches the
   toggle UI: take ours (the toggle stays gone).
 
-## Open decisions
+## Decisions (2026-10-07)
 
-1. **Escape hatch.** With no toggle, a user can only turn ICBM off by turning off its
-   consumers. Options: none (recommended; the consumers are the switches), or a developer
-   toggle "Never press cruise buttons" that vetoes demand.
-2. **Custom ACC increments as a consumer.** It brings up a button servo just to change the
-   step size. Keep it (today's behavior requires ICBM), or let it ask only when another
-   consumer is also on.
-3. **Release-notes framing** for users whose cars start pressing buttons after the update.
+1. **No escape hatch.** The consumers are the switches. ICBM never comes up on a car
+   without the capability (`icbm_applicable`, i.e. the opendbc
+   `intelligentCruiseButtonManagementAvailable` flag and the long mode).
+2. **Custom increments need ICBM** and stay a consumer in every mode.
+3. **No separate "cruise buttons" setting for SLA.** On stock ACC assist cannot work without
+   the buttons, so the setting would have one valid value. Assist uses the buttons wherever
+   the car supports them. Alpha-long cars without ICBM keep plannerd's driver-confirm machine.
+4. **A one-time migration** keeps today's behavior for every existing install (below).
+
+## Migration
+
+Runs once in `setup_interfaces` (CP known, before anything reads demand), marked by a new
+`IcbmDemandMigrated` param (`PERSISTENT | BACKUP`: restoring a pre-migration backup brings
+the old settings back without the marker, so the migration runs again).
+
+- Car without ICBM capability: nothing to do. The old param is already cleared there, and
+  the consumers stay as inert as they are today.
+- ICBM was on: nothing to do. Its consumers keep demanding it, and ICBM on with no consumer
+  turns off, which loses nothing (it only changed engage and set-speed tracking).
+- ICBM was off: turn off every consumer that ICBM-off made inert in the mode this boot is
+  in, so nothing starts pressing buttons:
+  - stock ACC: `SmartCruiseControlVision`, `SmartCruiseControlMap`,
+    `CustomAccIncrementsEnabled` off; `SpeedLimitMode` assist -> warning (the boot demotion
+    already does this today, so it is a no-op in practice)
+  - alpha long: `CustomAccIncrementsEnabled` off. SCC-V/M stay (the planner runs them).
+    SLA assist: see open item below.
+
+A consumer the user turns on later demands ICBM normally. Switching from alpha long to
+stock ACC with SCC-V on brings ICBM up on that drive; that is the feature as set, not a
+migration gap.
+
+Open item: alpha long with ICBM off and SLA assist on runs today's driver-confirm machine.
+After the change assist demands ICBM, so the dash starts moving to the limit by itself.
+Either accept that (the ICBM path is the one zoompilot built for alpha long) and say so in
+the release notes, or migrate assist -> warning for those installs.
 
 ## Risks
 
@@ -197,6 +227,9 @@ consumer on and ICBM off today.
   phase 1, enforced by a test.
 - The consumers' params are live in plannerd but latched in card: SCC-V on with ICBM not yet
   active must not make plannerd act (`scc_actionable` follows the flag, not the param).
+- ICBM's own presses stop at 20 mph / 30 km/h on the dash (`controller.py` `v_cruise_min`).
+  The driver can still set 19 mph on a Mazda, so this only bounds how low a curve or limit
+  walks the dash, as it does today.
 - Demand flapping while disengaged (toggling in settings) flips the latch freely; harmless
   since nothing is active, but logs will show it.
 - `pcm_machine_owns_sla` becoming live means the plannerd SLA machine and the card arbiter
