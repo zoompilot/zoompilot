@@ -181,7 +181,7 @@ def drive(D, a, b, ctl):
     if not D['source_e2e'][j]:
       out = min(out, float(D['a_target_logged'][j]) + K_TRACK * (float(D['v_ego'][j]) - v))
     if ctl is not None and hasattr(ctl, 'delivered'):
-      ctl.delivered(out)
+      ctl.delivered(out, e2e)
     a_act += DT_MDL / ACT_TAU * (out - a_act)
     lead = sm['radarState'].leadOne
     rows.append((s, v, out, e2e - a_model, jj, float(D['v_cruise'][j]), lead.present, lead.dRel))

@@ -29,7 +29,7 @@ def run(ctl, n, sm, a_model=0., v_cruise=V_CRUISE, deliver=False, **kwargs):
   for _ in range(n):
     out = ctl.update(sm, a_model, v_cruise, **args)
     if deliver:
-      ctl.delivered(out)
+      ctl.delivered(out, out)
   return out
 
 
@@ -196,21 +196,32 @@ def test_envelope_drops_at_once_and_recovers_through_the_filter():
   assert closed < ctl.bound < bound(np.full(len(T_IDXS), V_EGO), v_target=V_EGO + 10.)
 
 
-def test_added_speed_counts_only_what_reached_the_car():
+def test_added_speed_counts_what_reached_the_car():
   assert settled().added == 0.
   ctl = settled(deliver=True)
   assert ctl.added > 0.
-  # a lower candidate took over: none of the boost reached the car
+  # the gap assist's lift on top of ours reached the car too
+  ctl.update(build_sm(V_EGO), 0., V_CRUISE, **ENGAGED)
+  shed = ctl.added
+  ctl.delivered(ctl.boost + 0.3, ctl.boost + 0.3)
+  assert ctl.added == pytest.approx(shed + (ctl.boost + 0.3) * DT)
+  # a lower candidate holds the car: none of it reached the car, and what we added converges out
+  ctl.update(build_sm(V_EGO), 0., V_CRUISE, **ENGAGED)
+  shed = ctl.added
+  ctl.delivered(-0.5, ctl.boost)
+  assert ctl.added == pytest.approx(shed * (1. - DT / c.CONVERGE_T))
+
+
+def test_following_a_lead_clears_the_speed_we_added():
+  ctl = settled(deliver=True)
+  run(ctl, 100, build_sm(V_EGO), deliver=True)
   before = ctl.added
-  ctl.update(build_sm(V_EGO), 0., V_CRUISE, **ENGAGED)
-  shed = ctl.added
-  ctl.delivered(-0.5)
-  assert ctl.added == shed < before
-  # another lift on top of ours counts only as ours
-  ctl.update(build_sm(V_EGO), 0., V_CRUISE, **ENGAGED)
-  shed = ctl.added
-  ctl.delivered(ctl.boost + 0.3)
-  assert ctl.added == pytest.approx(shed + ctl.boost * DT)
+  assert before > 0.5
+  # behind a lead the MPC holds the car below the e2e candidate
+  for _ in range(round(5 * c.CONVERGE_T / DT)):
+    out = ctl.update(build_sm(V_EGO, lead=True), 0., V_CRUISE, **ENGAGED)
+    ctl.delivered(-0.3, out)
+  assert ctl.added < 0.01 * before
 
 
 def test_added_speed_is_shed_like_the_model_sheds_it():
@@ -281,3 +292,17 @@ def test_no_give_back_behind_a_lead():
   run(ctl, 100, build_sm(V_EGO), deliver=True)
   run(ctl, 200, build_sm(V_EGO, plan_v=STOPPING, lead=True), deliver=True)
   assert ctl.boost == 0.
+
+
+def test_a_lead_lets_a_give_back_go_at_the_rate_limit():
+  ctl = settled(deliver=True)
+  run(ctl, 100, build_sm(V_EGO), deliver=True)
+  run(ctl, 60, build_sm(V_EGO, plan_v=STOPPING), deliver=True)
+  giving = ctl.boost
+  assert giving < -0.1
+  boosts = [giving]
+  for _ in range(100):
+    run(ctl, 1, build_sm(V_EGO, plan_v=STOPPING, lead=True), deliver=True)
+    boosts.append(ctl.boost)
+  assert np.abs(np.diff(boosts)).max() <= c.BOOST_RATE * DT + 1e-9
+  assert boosts[-1] == 0.

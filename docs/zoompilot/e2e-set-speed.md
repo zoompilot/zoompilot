@@ -49,10 +49,13 @@ at only 0.04 /s in open cruise. So speed added on a straight arrives at the next
 something takes it back, and a boost-only controller trades reaching the set speed against
 carrying speed into features almost one for one. The envelope works from the model's own intent:
 
-1. Take the speed this controller has added back out of the plan. `added` integrates the part of
-   the boost that reached the car: the planner reports its output after choosing (`delivered()`,
-   from the SP planner's publish), clipped to the boost so the gap assist's lift or a lower
-   candidate taking over counts as none of ours. The model sheds it at 0.038 /s in cruise.
+1. Take the speed added over the model back out of the plan. `added` integrates the lift on the
+   e2e candidate that reached the car, this floor's and the follow-distance assist's alike: the
+   SP planner reports its output and final e2e candidate after the host has chosen
+   (`delivered()`, from its publish). The model sheds it at 0.038 /s in cruise. While a lead's MPC
+   holds the car below the model itself, a model-only car would be held to the same limit, so it
+   converges out over 2 s; cruise binding only under the lift does not count, since it would not
+   have held a model-only car.
 2. Ceiling at each plan point: the model's speed scaled up toward the target where the plan is
    flat, tapering back to the model's own speed where the plan has dropped 1.5 m/s below its
    start, and never past 1.0 m/s^2 of lateral acceleration in a bend the model takes slower.
@@ -64,7 +67,8 @@ carrying speed into features almost one for one. The envelope works from the mod
 Over the envelope with speed it added, the boost goes negative: it hands back `added / 2 s`, at
 most 0.6 m/s^2 and never more than it put on, so the car reaches each slowdown at the model's
 own speed. It can never make the car slower than the model alone would have been. Behind a lead
-it pauses.
+nothing new is handed back (the MPC and the gap assist own the speed there), and a hand-back
+already under way eases out at the normal rate rather than stepping.
 
 Hazards cut a positive boost at 2.4 m/s^3 and hold it off for 3 s after they clear: FCW,
 hardBrakePredicted, forceDecel, any lead, gas or brake, a lane change; leaving DEC or an

@@ -35,7 +35,7 @@ def simulate(enabled, seconds=60., tau=50., brake_at=None):
       a_model = -0.5
     e2e = ctl.update(build_sm(v, plan_v=plan_v), a_model, V_CRUISE, **ENGAGED)
     out = min(e2e, float(np.clip(V_CRUISE - v, -1.2, 2.)))
-    ctl.delivered(out)
+    ctl.delivered(out, e2e)
     a_act += DT / ACTUATOR_TAU * (out - a_act)
     v += a_act * DT
     log.append((t, v, a_model, e2e))

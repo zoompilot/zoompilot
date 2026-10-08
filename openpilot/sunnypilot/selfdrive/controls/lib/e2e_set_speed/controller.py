@@ -79,6 +79,10 @@ BOUND_TAU = 1.0  # s
 # Give-back: speed this controller put on the car, shed by the model at SHED_RATE in cruise and
 # not at all before a slowdown. Over the envelope it is handed back over GIVE_T, at most GIVE_MAX.
 SHED_RATE = 0.038  # 1/s
+# While another candidate holds the car below the model itself (a lead's MPC), a model-only car would
+# be held to the same limit: the speed we added converges out about as fast as the MPC tracks. One
+# that binds only under our lift (cruise near the set speed) would not have held a model-only car.
+CONVERGE_T = 2.0  # s
 GIVE_T = 2.0  # s
 GIVE_MAX = 0.6  # m/s^2
 
@@ -156,12 +160,15 @@ class E2ESetSpeedController:
     if self.frame % self.params_frames == 0:
       self.enabled = self.params.get_bool(PARAM)
 
-  def delivered(self, a_out: float) -> None:
-    """The planner's output this frame: the part of the boost that reached the car is speed added.
-    Clipped to the boost, so another lift on the same candidate or a lower one taking over counts
-    as none of ours."""
-    if self.inhibit not in (Inhibit.disabled, Inhibit.inactive, Inhibit.decActive, Inhibit.invalid):
-      self.added = max(0., self.added + float(np.clip(a_out - self.a_model, min(self.boost, 0.), max(self.boost, 0.))) * self.dt)
+  def delivered(self, a_out: float, a_e2e: float) -> None:
+    """The planner's output and its final e2e candidate this frame. Everything lifted onto the e2e
+    candidate over the model (ours and the gap assist's) that reached the car is speed added."""
+    if self.inhibit in (Inhibit.disabled, Inhibit.inactive, Inhibit.decActive, Inhibit.invalid):
+      return
+    lift = a_e2e - self.a_model
+    self.added = max(0., self.added + float(np.clip(a_out - self.a_model, min(lift, 0.), max(lift, 0.))) * self.dt)
+    if a_out < min(a_e2e, self.a_model) - 0.01:
+      self.added *= 1. - self.dt / CONVERGE_T
 
   @staticmethod
   def _hazard(sm: messaging.SubMaster, fcw: bool):
@@ -247,9 +254,10 @@ class E2ESetSpeedController:
       self.inhibit = Inhibit.none
 
     target = self.gain * max(0., min(floor, self.bound) - a_model) if self.authority else 0.
-    # over the envelope, hand back what we added; behind a lead the MPC and the gap assist own the speed
-    give = 0. if hazard == Inhibit.lead else min(self.added / GIVE_T, GIVE_MAX)
-    if self.bound < a_model and give > 0.:
+    # over the envelope, hand back what we added; behind a lead the MPC and the gap assist own the
+    # speed, so nothing new is handed back there and what was is let go at the normal rate
+    give = min(self.added / GIVE_T, GIVE_MAX)
+    if self.bound < a_model and give > 0. and hazard != Inhibit.lead:
       target = -min(give, a_model - self.bound)
     # a hazard cuts a boost fast; handing speed back is never urgent
     fall = HAZARD_FALL if not self.authority and self.boost > 0. else BOOST_RATE

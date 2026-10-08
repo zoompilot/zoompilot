@@ -50,6 +50,7 @@ class LongitudinalPlannerSP:
     self.dec = DynamicExperimentalController(CP, mpc)
     self.e2e_set_speed = E2ESetSpeedController()
     self.e2e_lead_gap = E2ELeadGapController()
+    self.a_e2e = 0.  # the e2e candidate both lifts produced, for the floor's count of added speed
     self.lead_forecast = LeadForecast()
     self.lead_forecast.install(mpc)
     self.scc = make_smart_cruise_control(CP)
@@ -152,8 +153,9 @@ class LongitudinalPlannerSP:
     a_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
                                 action_t=self.CP.longitudinalActuatorDelay + DT_MDL)
     # a_cruise is last frame's: the host builds this frame's after the e2e candidate
-    return self.e2e_lead_gap.update(sm, a_e2e, float(a_mpc), is_e2e, reset_state, dec_active, self.allow_throttle, self.fcw,
-                                    self.a_cruise, steer_lat_accel)
+    self.a_e2e = self.e2e_lead_gap.update(sm, a_e2e, float(a_mpc), is_e2e, reset_state, dec_active, self.allow_throttle,
+                                          self.fcw, self.a_cruise, steer_lat_accel)
+    return self.a_e2e
 
   def update(self, sm: messaging.SubMaster) -> None:
     self.events_sp.clear()
@@ -162,8 +164,8 @@ class LongitudinalPlannerSP:
     self.e2e_alerts_helper.update(sm, self.events_sp)
 
   def publish_longitudinal_plan_sp(self, sm: messaging.SubMaster, pm: messaging.PubMaster) -> None:
-    # the host has chosen: tell the set-speed floor how much of its boost reached the car
-    self.e2e_set_speed.delivered(float(self.output_a_target))
+    # the host has chosen: tell the set-speed floor how much of the lift reached the car
+    self.e2e_set_speed.delivered(float(self.output_a_target), float(self.a_e2e))
 
     plan_sp_send = messaging.new_message('longitudinalPlanSP')
 
