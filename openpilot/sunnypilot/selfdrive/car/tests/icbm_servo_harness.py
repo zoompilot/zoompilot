@@ -18,7 +18,7 @@ SessionState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
 def make_icbm(brand="", op_long=False):
   return IntelligentCruiseButtonManagement(car.CarParams(pcmCruise=True, brand=brand, openpilotLongitudinalControl=op_long),
-                                           custom.CarParamsSP(pcmCruiseSpeed=False))
+                                           custom.CarParamsSP(pcmCruiseSpeed=False, intelligentCruiseButtonManagementAvailable=True))
 
 
 def run_frames(icbm, target_mph, cluster_mph, n=1, source='sccVision', is_metric=False,

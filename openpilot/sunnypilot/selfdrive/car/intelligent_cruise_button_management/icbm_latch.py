@@ -9,15 +9,29 @@ carStateSP.zoompilot.icbmActivation; every other process reads that (icbm_active
 CarParamsSP.pcmCruiseSpeed. See docs/zoompilot/icbm-auto-plan.md.
 """
 from openpilot.cereal import custom
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
 
 IcbmActivation = custom.CarStateZP.IcbmActivation
 
 
 class IcbmLatch:
-  """card's decision. Constant for the drive: the boot flag, as before."""
+  """card's decision. It starts at the boot decision (pcmCruiseSpeed, set in interfaces.py
+  from the same demand) and follows demand only while neither openpilot nor the stock cruise
+  is engaged: every reader's two branches agree there (no longActive, no setpoint, no servo
+  move, no open SLA session), so nothing is handed over mid-control."""
 
-  def __init__(self, CP_SP) -> None:
+  def __init__(self, CP, CP_SP) -> None:
+    self.capable = icbm_applicable(CP, CP_SP)
     self.active = not CP_SP.pcmCruiseSpeed
+    self.demanded = self.active  # the params thread refreshes it (demand.icbm_demanded)
+
+  def update(self, engaged: bool) -> bool:
+    """Returns True on the frame the decision changes."""
+    want = self.capable and self.demanded
+    if want == self.active or engaged:
+      return False
+    self.active = want
+    return True
 
   @property
   def activation(self):

@@ -152,7 +152,7 @@ class Loop:
     # op_long: Mazda alpha long, openpilot commands acceleration but the body keeps the
     # setpoint, so the same arbiter, mirror and servo own the session
     CP = car.CarParams(pcmCruise=True, brand="mazda", openpilotLongitudinalControl=op_long)
-    CP_SP = custom.CarParamsSP(pcmCruiseSpeed=False)
+    CP_SP = custom.CarParamsSP(pcmCruiseSpeed=False, intelligentCruiseButtonManagementAvailable=True)
     self.helper = VCruiseHelper(CP, CP_SP)
     self.sla = self.helper.cruise_arbiter  # 100 Hz session truth; .state as before
     self.mirror = SpeedLimitAssistMirror(CP, CP_SP)  # plannerd side: plan cap + events

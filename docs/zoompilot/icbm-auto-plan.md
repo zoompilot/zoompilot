@@ -1,7 +1,7 @@
 # ICBM on demand: plan
 
 Branch `icbm-auto` in zoompilot and opendbc, off `danger-unstable` (646c2f7694 / opendbc
-53b2706022). Status: planning.
+53b2706022). Status: phases 1-3 implemented on icbm-auto; on-car pending.
 
 ## Goal
 
@@ -106,20 +106,20 @@ activating while engaged.
 
 ### Settings and params
 
-- The ICBM toggle goes from mici, TICI and sunnylink. The consumer toggles are available
-  wherever `has_long or icbm_applicable`, and their descriptions say openpilot presses the
-  cruise buttons on stock ACC.
-- The `IntelligentCruiseButtonManagement` key stays in `params_keys.h` (upstream owns it,
-  and sunnylink/statsd still name it), but nothing reads it for behavior. card writes it as a
-  mirror of `icbmActive` so sunnylink's `has_icbm` and statsd keep meaning "ICBM running".
-- The SLA assist demotion at boot (`set_speed_limit_assist_availability`) checks
-  `icbm_applicable` instead of `pcmCruiseSpeed`, or assist could never be what brings ICBM
-  up.
+- The ICBM toggle is gone from mici, TICI and sunnylink. The consumer toggles are available
+  wherever `has_long or icbm_applicable`; `ui_state.has_icbm` and sunnylink's `has_icbm` now
+  mean the capability. No wording was added (decided 2026-10-08).
+- Custom increments are editable onroad (card reads them live); SCC and SLA already were.
+- The `IntelligentCruiseButtonManagement` key stays in `params_keys.h` (upstream owns it) but
+  the migration deletes the param and nothing reads it. statsd still lists it (logs False).
+- sunnylink hid the alpha-long toggle whenever `has_icbm`; with `has_icbm` meaning capability
+  that would hide it on every Mazda, so the condition is gone (ICBM and alpha long coexist).
+- The SLA assist demotion (`set_speed_limit_assist_availability`) checks `icbm_applicable`
+  instead of `pcmCruiseSpeed`, or assist could never be what brings ICBM up.
 
 ## Phases
 
-Each phase is its own commit series, replayed and pushed to `icbm-auto`; merge to
-danger-unstable after phase 2 for driving.
+All phases land together on danger-unstable (decided 2026-10-08).
 
 ### Phase 1: plumbing, no behavior change
 
@@ -147,34 +147,31 @@ Done 2026-10-07, except the process replay run:
 - Test baseline: `test_following_distance` and `test_cruise_speed` (plant maneuvers) already
   fail 27 cases on danger-unstable; same count with phase 1.
 
-### Phase 2: demand, still boot-latched
+### Phases 2 and 3: demand, migration, live switching
 
-- `demand.py` registry. The latch input becomes `icbm_applicable and icbm_demanded`, still
-  latched at boot.
-- Remove the toggle from UI + sunnylink; rewrite the consumer gating; mirror the param.
-- Fix the SLA demotion check.
-- The migration, with unit tests over every (capability, long mode, old ICBM, consumer)
-  combination.
-- Exit: replay identical for a route with no consumers on (= ICBM off today); a route with
-  SCC-V on and ICBM on today replays identical. This alone is shippable.
+Done 2026-10-08:
+- `demand.py` (the consumer registry), `migration.py` (`IcbmDemandMigrated` marker), boot
+  decision in `interfaces.py` = `icbm_applicable and icbm_demanded`.
+- `IcbmLatch(CP, CP_SP)`: `capable` from `icbm_applicable`, `demanded` refreshed on card's
+  10 Hz params thread, `update(engaged)` from `VCruiseHelperSP.update_enabled_state` with
+  `engaged = CC.enabled or CS.cruiseState.enabled`. On a change: zero both button-timer
+  sets (a press frozen in the passive mode would replay as a long press), reset the engage
+  gate and the reconciler, recompute the minimum set speed, move the SLA owner.
+- SLA owner: `pcm_machine_owns_sla(CP, icbm_active)`. card's arbiter `set_icbm_active`;
+  plannerd keeps both the machine (pcm openpilot-long cars only) and the mirror, picks per
+  frame, `reset()` on a handover.
+- Servo (selfdrived) re-initialises on an activation change, keeping `fast_faulted`.
+- Capability: audited every ICBM brand's panda safety. Buttons pass only while
+  `controls_allowed`, there is no ICBM safety flag, and opendbc never reads
+  `pcmCruiseSpeed`, so a mid-drive activation needs nothing below openpilot. One wrong flag
+  fixed in opendbc (957a8279c5): Chrysler CUSW (Jeep Cherokee 5th gen) claimed ICBM, but
+  `chrysler_cusw.h` passes only cancel/resume.
+- Tests: `test_icbm_latch.py` (latch, publication, demand, migration, card and planner
+  handovers); harnesses now declare the capability.
 
-### Phase 3: live switching
+### Phase 4: activate while engaged
 
-- The latch follows demand at the safe point. card reads the consumer params on its
-  existing params thread (`read_custom_set_speed_params` cadence), not at 100 Hz.
-- UI: a consumer turned on while it cannot act yet shows a note until the next engage.
-  Nothing onroad-locks.
-- Exit: unit tests for the latch (no change while engaged; change on disengage; repeated
-  toggling; demand drops mid-engagement keeps ICBM until disengage). Closed-loop harness
-  (`sla_loop_harness`, `icbm_servo_harness`) across an activation. On-car: engage with
-  nothing on, turn SCC-V on, cancel, re-engage, take a curve.
-
-### Phase 4 (optional): activate while engaged
-
-Only if phase 3 feels slow in practice. Needs `v_cruise` handed over from the dash value,
-the `update_enabled_state` engage gate primed so it does not drop `enabled` for a frame,
-and `longActive` flipping under an engaged stock-ACC car proven harmless per brand.
-Deactivating while engaged stays out of scope.
+Not done. A feature switched on or off while engaged takes effect at the next disengage.
 
 ### Phase 5: docs and release
 

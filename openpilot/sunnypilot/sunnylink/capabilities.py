@@ -49,7 +49,7 @@ CAPABILITY_FIELDS = (
 CAPABILITY_LABELS: dict[str, str] = {
   "protocol_version": "Capabilities protocol version",
   "has_longitudinal_control": "sunnypilot longitudinal control",
-  "has_icbm": "ICBM enabled",
+  "has_icbm": "ICBM usable by the cruise features",
   "icbm_available": "ICBM available",
   "icbm_applicable": "ICBM available with the current longitudinal control",
   "torque_allowed": "torque steering (not available for angle steering vehicles)",
@@ -175,9 +175,10 @@ def generate_capabilities(params: Params | None = None) -> dict:
     try:
       CP_SP = messaging.log_from_bytes(CP_SP_bytes, custom.CarParamsSP)
       caps["icbm_available"] = bool(CP_SP.intelligentCruiseButtonManagementAvailable)
-      caps["has_icbm"] = bool(CP_SP.intelligentCruiseButtonManagementAvailable) and params.get_bool("IntelligentCruiseButtonManagement")
       if CP is not None:
         caps["icbm_applicable"] = icbm_applicable(CP, CP_SP)
+        # no toggle: the cruise features act through ICBM wherever the car has it
+        caps["has_icbm"] = caps["icbm_applicable"]
       caps["tesla_has_vehicle_bus"] = bool(CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS)
     except Exception:
       cloudlog.exception("capabilities: failed to deserialize CarParamsSPPersistent")

@@ -21,9 +21,10 @@ def car_params(brand: str, openpilot_longitudinal_control: bool, pcm_cruise: boo
   return CP
 
 
-def car_params_sp(pcm_cruise_speed: bool) -> custom.CarParamsSP:
+def car_params_sp(pcm_cruise_speed: bool, icbm_available: bool = False) -> custom.CarParamsSP:
   CP_SP = custom.CarParamsSP.new_message()
   CP_SP.pcmCruiseSpeed = pcm_cruise_speed
+  CP_SP.intelligentCruiseButtonManagementAvailable = icbm_available
   return CP_SP
 
 
@@ -43,11 +44,14 @@ class TestSetSpeedLimitAssistAvailability:
     self.params.put("SpeedLimitMode", int(Mode.assist), block=True)
     assert set_speed_limit_assist_availability(car_params("mazda", True), car_params_sp(True), self.params)
 
-  def test_mazda_icbm_class_allowed(self):
-    self.params.put("SpeedLimitMode", int(Mode.assist), block=True)
-    assert set_speed_limit_assist_availability(car_params("mazda", False), car_params_sp(False), self.params)
+  def test_icbm_capable_stock_acc_allowed(self):
+    # assist is what brings ICBM up, so it stays available while ICBM is passive at boot
+    for pcm_cruise_speed in (True, False):
+      self.params.put("SpeedLimitMode", int(Mode.assist), block=True)
+      assert set_speed_limit_assist_availability(car_params("mazda", False), car_params_sp(pcm_cruise_speed, True), self.params)
+      assert self.params.get("SpeedLimitMode", return_default=True) == int(Mode.assist)
 
-  def test_mazda_stock_long_denied(self):
+  def test_stock_acc_without_icbm_denied(self):
     self.params.put("SpeedLimitMode", int(Mode.assist), block=True)
     assert not set_speed_limit_assist_availability(car_params("mazda", False), car_params_sp(True), self.params)
     assert self.params.get("SpeedLimitMode", return_default=True) == int(Mode.warning)
@@ -63,11 +67,12 @@ class TestPcmMachineOwnership:
   """One predicate decides the machine everywhere (planner, arbiter, alert text)."""
 
   def test_only_a_driver_only_setpoint_keeps_the_planner_machine(self):
-    assert pcm_machine_owns_sla(car_params("toyota", True), car_params_sp(True))
-    assert not pcm_machine_owns_sla(car_params("mazda", True), car_params_sp(False))   # alpha long + ICBM
-    assert not pcm_machine_owns_sla(car_params("mazda", False), car_params_sp(False))  # stock long + ICBM
-    assert not pcm_machine_owns_sla(car_params("hyundai", True, pcm_cruise=False), car_params_sp(True))
-    assert not pcm_machine_owns_sla(car_params("mazda", False), car_params_sp(True))
+    assert pcm_machine_owns_sla(car_params("toyota", True), icbm_active=False)
+    assert pcm_machine_owns_sla(car_params("mazda", True), icbm_active=False)       # alpha long, ICBM passive
+    assert not pcm_machine_owns_sla(car_params("mazda", True), icbm_active=True)    # alpha long + ICBM
+    assert not pcm_machine_owns_sla(car_params("mazda", False), icbm_active=True)   # stock long + ICBM
+    assert not pcm_machine_owns_sla(car_params("hyundai", True, pcm_cruise=False), icbm_active=False)
+    assert not pcm_machine_owns_sla(car_params("mazda", False), icbm_active=False)
 
   def test_icbm_applies_wherever_the_ecu_keeps_the_setpoint(self):
     def cp_sp(available):

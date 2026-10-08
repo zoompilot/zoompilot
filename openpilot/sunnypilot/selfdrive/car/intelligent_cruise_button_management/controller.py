@@ -335,7 +335,15 @@ class IntelligentCruiseButtonManagement:
     self.is_ready = ready and not button_pressed
 
   def update_activation(self, CS_SP: custom.CarStateSP) -> None:
-    self.active = icbm_active(CS_SP, self.CP_SP)
+    active = icbm_active(CS_SP, self.CP_SP)
+    if active == self.active:
+      return
+    # card moves this only while disengaged, where the servo idles: start the next
+    # engagement clean, keeping what this drive learned about the dash
+    fast_faulted = self.fast_faulted
+    self.__init__(self.CP, self.CP_SP)
+    self.fast_faulted = fast_faulted
+    self.active = active
 
   def run(self, CS: car.CarState, CC: car.CarControl, LP_SP: custom.LongitudinalPlanSP, is_metric: bool) -> None:
     if not self.active:

@@ -9,7 +9,7 @@ from enum import IntEnum
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable, icbm_moves_speed_limits
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_moves_speed_limits
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.sunnypilot.lib.styles import style
 from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, simple_button_item_sp
@@ -21,12 +21,6 @@ class PanelType(IntEnum):
   CRUISE = 0
   SLA = 1
 
-
-ICBM_DESC = tr_noop("When enabled, zoompilot will attempt to manage the built-in cruise control buttons " +
-                    "by emulating button presses for limited longitudinal control.")
-ICMB_UNAVAILABLE = tr_noop("Intelligent Cruise Button Management is currently unavailable on this platform.")
-ICMB_UNAVAILABLE_LONG_AVAILABLE = tr_noop("Disable the Alpha Longitudinal toggle to allow Intelligent Cruise Button Management.")
-ICMB_UNAVAILABLE_LONG_UNAVAILABLE = tr_noop("zoompilot Longitudinal Control is the default longitudinal control for this platform.")
 
 ACC_ENABLED_DESCRIPTION = tr_noop("Enable custom Short & Long press increments for cruise speed increase/decrease.")
 ACC_NOLONG_DESCRIPTION = tr_noop("This feature can only be used with zoompilot longitudinal control enabled.")
@@ -45,11 +39,6 @@ class CruiseLayout(Widget):
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
-
-    self.icbm_toggle = toggle_item_sp(
-      title=tr("Intelligent Cruise Button Management (ICBM) (Alpha)"),
-      description="",
-      param="IntelligentCruiseButtonManagement")
 
     self.scc_v_toggle = toggle_item_sp(
       title=tr("Slow for Curves: Vision"),
@@ -88,7 +77,6 @@ class CruiseLayout(Widget):
 
     items = [
       *self._alpha_long.items,
-      self.icbm_toggle,
       self.scc_v_toggle,
       self.scc_m_toggle,
       self.custom_acc_toggle,
@@ -108,7 +96,6 @@ class CruiseLayout(Widget):
     self._set_current_panel(PanelType.CRUISE)
     self._scroller.show_event()
     self._alpha_long.refresh()
-    self.icbm_toggle.show_description(True)
     self.custom_acc_toggle.show_description(True)
 
   def _set_current_panel(self, panel: PanelType):
@@ -124,30 +111,11 @@ class CruiseLayout(Widget):
       has_icbm = ui_state.has_icbm
       has_long = ui_state.has_longitudinal_control
 
-      if icbm_applicable(ui_state.CP, ui_state.CP_SP):
-        self.icbm_toggle.action_item.set_enabled(ui_state.is_offroad())
-        self.icbm_toggle.set_description(tr(ICBM_DESC))
-      else:
-        ui_state.params.remove("IntelligentCruiseButtonManagement")
-        self.icbm_toggle.action_item.set_enabled(False)
-
-        long_desc = ICMB_UNAVAILABLE
-        if has_long:
-          if ui_state.CP.alphaLongitudinalAvailable:
-            long_desc += " " + ICMB_UNAVAILABLE_LONG_AVAILABLE
-          else:
-            long_desc += " " + ICMB_UNAVAILABLE_LONG_UNAVAILABLE
-
-        new_desc = "<b>" + tr(long_desc) + "</b>\n\n" + tr(ICBM_DESC)
-        if self.icbm_toggle.description != new_desc:
-          self.icbm_toggle.set_description(new_desc)
-          self.icbm_toggle.show_description(True)
-
       icbm_sla = icbm_moves_speed_limits(has_long, has_icbm, ui_state.speed_limit_mode)
       self.sla_settings_button.set_right_value(tr("icbm") if icbm_sla else "", style.GREEN)
 
       if has_long or has_icbm:
-        self.custom_acc_toggle.action_item.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and ui_state.is_offroad())
+        self.custom_acc_toggle.action_item.set_enabled((has_long and not ui_state.CP.pcmCruise) or has_icbm)
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
       else:
@@ -157,8 +125,6 @@ class CruiseLayout(Widget):
 
     else:
       has_icbm = has_long = False
-      self.icbm_toggle.action_item.set_enabled(False)
-      self.icbm_toggle.set_description(tr(ONROAD_ONLY_DESCRIPTION))
 
     show_custom_acc_desc = False
 

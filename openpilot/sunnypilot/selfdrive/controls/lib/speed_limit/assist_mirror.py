@@ -43,6 +43,15 @@ class SpeedLimitAssistMirror:
     self._a_out = 0.
     self._announce_seen: int | None = None  # sync on first update (plannerd restarts)
 
+  def reset(self) -> None:
+    """The planner hands the session to card's arbiter (ICBM went active), which happens only
+    while disengaged: resync as on a plannerd restart."""
+    self.state = SessionState.disabled
+    self.output_v_target = V_CRUISE_UNSET
+    self.output_a_target = 0.
+    self._a_out = 0.
+    self._announce_seen = None
+
   @property
   def is_enabled(self) -> bool:
     return self.state in ENABLED_STATES

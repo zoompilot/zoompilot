@@ -462,7 +462,6 @@ class TestCruiseBadges:
     params.put("CarParamsSPPersistent", custom.CarParamsSP.new_message(
       intelligentCruiseButtonManagementAvailable=True).to_bytes(), block=True)
     params.put_bool("AlphaLongitudinalEnabled", True, block=True)
-    params.put_bool("IntelligentCruiseButtonManagement", True, block=True)
     params.put("SpeedLimitMode", mode, block=True)
     saved = ui_state.CP, ui_state.CP_SP, ui_state.has_longitudinal_control, ui_state.has_icbm
     try:
@@ -472,8 +471,7 @@ class TestCruiseBadges:
       assert ("icbm" in (layout._speed_limit_btn._badge_labels or [])) == shown
     finally:
       ui_state.CP, ui_state.CP_SP, ui_state.has_longitudinal_control, ui_state.has_icbm = saved
-      for key in ("CarParamsPersistent", "CarParamsSPPersistent", "AlphaLongitudinalEnabled",
-                  "IntelligentCruiseButtonManagement", "SpeedLimitMode"):
+      for key in ("CarParamsPersistent", "CarParamsSPPersistent", "AlphaLongitudinalEnabled", "SpeedLimitMode"):
         params.remove(key)
 
 

@@ -42,7 +42,7 @@ class TestSetpointReconcile:
   def setup_method(self):
     Params().put_bool("CustomAccIncrementsEnabled", False)
     self.CP = car.CarParams(pcmCruise=True)
-    self.CP_SP = custom.CarParamsSP(pcmCruiseSpeed=False)
+    self.CP_SP = custom.CarParamsSP(pcmCruiseSpeed=False, intelligentCruiseButtonManagementAvailable=True)
     self.v_cruise_helper = VCruiseHelper(self.CP, self.CP_SP)
     self.is_metric = False  # the dash unit; kph-valued fixtures below scale by MPH or 1
 

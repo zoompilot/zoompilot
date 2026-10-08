@@ -86,7 +86,8 @@ class SpeedLimitAssist:
     self._distance = 0.
     self.prev_settle_conv = 0
     self.state = SpeedLimitAssistState.disabled
-    self.pcm_op_long = pcm_machine_owns_sla(CP, CP_SP)
+    # this machine only runs on pcm openpilot-long cars (the planner picks it while ICBM is passive)
+    self.pcm_op_long = pcm_machine_owns_sla(CP, icbm_active=False)
 
     # Solution functions mapped to respective states
     self.acceleration_solutions = {
@@ -97,6 +98,18 @@ class SpeedLimitAssist:
       SpeedLimitAssistState.adapting: self.get_adapting_state_target_acceleration,
       SpeedLimitAssistState.active: self.get_active_state_target_acceleration,
     }
+
+  def reset(self) -> None:
+    """The planner hands the session back to this machine (card's ICBM went passive), which
+    happens only while disengaged: start from disabled, as a fresh drive does."""
+    self.state = SpeedLimitAssistState.disabled
+    self.is_enabled = self.is_active = False
+    self.long_enabled = self.long_enabled_prev = False
+    self.long_engaged_timer = 0
+    self.pre_active_timer = 0
+    self.output_v_target = V_CRUISE_UNSET
+    self.output_a_target = 0.
+    self._a_out = 0.
 
   @property
   def speed_limit_changed(self) -> bool:

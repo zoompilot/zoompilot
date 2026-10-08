@@ -123,7 +123,7 @@ class TestOpLongNonPcmDismiss:
     self.is_metric = False
     self.params.put_bool("IsMetric", False, block=True)
     CP = car_struct.CarParams(pcmCruise=True, openpilotLongitudinalControl=False, brand="mazda")
-    CP_SP = custom.CarParamsSP(pcmCruiseSpeed=False)
+    CP_SP = custom.CarParamsSP(pcmCruiseSpeed=False, intelligentCruiseButtonManagementAvailable=True)
     h = VCruiseHelper(CP, CP_SP)
     assert h.cruise_arbiter.applicable and not h.cruise_arbiter.op_owns_setpoint
     h.cruise_arbiter.read_params(self.params)

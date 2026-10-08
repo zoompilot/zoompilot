@@ -43,25 +43,23 @@ def _offset_label(value):
 
 
 class CruiseLayoutMici(NavScroller):
-  """Cruise settings: alpha longitudinal, ICBM, SCC, custom ACC increments, speed limit assist.
+  """Cruise settings: alpha longitudinal, SCC, custom ACC increments, speed limit assist.
 
   State gating pattern:
     - _update_state runs every frame, reads params and enables/disables widgets
     - _prev_* fields track state transitions (None → first frame, True → False = cleanup)
-    - Params are only removed on True→False transitions to avoid per-frame disk writes
-    - has_icbm is computed from toggle state directly to avoid 5s update_params delay
+    - ICBM has no toggle: the features below bring it up wherever the car can press its
+      cruise buttons (icbm_applicable)
   """
 
   def __init__(self):
     super().__init__()
 
-    self._prev_icbm_available: bool | None = None
     self._prev_sla_available: bool | None = None
 
     self._alpha_long_btn = BigButtonSP(tr("alpha longitudinal"))
     alpha_long_view = AlphaLongitudinalLayoutMici()
     self._alpha_long_btn.set_click_callback(lambda: gui_app.push_widget(alpha_long_view))
-    self._icbm_toggle = BigParamControl(tr("intelligent cruise button management"), "IntelligentCruiseButtonManagement")
     self._scc_v_toggle = BigParamControl(tr("slow for curves: vision"), "SmartCruiseControlVision")
     self._scc_m_toggle = BigParamControl(tr("slow for curves: map"), "SmartCruiseControlMap")
     self._custom_acc_btn = BigButtonSP(tr("custom increments"))
@@ -72,7 +70,6 @@ class CruiseLayoutMici(NavScroller):
 
     self._scroller.add_widgets([
       self._alpha_long_btn,
-      self._icbm_toggle,
       self._scc_v_toggle, self._scc_m_toggle,
       self._custom_acc_btn, self._speed_limit_btn,
     ])
@@ -98,30 +95,20 @@ class CruiseLayoutMici(NavScroller):
   def _update_state(self):
     super()._update_state()
 
-    self._icbm_toggle.refresh()
     self._scc_v_toggle.refresh()
     self._scc_m_toggle.refresh()
 
     cp_ready = ui_state.CP is not None and ui_state.CP_SP is not None
     has_long = cp_ready and ui_state.has_longitudinal_control
-    offroad = ui_state.is_offroad()
-    icbm_available = cp_ready and icbm_applicable(ui_state.CP, ui_state.CP_SP)
-    # Read live toggle state to avoid the five-second params refresh delay.
-    has_icbm = icbm_available and self._icbm_toggle._checked
+    has_icbm = cp_ready and icbm_applicable(ui_state.CP, ui_state.CP_SP)
 
-    self._icbm_toggle.set_enabled(icbm_available and offroad)
     self._alpha_long_btn.set_enabled(alpha_longitudinal_reachable(ui_state))
     for toggle in (self._scc_v_toggle, self._scc_m_toggle):
       toggle.set_superseded(not (has_long or has_icbm))
     # has_long and has_icbm are False until CP is ready, so CP is not read before then
     custom_acc_available = (has_long and not ui_state.CP.pcmCruise) or has_icbm
     self._custom_acc_toggle.set_superseded(not custom_acc_available)
-    self._custom_acc_btn.set_enabled(custom_acc_available and offroad)
-
-    # Remove dependent params only on a true-to-false transition.
-    if not icbm_available and self._prev_icbm_available is not False:
-      ui_state.params.remove("IntelligentCruiseButtonManagement")
-    self._prev_icbm_available = icbm_available
+    self._custom_acc_btn.set_enabled(custom_acc_available)
 
     # Custom ACC button subtitle
     acc_on = ui_state.params.get_bool("CustomAccIncrementsEnabled")
@@ -167,7 +154,7 @@ class CruiseLayoutMici(NavScroller):
     self._custom_acc_toggle.refresh()
     self._acc_short.refresh()
     self._acc_long.refresh()
-    self._custom_acc_toggle.set_enabled(ui_state.is_offroad)
+    self._custom_acc_toggle.set_enabled(True)  # card reads it live; ICBM follows at the next engage
     # Lambda: short/long respond same-frame when toggle is tapped (see button.py docstring)
     self._acc_short.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)
     self._acc_long.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)

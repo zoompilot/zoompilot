@@ -13,8 +13,10 @@ from opendbc.car.interfaces import V_CRUISE_MAX
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
+from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.car.cruise_arbiter import CruiseArbiter
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import icbm_demanded
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import IcbmLatch
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES as SESSION_ACTIVE_STATES, V_CRUISE_UNSET
 
@@ -57,7 +59,8 @@ class VCruiseHelperSP:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP) -> None:
     self.CP = CP
     self.CP_SP = CP_SP
-    self.icbm_latch = IcbmLatch(CP_SP)
+    self.icbm_latch = IcbmLatch(CP, CP_SP)
+    self.is_metric = False
     self.v_cruise_kph = V_CRUISE_UNSET
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
     self.params = Params()
@@ -94,6 +97,7 @@ class VCruiseHelperSP:
     self.long_increment = self.params.get("CustomAccLongPressIncrement", return_default=True)
     # rides card's params thread, keeping param reads off the 100 Hz path
     self.cruise_arbiter.read_params(self.params)
+    self.icbm_latch.demanded = icbm_demanded(self.CP, self.params)
 
   def update_v_cruise_delta(self, long_press: bool, v_cruise_delta: float) -> tuple[bool, float]:
     if not self.custom_acc_enabled:
@@ -111,13 +115,34 @@ class VCruiseHelperSP:
     return round_to_nearest, v_cruise_delta
 
   def get_minimum_set_speed(self, is_metric: bool) -> None:
+    self.is_metric = is_metric
     if self.pcm_cruise_speed:
       self.v_cruise_min = V_CRUISE_MIN
       return
 
     self.v_cruise_min = get_minimum_set_speed(is_metric)
 
+  def update_icbm_latch(self, CS: car.CarState, enabled: bool) -> None:
+    if not self.icbm_latch.update(enabled or CS.cruiseState.enabled):
+      return
+    # Disengaged, so both modes hold the same setpoint (the dash's). Drop what the other mode
+    # left behind: button timers frozen mid-press would replay as a long press.
+    cloudlog.event("icbm activation", active=self.icbm_latch.active)
+    for timers in (self.enable_button_timers, getattr(self, "button_timers", {})):
+      for k in timers:
+        timers[k] = 0
+    for state in getattr(self, "button_change_states", {}).values():
+      state.update(standstill=False, enabled=False)
+    self.enabled_prev = False
+    self.reconcile_frames = 0
+    self.reconcile_allowed = False
+    self.reconcile_floor = False
+    self.get_minimum_set_speed(self.is_metric)
+    self.cruise_arbiter.set_icbm_active(self.icbm_latch.active)
+
   def update_enabled_state(self, CS: car.CarState, enabled: bool) -> bool:
+    self.update_icbm_latch(CS, enabled)
+
     # special enabled state for non pcmCruiseSpeed, unchanged for non pcmCruise
     if not self.pcm_cruise_speed:
       update_manual_button_timers(CS, self.enable_button_timers)

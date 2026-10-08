@@ -20,16 +20,9 @@ sections:
       this to switch to sunnypilot longitudinal control. Enabling Experimental mode is recommended when enabling sunnypilot
       longitudinal control alpha. Changing this setting will restart sunnypilot if the car is powered on.'
     visibility:
-    - type: all
-      conditions:
-      - type: capability
-        field: alpha_long_available
-        equals: true
-      - type: not
-        condition:
-          type: capability
-          field: has_icbm
-          equals: true
+    - type: capability
+      field: alpha_long_available
+      equals: true
     enablement:
     - $ref: '#/macros/not_engaged'
   - key: ExperimentalMode
@@ -91,25 +84,10 @@ sections:
       label: Relaxed
     enablement:
     - $ref: '#/macros/longitudinal'
-  - key: IntelligentCruiseButtonManagement
-    widget: toggle
-    title: Intelligent Cruise Button Management (ICBM) (Alpha)
-    description: Presses the cruise buttons to move the car's set speed. With stock ACC it carries Smart Cruise
-      and Speed Limit Assist; with alpha longitudinal control, only Speed Limit Assist.
-    visibility:
-    - type: capability
-      field: icbm_available
-      equals: true
-    enablement:
-    - $ref: '#/macros/offroad'
-    - type: capability
-      field: icbm_applicable
-      equals: true
 - id: custom_acc_increments
   title: Custom ACC Speed Intervals
   description: ''
   enablement:
-  - $ref: '#/macros/offroad'
   - type: any
     conditions:
     - type: all
@@ -130,7 +108,6 @@ sections:
     widget: toggle
     title: Enable Custom ACC Speed Intervals
     enablement:
-    - $ref: '#/macros/offroad'
     - type: any
       conditions:
       - type: all

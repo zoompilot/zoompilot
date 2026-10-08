@@ -46,7 +46,6 @@ def setup_params():
     intelligentCruiseButtonManagementAvailable=True,
   )
   params.put("CarParamsSPPersistent", cp_sp.to_bytes())
-  params.put_bool("IntelligentCruiseButtonManagement", True)
 
   # Visuals (only the toggles the MICI visuals layout renders)
   params.put_bool("BlindSpot", True)

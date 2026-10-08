@@ -17,7 +17,9 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import set_
 import openpilot.system.sentry as sentry
 
 from openpilot.sunnypilot.sunnylink.statsd import STATSLOGSP
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import icbm_demanded
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.migration import migrate_icbm_toggle
 
 
 def log_fingerprint(CP: structs.CarParams) -> None:
@@ -110,8 +112,9 @@ def _initialize_intelligent_cruise_button_management(CP: structs.CarParams, CP_S
   if params is None:
     params = Params()
 
-  icbm_enabled = params.get_bool("IntelligentCruiseButtonManagement")
-  if icbm_enabled and icbm_applicable(CP, CP_SP):
+  migrate_icbm_toggle(CP, CP_SP, params)
+  # the boot decision; card's IcbmLatch moves it on demand while disengaged
+  if icbm_applicable(CP, CP_SP) and icbm_demanded(CP, params):
     CP_SP.pcmCruiseSpeed = False
 
 
@@ -135,11 +138,7 @@ def _cleanup_unsupported_params(CP: structs.CarParams, CP_SP: structs.CarParamsS
     params.remove("EnforceTorqueControl")
     params.remove("LateralJerkTorqueController")
 
-  if not icbm_applicable(CP, CP_SP):
-    cloudlog.warning("ICBM not applicable, cleaning up params")
-    params.remove("IntelligentCruiseButtonManagement")
-
-  # DEC, custom ACC and SCC stay as the user left them without openpilot long or ICBM: they
+  # DEC, custom ACC and SCC stay as the user left them on a car without openpilot long or ICBM: they
   # are inert then, and come back as set when either returns
 
   set_speed_limit_assist_availability(CP, CP_SP, params)

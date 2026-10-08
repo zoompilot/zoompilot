@@ -58,7 +58,8 @@ class CruiseArbiter:
   def __init__(self, CP, CP_SP):
     # The planner-side machine keeps only the cars whose setpoint nobody but the driver can
     # move; a reachable setpoint (openpilot's own, or the ICBM buttons) is arbitrated here.
-    self.applicable = not pcm_machine_owns_sla(CP, CP_SP)
+    self.CP = CP
+    self.applicable = not pcm_machine_owns_sla(CP, icbm_active=not CP_SP.pcmCruiseSpeed)
     # ICBM platforms adopt the ECU setpoint; non-pcm openpilot longitudinal writes it here.
     self.op_owns_setpoint = not CP.pcmCruise
 
@@ -91,9 +92,18 @@ class CruiseArbiter:
     # The cruise helper uses this to close reconciliation before it runs.
     self.adopted_this_frame = False
 
+  def set_icbm_active(self, icbm_active: bool) -> None:
+    """card's ICBM latch moved (only while disengaged): on Mazda alpha long the session owner
+    moves with it between this arbiter and the plannerd machine."""
+    applicable = not pcm_machine_owns_sla(self.CP, icbm_active)
+    if applicable != self.applicable:
+      self.applicable = applicable
+      self._set_state(SessionState.disabled)
+      self.v_cap = V_CRUISE_UNSET
+      self._press.clear()
+
   def read_params(self, params):
-    if not self.applicable:
-      return
+    # read even while the plannerd machine owns the session: ICBM can hand it back here
     self.enabled = params.get("SpeedLimitMode", return_default=True) == Mode.assist
     self.is_metric = params.get_bool("IsMetric")
 

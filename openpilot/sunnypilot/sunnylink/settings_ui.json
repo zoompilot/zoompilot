@@ -638,22 +638,9 @@
               "description": "WARNING: sunnypilot longitudinal control is in alpha for this car and will disable Automatic Emergency Braking (AEB). On this car, sunnypilot defaults to the car's built-in ACC instead of sunnypilot's longitudinal control. Enable this to switch to sunnypilot longitudinal control. Enabling Experimental mode is recommended when enabling sunnypilot longitudinal control alpha. Changing this setting will restart sunnypilot if the car is powered on.",
               "visibility": [
                 {
-                  "type": "all",
-                  "conditions": [
-                    {
-                      "type": "capability",
-                      "field": "alpha_long_available",
-                      "equals": true
-                    },
-                    {
-                      "type": "not",
-                      "condition": {
-                        "type": "capability",
-                        "field": "has_icbm",
-                        "equals": true
-                      }
-                    }
-                  ]
+                  "type": "capability",
+                  "field": "alpha_long_available",
+                  "equals": true
                 }
               ],
               "enablement": [
@@ -783,29 +770,6 @@
                   "equals": true
                 }
               ]
-            },
-            {
-              "key": "IntelligentCruiseButtonManagement",
-              "widget": "toggle",
-              "title": "Intelligent Cruise Button Management (ICBM) (Alpha)",
-              "description": "Presses the cruise buttons to move the car's set speed. With stock ACC it carries Smart Cruise and Speed Limit Assist; with alpha longitudinal control, only Speed Limit Assist.",
-              "visibility": [
-                {
-                  "type": "capability",
-                  "field": "icbm_available",
-                  "equals": true
-                }
-              ],
-              "enablement": [
-                {
-                  "type": "offroad_only"
-                },
-                {
-                  "type": "capability",
-                  "field": "icbm_applicable",
-                  "equals": true
-                }
-              ]
             }
           ]
         },
@@ -814,9 +778,6 @@
           "title": "Custom ACC Speed Intervals",
           "description": "",
           "enablement": [
-            {
-              "type": "offroad_only"
-            },
             {
               "type": "any",
               "conditions": [
@@ -852,9 +813,6 @@
               "widget": "toggle",
               "title": "Enable Custom ACC Speed Intervals",
               "enablement": [
-                {
-                  "type": "offroad_only"
-                },
                 {
                   "type": "any",
                   "conditions": [

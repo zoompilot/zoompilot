@@ -192,7 +192,6 @@ class UIStateSP:
     CP_SP_bytes = self.params.get("CarParamsSPPersistent")
     if CP_SP_bytes is not None:
       self.CP_SP = messaging.log_from_bytes(CP_SP_bytes, custom.CarParamsSP)
-      self.has_icbm = self.CP_SP.intelligentCruiseButtonManagementAvailable and self.params.get_bool("IntelligentCruiseButtonManagement")
     self._steer_rail_schedule = get_steer_rail_schedule(self.CP) if self.CP is not None else None
 
     self._enforce_constraints()
@@ -277,14 +276,8 @@ class UIStateSP:
     if not has_long:
       self.params.remove("ExperimentalMode")
 
-    # ICBM: clear where the buttons have no set speed to move (icbm_applicable)
-    if self.CP_SP is not None:
-      if not icbm_applicable(self.CP, self.CP_SP):
-        self.params.remove("IntelligentCruiseButtonManagement")
-        self.has_icbm = False
-    else:
-      self.params.remove("IntelligentCruiseButtonManagement")
-      self.has_icbm = False
+    # ICBM has no toggle: the features that act through it can, wherever the car has it
+    self.has_icbm = self.CP is not None and self.CP_SP is not None and icbm_applicable(self.CP, self.CP_SP)
 
   def _enforce_usb_port(self) -> None:
     """ADB and Jetlink both need the comma's USB port: the link

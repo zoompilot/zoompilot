@@ -13,6 +13,25 @@ according to that. ICBM is a servo that walks the dash onto the plan target
 driver's setpoint when the limiter releases. Measurements below are from the Mazda
 CX-5 2022 unless stated.
 
+## Activation
+
+ICBM has no toggle. It runs on a car with the buttons (`helpers.icbm_applicable`: the opendbc
+`intelligentCruiseButtonManagementAvailable` flag, and a setpoint the ECU keeps) while a
+feature that acts through it is on (`demand.py`: SCC vision/map on stock ACC, SLA assist,
+custom increments). card owns the decision (`icbm_latch.IcbmLatch`) and publishes it as
+`carStateSP.zoompilot.icbmActivation`; controlsd, selfdrived, plannerd and the UI read that,
+never `CarParamsSP.pcmCruiseSpeed`, which only records the boot decision.
+
+The decision moves only while neither openpilot nor the stock cruise is engaged. There the
+two modes agree on everything (no `longActive`, the dash's setpoint, an idle servo, no SLA
+session), so a feature switched on while driving starts at the next engage and one switched
+off keeps ICBM until the next disengage. Panda safety needs nothing: on every ICBM brand the
++/- frames pass only while `controls_allowed`, with no ICBM flag.
+
+`migration.py` ran once when the toggle went (2026-10): on a capable car whose toggle was
+off it turned off the features that toggle had left inert, so no install started pressing
+buttons. Plan and history: `icbm-auto-plan.md`.
+
 ## The servo
 
 States: `inactive`, `preActive` (react timer running), `holding`, `increasing`,

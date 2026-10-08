@@ -48,6 +48,7 @@ class TestCruiseArbiterNonPcm:
     CP.openpilotLongitudinalControl = False
     CP.pcmCruise = True
     CP_SP.pcmCruiseSpeed = False
+    CP_SP.intelligentCruiseButtonManagementAvailable = True
     self.arb = CruiseArbiter(CP, CP_SP)
     self.arb.read_params(self.params)
     assert self.arb.applicable
@@ -267,7 +268,7 @@ class TestCruiseArbiterNonPcm:
     CP.pcmCruise = pcm_cruise
     CP_SP.pcmCruiseSpeed = pcm_cruise_speed
     arb = CruiseArbiter(CP, CP_SP)
-    mirrored_by_plannerd = not pcm_machine_owns_sla(CP, CP_SP)
+    mirrored_by_plannerd = not pcm_machine_owns_sla(CP, icbm_active=not pcm_cruise_speed)
     assert mirrored_by_plannerd == (not (op_long and pcm_cruise and pcm_cruise_speed))
     assert arb.applicable == mirrored_by_plannerd, (op_long, pcm_cruise, pcm_cruise_speed)
 
