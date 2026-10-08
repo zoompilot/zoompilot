@@ -840,6 +840,19 @@
                       "equals": true
                     }
                   ]
+                },
+                {
+                  "type": "any",
+                  "conditions": [
+                    {
+                      "type": "not_engaged"
+                    },
+                    {
+                      "type": "capability",
+                      "field": "has_icbm",
+                      "equals": false
+                    }
+                  ]
                 }
               ]
             }
@@ -921,6 +934,24 @@
                       "value": 3,
                       "label": "Assist",
                       "enablement": [
+                        {
+                          "type": "any",
+                          "conditions": [
+                            {
+                              "type": "not_engaged"
+                            },
+                            {
+                              "type": "param",
+                              "key": "SpeedLimitMode",
+                              "equals": 3
+                            },
+                            {
+                              "type": "capability",
+                              "field": "has_icbm",
+                              "equals": false
+                            }
+                          ]
+                        },
                         {
                           "type": "any",
                           "conditions": [
@@ -1095,6 +1126,19 @@
                       "equals": true
                     }
                   ]
+                },
+                {
+                  "type": "any",
+                  "conditions": [
+                    {
+                      "type": "not_engaged"
+                    },
+                    {
+                      "type": "capability",
+                      "field": "has_longitudinal_control",
+                      "equals": true
+                    }
+                  ]
                 }
               ]
             },
@@ -1132,6 +1176,19 @@
                     {
                       "type": "capability",
                       "field": "has_icbm",
+                      "equals": true
+                    }
+                  ]
+                },
+                {
+                  "type": "any",
+                  "conditions": [
+                    {
+                      "type": "not_engaged"
+                    },
+                    {
+                      "type": "capability",
+                      "field": "has_longitudinal_control",
                       "equals": true
                     }
                   ]

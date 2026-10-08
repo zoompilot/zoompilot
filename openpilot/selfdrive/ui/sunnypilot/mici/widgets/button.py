@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 import pyray as rl
 
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigMultiParamToggle, BigMultiToggle, BigParamControl
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigMultiParamToggle, BigMultiToggle, BigParamControl, BigToggle
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.lib.multilang import tr
@@ -207,6 +207,11 @@ class BigMultiParamToggleSP(BigMultiParamToggle):
     assert values is None or len(values) == len(options)
     self._values = values  # BigMultiParamToggle.__init__ calls _load_value
     super().__init__(text, param, options, **kwargs)
+    self._blocked_options: Callable[[], set[int]] | None = None
+
+  def set_blocked_options(self, blocked: Callable[[], set[int]] | None):
+    """Option indices a tap skips over; the stored value is left alone if it is one of them."""
+    self._blocked_options = blocked
 
   def _draw_content(self, btn_y: float):
     # BigToggle draws one pill; this control draws one per option.
@@ -244,6 +249,10 @@ class BigMultiParamToggleSP(BigMultiParamToggle):
     self.set_value(self._options[self._get_param_index()])
 
   def _handle_mouse_release(self, mouse_pos):
+    blocked = self._blocked_options() if self._blocked_options is not None else set()
+    if blocked:
+      self._select_skipping(mouse_pos, blocked)
+      return
     if self._values is None:
       super()._handle_mouse_release(mouse_pos)
       return
@@ -251,6 +260,16 @@ class BigMultiParamToggleSP(BigMultiParamToggle):
     BigMultiToggle._handle_mouse_release(self, mouse_pos)
     # refresh reads this value every frame, so commit it synchronously.
     self._params.put(self._param, self._values[self._options.index(self.value)], block=True)
+
+  def _select_skipping(self, mouse_pos, blocked: set[int]):
+    BigToggle._handle_mouse_release(self, mouse_pos)
+    cur = self._options.index(self.value)
+    n = len(self._options)
+    new = next(((cur + step) % n for step in range(1, n + 1) if (cur + step) % n not in blocked), cur)
+    self.set_value(self._options[new])
+    if self._select_callback:
+      self._select_callback(self.value)
+    self._params.put(self._param, self._values[new] if self._values is not None else new, block=True)
 
   def refresh(self):
     new_value = self._options[self._get_param_index()]

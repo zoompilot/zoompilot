@@ -19,6 +19,7 @@ from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
 
 OpenpilotState = log.SelfdriveState.OpenpilotState
 MADSState = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -37,6 +38,7 @@ class UIStateSP:
     self.params = Params()
     self.CP_SP: custom.CarParamsSP | None = None
     self.has_icbm: bool = False
+    self.icbm_start_locked: bool = False
     self.is_sp_release: bool = self.params.get_bool("IsReleaseSpBranch")
     self.sm_services_ext = [
       "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
@@ -89,6 +91,15 @@ class UIStateSP:
     # read where sm is updated, so the params thread never touches a message
     self._accelerator_state_name = str(self.sm['modelDataV2SP'].acceleratorState)
     self._update_torque_utilization()
+    self._update_icbm_start_lock()
+
+  def _update_icbm_start_lock(self) -> None:
+    """card moves ICBM only between engagements (icbm_latch), so a feature that needs it,
+    turned on while engaged with ICBM off, would wait for the next engage. Settings lock
+    turning those on until the driver disengages; turning them off stays allowed."""
+    engaged = self.sm['selfdriveState'].enabled or self.sm['carState'].cruiseState.enabled
+    running = self.CP_SP is not None and icbm_active(self.sm['carStateSP'], self.CP_SP)
+    self.icbm_start_locked = self.has_icbm and self.started and engaged and not running
 
   def _update_torque_utilization(self) -> None:
     torque = self.sm['carOutput'].actuatorsOutput.torque

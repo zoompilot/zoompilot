@@ -86,6 +86,8 @@ class CruiseLayoutMici(NavScroller):
     self._acc_view = self._custom_acc_btn.link_sub_panel([self._custom_acc_toggle, self._acc_short, self._acc_long])
 
     self._sl_mode = BigMultiParamToggleSP(tr("speed limit mode"), "SpeedLimitMode", SL_MODE_LABELS)
+    # assist needs ICBM: not selectable while engaged with ICBM off (see _update_state)
+    self._sl_mode.set_blocked_options(lambda: {SL_MODE_ASSIST} if ui_state.icbm_start_locked else set())
     self._sl_source = BigMultiParamToggleSP(tr("source"), "SpeedLimitPolicy", SL_SOURCE_LABELS)
     self._sl_offset_type = BigMultiParamToggleSP(tr("offset type"), "SpeedLimitOffsetType", [tr("none"), tr("fixed"), "%"])
     self._sl_offset_value = BigParamOption(tr("offset value"), "SpeedLimitValueOffset",
@@ -109,6 +111,13 @@ class CruiseLayoutMici(NavScroller):
     custom_acc_available = (has_long and not ui_state.CP.pcmCruise) or has_icbm
     self._custom_acc_toggle.set_superseded(not custom_acc_available)
     self._custom_acc_btn.set_enabled(custom_acc_available)
+
+    # Engaged with ICBM off, turning on a feature that needs it would only act from the next
+    # engage: lock turning it on until the driver disengages. Turning it off stays allowed.
+    start_locked = ui_state.icbm_start_locked
+    scc_needs_icbm = start_locked and not ui_state.CP.openpilotLongitudinalControl
+    for toggle in (self._scc_v_toggle, self._scc_m_toggle):
+      toggle.set_enabled(not (scc_needs_icbm and not toggle._checked))
 
     # Custom ACC button subtitle
     acc_on = ui_state.params.get_bool("CustomAccIncrementsEnabled")
@@ -154,7 +163,8 @@ class CruiseLayoutMici(NavScroller):
     self._custom_acc_toggle.refresh()
     self._acc_short.refresh()
     self._acc_long.refresh()
-    self._custom_acc_toggle.set_enabled(True)  # card reads it live; ICBM follows at the next engage
+    # card reads it live; with ICBM off while engaged, only turning it off is allowed
+    self._custom_acc_toggle.set_enabled(not (ui_state.icbm_start_locked and not self._custom_acc_toggle._checked))
     # Lambda: short/long respond same-frame when toggle is tapped (see button.py docstring)
     self._acc_short.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)
     self._acc_long.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)

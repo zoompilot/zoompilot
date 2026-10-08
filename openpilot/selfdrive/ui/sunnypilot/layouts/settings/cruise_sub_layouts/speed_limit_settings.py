@@ -145,7 +145,8 @@ class SpeedLimitSettingsLayout(Widget):
     else:
       sla_available = False
 
-    if not sla_available:
+    # assist needs ICBM: not selectable while engaged with ICBM off (ui_state.icbm_start_locked)
+    if not sla_available or ui_state.icbm_start_locked:
       self._speed_limit_mode.action_item.set_enabled_buttons({
         int(SpeedLimitMode.off),
         int(SpeedLimitMode.information),

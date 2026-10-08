@@ -123,6 +123,12 @@ sections:
       - type: capability
         field: has_icbm
         equals: true
+    - type: any
+      conditions:
+      - type: not_engaged
+      - type: capability
+        field: has_icbm
+        equals: false
   sub_panels:
   - id: custom_acc_intervals
     label: Custom ACC Speed Intervals Settings
@@ -174,6 +180,15 @@ sections:
       - value: 3
         label: Assist
         enablement:
+        - type: any
+          conditions:
+          - type: not_engaged
+          - type: param
+            key: SpeedLimitMode
+            equals: 3
+          - type: capability
+            field: has_icbm
+            equals: false
         - type: any
           conditions:
           - type: capability
@@ -270,6 +285,12 @@ sections:
       - type: capability
         field: has_icbm
         equals: true
+    - type: any
+      conditions:
+      - type: not_engaged
+      - type: capability
+        field: has_longitudinal_control
+        equals: true
   - key: SmartCruiseControlMap
     widget: toggle
     title: Map
@@ -291,4 +312,10 @@ sections:
         equals: true
       - type: capability
         field: has_icbm
+        equals: true
+    - type: any
+      conditions:
+      - type: not_engaged
+      - type: capability
+        field: has_longitudinal_control
         equals: true

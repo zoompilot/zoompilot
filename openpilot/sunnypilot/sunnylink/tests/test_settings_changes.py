@@ -232,3 +232,22 @@ class TestNotEngagedReplacement(OpenpilotTestCase):
     rule_types = _flatten_rule_types(item.get("enablement"))
     assert "offroad_only" not in rule_types, f"{key} still uses offroad_only"
     assert "not_engaged" in rule_types, f"{key} missing not_engaged"
+
+
+class TestIcbmFeaturesLockWhileEngaged(OpenpilotTestCase):
+  """ICBM has no toggle and only starts between engagements, so the features that bring it up
+  are not changed remotely while engaged on a car that has it."""
+
+  @parameterized.expand(["SmartCruiseControlVision", "SmartCruiseControlMap", "CustomAccIncrementsEnabled"], names=["key"])
+  def test_feature_locks_while_engaged(self, schema, key):
+    item = _find_item(schema, key)
+    assert item is not None, f"{key} not found"
+    assert "not_engaged" in _flatten_rule_types(item.get("enablement"))
+
+  def test_assist_option_locks_while_engaged(self, schema):
+    item = _find_item(schema, "SpeedLimitMode")
+    assist = next(o for o in item["options"] if o["value"] == 3)
+    assert "not_engaged" in _flatten_rule_types(assist.get("enablement"))
+
+  def test_no_icbm_toggle(self, schema):
+    assert _find_item(schema, "IntelligentCruiseButtonManagement") is None
