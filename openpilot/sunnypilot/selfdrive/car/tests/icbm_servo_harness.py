@@ -16,9 +16,10 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import V_CRUISE_UNS
 SessionState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
 
-def make_icbm(brand="", op_long=False):
+def make_icbm(brand="", op_long=False, min_set_speed=0.):
   return IntelligentCruiseButtonManagement(car.CarParams(pcmCruise=True, brand=brand, openpilotLongitudinalControl=op_long),
-                                           custom.CarParamsSP(pcmCruiseSpeed=False, intelligentCruiseButtonManagementAvailable=True))
+                                           custom.CarParamsSP(pcmCruiseSpeed=False, minimumSetSpeed=min_set_speed,
+                                                              intelligentCruiseButtonManagementAvailable=True))
 
 
 def run_frames(icbm, target_mph, cluster_mph, n=1, source='sccVision', is_metric=False,

@@ -17,7 +17,7 @@ from opendbc.sunnypilot.car.icbm_actuation_profile import get_actuation_profile
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_CTRL
 from openpilot.common.swaglog import cloudlog
-from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import minimum_set_speed_ms
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import CRUISE_BUTTON_TIMER, update_manual_button_timers
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import V_CRUISE_UNSET
@@ -187,7 +187,7 @@ class IntelligentCruiseButtonManagement:
     # Judge restore intent against the unmodified plan target.
     self.v_target_raw_prev = self.v_target_raw
     self.v_target_raw = round(LP_SP.vTarget * speed_conv)
-    self.v_cruise_min = get_minimum_set_speed(self.is_metric)
+    self.v_cruise_min = round(minimum_set_speed_ms(self.CP_SP, self.is_metric) * speed_conv)
     self.v_cruise_cluster = round(CS.cruiseState.speedCluster * speed_conv)
     if not self.prompting:
       self.prompt_ceiling = None

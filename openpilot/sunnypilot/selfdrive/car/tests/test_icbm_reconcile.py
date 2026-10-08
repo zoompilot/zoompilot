@@ -241,3 +241,16 @@ class TestSetpointReconcile:
       self.v_cruise_helper.update_v_cruise(CS, enabled=True, is_metric=True)
       self.v_cruise_helper.reconcile_setpoint_with_dash(CS)
     assert round(self.v_cruise_helper.v_cruise_kph) == 101
+
+  @pytest.mark.parametrize("floor_kph, dash_kph, expected_kph", [
+    (30., 30., 30.),        # Mazda MRCC: the 30 kph floor (dash 19 mph) is adopted as is
+    (0., 30., 20 * MPH),    # sunnypilot's default floor is 20 mph, not 20 kph
+  ])
+  def test_floor_is_the_cars(self, floor_kph, dash_kph, expected_kph):
+    self.v_cruise_helper = VCruiseHelper(self.CP, custom.CarParamsSP(pcmCruiseSpeed=False, minimumSetSpeed=floor_kph * CV.KPH_TO_MS,
+                                                                         intelligentCruiseButtonManagementAvailable=True))
+    # SET- at 20 mph; the ECU settles on its floor
+    self.engage_at(20 * MPH)
+    self.press(ButtonType.decelCruise, dash_kph=20 * MPH)
+    self.run_frames(make_car_state(dash_kph=dash_kph), n=20)
+    assert self.v_cruise_helper.v_cruise_kph == pytest.approx(expected_kph, abs=0.1)
