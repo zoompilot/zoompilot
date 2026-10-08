@@ -215,10 +215,9 @@ A consumer the user turns on later demands ICBM normally. Switching from alpha l
 stock ACC with SCC-V on brings ICBM up on that drive; that is the feature as set, not a
 migration gap.
 
-Open item: alpha long with ICBM off and SLA assist on runs today's driver-confirm machine.
-After the change assist demands ICBM, so the dash starts moving to the limit by itself.
-Either accept that (the ICBM path is the one zoompilot built for alpha long) and say so in
-the release notes, or migrate assist -> warning for those installs.
+Alpha long with ICBM off and SLA assist on (today's driver-confirm machine): assist stays
+on and brings ICBM up, so the dash moves to the limit by itself. Decided 2026-10-07; the
+release notes say so.
 
 ## Risks
 
