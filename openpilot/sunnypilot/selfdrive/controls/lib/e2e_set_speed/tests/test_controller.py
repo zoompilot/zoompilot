@@ -19,9 +19,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers imp
 V_EGO = 20.
 V_CRUISE = 24.  # floor (24 - 20) / 8 = 0.5
 HOLD_FRAMES = round(c.HOLD_TIME / DT)
-SOFT_HOLD_FRAMES = round(c.SOFT_HOLD_TIME / DT)
-RISE_FRAMES = round(1. / (c.AUTHORITY_RISE * DT))
-FALL_FRAMES = math.ceil(1. / (c.AUTHORITY_FALL * DT))
+SETTLE_FRAMES = round(c.FLOOR_MAX / (c.BOOST_RISE * DT)) + 10
 
 
 def run(ctl, n, sm, a_model=0., v_cruise=V_CRUISE, **kwargs):
@@ -36,11 +34,15 @@ def new_controller(enabled=True):
   return E2ESetSpeedController(params=MockParams(enabled), dt=DT)
 
 
-def armed():
+def settled(v_cruise=V_CRUISE):
   ctl = new_controller()
-  run(ctl, HOLD_FRAMES + RISE_FRAMES + 40, build_sm(V_EGO))
-  assert ctl.authority == pytest.approx(1.)
+  run(ctl, SETTLE_FRAMES, build_sm(V_EGO), v_cruise=v_cruise)
+  assert ctl.boost == pytest.approx(ctl.floor)
   return ctl
+
+
+def _plan(f):
+  return np.asarray([f(t) for t in T_IDXS])
 
 
 def test_friction_circle_matches_upstream():
@@ -60,27 +62,23 @@ def test_disabled_passes_model_through():
   ({"dec_active": True}, Inhibit.decActive),
 ])
 def test_idle_resets_at_once(kwargs, reason):
-  ctl = armed()
+  ctl = settled()
   assert run(ctl, 1, build_sm(V_EGO), a_model=0.05, **kwargs) == 0.05
   assert (ctl.inhibit, ctl.authority, ctl.boost) == (reason, 0., 0.)
 
 
-def test_holds_then_rises():
+def test_boosts_from_the_first_frame_at_the_rise_limit():
   ctl = new_controller()
-  sm = build_sm(V_EGO)
-  assert run(ctl, SOFT_HOLD_FRAMES, sm) == 0.
-  assert ctl.inhibit == Inhibit.hold
-  run(ctl, RISE_FRAMES // 2, sm)
+  boosts = [run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10.) - 0. for _ in range(SETTLE_FRAMES)]
+  assert boosts[0] == pytest.approx(c.BOOST_RISE * DT)
+  assert max(np.diff([0.] + boosts)) <= c.BOOST_RISE * DT + 1e-9
+  assert boosts[-1] == pytest.approx(c.FLOOR_MAX)
   assert ctl.inhibit == Inhibit.none
-  assert ctl.authority == pytest.approx(0.5)
-  run(ctl, RISE_FRAMES // 2, sm)
-  assert ctl.authority == pytest.approx(1.)
 
 
 def test_floor_closes_the_gap_like_stock_cruise():
-  ctl = armed()
-  assert run(ctl, 1, build_sm(V_EGO)) == pytest.approx((V_CRUISE - V_EGO) / c.TAU)
-  assert run(ctl, 40, build_sm(V_EGO), v_cruise=V_EGO + 10.) == pytest.approx(c.FLOOR_MAX)
+  ctl = settled()
+  assert ctl.boost == pytest.approx((V_CRUISE - V_EGO) / c.TAU)
 
 
 @pytest.mark.parametrize("v, floor", [
@@ -88,170 +86,147 @@ def test_floor_closes_the_gap_like_stock_cruise():
   (c.MIN_SPEED - 1., 0.),
 ])
 def test_floor_fades_in_above_walking_pace(v, floor):
-  ctl = armed()
+  ctl = new_controller()
   run(ctl, 1, build_sm(v), v_cruise=v + 10.)
   assert ctl.floor == pytest.approx(floor)
-  assert (ctl.inhibit, ctl.authority) == (Inhibit.none, 1.)
 
 
 def test_gain_fades_the_boost_as_the_model_slows():
-  ctl = armed()
+  ctl = new_controller()
   floor = (V_CRUISE - V_EGO) / c.TAU
   a_model = -0.1
   gain = (a_model - c.GAIN_BP[0]) / (c.GAIN_BP[1] - c.GAIN_BP[0])
-  assert run(ctl, 1, build_sm(V_EGO), a_model=a_model) == pytest.approx(a_model + gain * (floor - a_model))
-  # zero gain where the hard trip fires, so the trip never steps the output
-  assert run(ctl, 1, build_sm(V_EGO), a_model=c.MODEL_BRAKE_ACCEL) == pytest.approx(c.MODEL_BRAKE_ACCEL)
+  run(ctl, SETTLE_FRAMES, build_sm(V_EGO), a_model=a_model)
+  assert ctl.boost == pytest.approx(gain * (floor - a_model))
+  run(ctl, SETTLE_FRAMES, build_sm(V_EGO), a_model=c.GAIN_BP[0])
+  assert (ctl.boost, ctl.inhibit) == (0., Inhibit.modelBraking)
 
 
 def test_never_adds_throttle_at_set_speed():
-  ctl = armed()
+  ctl = new_controller()
   assert run(ctl, 5, build_sm(V_EGO), a_model=0., v_cruise=V_EGO) == 0.
   assert run(ctl, 5, build_sm(V_EGO), a_model=0.1, v_cruise=V_EGO - 1.) == pytest.approx(0.1)
 
 
-def test_boost_rise_is_limited():
-  ctl = armed()
-  run(ctl, 5, build_sm(V_EGO), v_cruise=V_EGO)
+def test_backs_off_at_the_fall_limit():
+  ctl = settled()
+  start = ctl.boost
+  run(ctl, 1, build_sm(V_EGO), a_model=-0.5)
+  assert ctl.boost == pytest.approx(start - c.BOOST_FALL * DT)
+
+
+@pytest.mark.parametrize("sm_kwargs, update_kwargs, reason", [
+  ({"lead": True}, {}, Inhibit.lead),
+  ({"gas": True}, {}, Inhibit.driver),
+  ({"brake": True}, {}, Inhibit.driver),
+  ({"should_stop": True}, {}, Inhibit.stop),
+  ({"plan_v": _plan(lambda t: max(V_EGO - 3. * t, 1.))}, {}, Inhibit.stop),
+  ({"hard_brake": True}, {}, Inhibit.hardBrake),
+  ({"force_decel": True}, {}, Inhibit.forceDecel),
+  ({"lane_change": True}, {}, Inhibit.laneChange),
+  ({}, {"fcw": True}, Inhibit.fcw),
+])
+def test_hazards_cut_the_boost_and_hold(sm_kwargs, update_kwargs, reason):
+  ctl = settled()
+  start = ctl.boost
+  run(ctl, 1, build_sm(V_EGO, **sm_kwargs), **update_kwargs)
+  assert (ctl.inhibit, ctl.authority) == (reason, 0.)
+  assert ctl.boost == pytest.approx(start - c.HAZARD_FALL * DT)
+  run(ctl, math.ceil(start / (c.HAZARD_FALL * DT)), build_sm(V_EGO, **sm_kwargs), **update_kwargs)
   assert ctl.boost == 0.
-  boosts = []
-  for _ in range(40):
-    run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10.)
-    boosts.append(ctl.boost)
-  assert max(np.diff([0.] + boosts)) <= c.BOOST_RISE * DT + 1e-9
-  assert boosts[-1] == pytest.approx(c.FLOOR_MAX)
-
-
-def _plan(f):
-  return np.asarray([f(t) for t in T_IDXS])
-
-
-@pytest.mark.parametrize("sm_kwargs, update_kwargs, a_model, reason", [
-  ({"lead": True}, {}, 0., Inhibit.lead),
-  ({"gas": True}, {}, 0., Inhibit.driver),
-  ({"brake": True}, {}, 0., Inhibit.driver),
-  ({"should_stop": True}, {}, 0., Inhibit.stop),
-  ({"plan_v": _plan(lambda t: max(V_EGO - 3. * t, 1.))}, {}, 0., Inhibit.stop),
-  ({"hard_brake": True}, {}, 0., Inhibit.hardBrake),
-  ({"force_decel": True}, {}, 0., Inhibit.forceDecel),
-  ({"lane_change": True}, {}, 0., Inhibit.laneChange),
-  ({}, {"fcw": True}, 0., Inhibit.fcw),
-  ({}, {}, -0.25, Inhibit.modelBraking),
-  ({"plan_v": _plan(lambda t: V_EGO - 0.2 * t)}, {}, 0., Inhibit.planSlowing),
-  ({"curvature": 1.2 / V_EGO ** 2}, {}, 0., Inhibit.lateral),
-  # a bend 6 s out, nothing yet at the wheel
-  ({"yaw_rate": _plan(lambda t: 1.2 / V_EGO if t >= 6. else 0.)}, {}, 0., Inhibit.lateral),
-])
-def test_trips_drop_authority_fast_and_hold(sm_kwargs, update_kwargs, a_model, reason):
-  hold = SOFT_HOLD_FRAMES if reason in c.SOFT_TRIPS else HOLD_FRAMES
-  ctl = armed()
-  sm = build_sm(V_EGO, **sm_kwargs)
-  run(ctl, 1, sm, a_model=a_model, **update_kwargs)
-  assert ctl.inhibit == reason
-  assert ctl.authority == pytest.approx(1. - c.AUTHORITY_FALL * DT)
-  assert run(ctl, FALL_FRAMES, sm, a_model=a_model, **update_kwargs) == a_model
-  assert ctl.authority == 0.
   # clear: nothing until the hold has run out
-  assert run(ctl, hold, build_sm(V_EGO)) == 0.
-  run(ctl, 1, build_sm(V_EGO))
-  assert ctl.authority > 0.
-
-
-@pytest.mark.parametrize("trip, clear, between", [
-  # (tripping frame, value that clears it while re-arming, value inside the hysteresis band)
-  ({"a_model": -0.25}, {"a_model": 0.}, {"a_model": -0.15}),
-  ({"sm": {"curvature": 1.2 / V_EGO ** 2}}, {}, {"sm": {"curvature": 0.9 / V_EGO ** 2}}),
-  ({"sm": {"plan_v": _plan(lambda t: V_EGO - 0.2 * t)}}, {}, {"sm": {"plan_v": _plan(lambda t: V_EGO - 0.12 * t)}}),
-])
-def test_soft_trips_rearm_only_past_the_hysteresis_band(trip, clear, between):
-  def step(n, kw):
-    return run(ctl, n, build_sm(V_EGO, **kw.get("sm", {})), a_model=kw.get("a_model", 0.))
-  ctl = armed()
-  step(1, trip)
-  inhibit = ctl.inhibit
-  # inside the band: still tripped, so the soft hold never runs out
-  step(SOFT_HOLD_FRAMES + 20, between)
-  assert ctl.inhibit == inhibit and ctl.authority == 0.
-  # the same value with full authority does not trip
-  fresh = armed()
-  run(fresh, 1, build_sm(V_EGO, **between.get("sm", {})), a_model=between.get("a_model", 0.))
-  assert fresh.inhibit == Inhibit.none
-  # cleared: re-arms after the soft hold
-  step(SOFT_HOLD_FRAMES, clear)
+  assert run(ctl, HOLD_FRAMES, build_sm(V_EGO)) == 0.
   assert ctl.inhibit == Inhibit.hold
-  step(1, clear)
-  assert ctl.authority > 0.
-
-
-def test_repeated_plan_slowdown_gets_the_full_hold():
-  slowing = build_sm(V_EGO, plan_v=_plan(lambda t: V_EGO - 0.2 * t))
-  ctl = armed()
-  run(ctl, 1, slowing)
-  run(ctl, SOFT_HOLD_FRAMES + 2, build_sm(V_EGO))
-  assert ctl.authority > 0.
-  # back within HOLD_TIME: a slowdown in progress (a red-light approach), frozen through the full hold
-  run(ctl, 1, slowing)
-  frozen = ctl.authority
-  run(ctl, HOLD_FRAMES, build_sm(V_EGO))
-  assert ctl.authority == frozen
-  run(ctl, 1, build_sm(V_EGO))
-  assert ctl.authority > frozen
-  # a lone one later gets the short hold again
-  run(ctl, HOLD_FRAMES + 20, build_sm(V_EGO))
-  run(ctl, 1, slowing)
-  frozen = ctl.authority
-  run(ctl, SOFT_HOLD_FRAMES + 1, build_sm(V_EGO))
-  assert ctl.authority > frozen
+  assert run(ctl, 1, build_sm(V_EGO)) > 0.
 
 
 @pytest.mark.parametrize("kwargs, hold", [
   ({"dec_active": True}, HOLD_FRAMES),
-  ({"is_e2e": False}, SOFT_HOLD_FRAMES),
+  ({"is_e2e": False}, 0),
 ])
 def test_leaving_dec_holds_like_a_hazard(kwargs, hold):
-  ctl = armed()
+  ctl = settled()
   run(ctl, 1, build_sm(V_EGO), **kwargs)
   assert run(ctl, hold, build_sm(V_EGO)) == 0.
-  run(ctl, 1, build_sm(V_EGO))
-  assert ctl.authority > 0.
+  assert run(ctl, 1, build_sm(V_EGO)) > 0.
 
 
-def test_single_frame_trip_freezes_authority_through_the_hold():
-  ctl = armed()
-  run(ctl, 1, build_sm(V_EGO, lead=True))
-  frozen = ctl.authority
-  run(ctl, HOLD_FRAMES, build_sm(V_EGO))
-  assert ctl.authority == frozen
-  run(ctl, 1, build_sm(V_EGO))
-  assert ctl.authority > frozen
+@pytest.mark.parametrize("mean_accel, bound", [
+  (0., c.FLOOR_MAX),
+  (-0.05, c.FLOOR_MAX / 2),
+  (-0.1, 0.),
+  (-0.2, 0.),
+])
+def test_plan_bound_reads_the_plans_average_slowdown(mean_accel, bound):
+  assert c.plan_bound(_plan(lambda t: V_EGO + mean_accel * t)) == pytest.approx(bound)
+
+
+def test_plan_bound_ignores_the_first_seconds_wander():
+  # a dip that is gone by PLAN_T[0] is the model's wander, not a slowdown
+  assert c.plan_bound(_plan(lambda t: V_EGO - (0.2 if t < c.PLAN_T[0] - 0.5 else 0.))) == pytest.approx(c.FLOOR_MAX)
 
 
 @pytest.mark.parametrize("offset", [1.0, -0.6])
-def test_plan_slowdown_is_relative_to_the_plan(offset):
+def test_plan_bound_is_relative_to_the_plan(offset):
   # the model reads vEgo a few percent off; a flat plan offset from it is not a slowdown
-  ctl = armed()
+  ctl = settled()
   run(ctl, 1, build_sm(V_EGO, plan_v=V_EGO + offset))
   assert ctl.inhibit == Inhibit.none
 
 
+def test_a_slowing_plan_shrinks_the_boost_without_a_hold():
+  ctl = settled(v_cruise=V_EGO + 10.)
+  slowing = build_sm(V_EGO, plan_v=_plan(lambda t: V_EGO - 0.05 * t))
+  run(ctl, SETTLE_FRAMES, slowing, v_cruise=V_EGO + 10.)
+  assert ctl.inhibit == Inhibit.planSlowing
+  assert ctl.boost == pytest.approx(c.FLOOR_MAX / 2)
+  # the plan clears: recovers through the filter, no hold
+  run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10.)
+  assert ctl.boost > c.FLOOR_MAX / 2
+
+
+def test_bound_drops_at_once_and_recovers_through_the_filter():
+  ctl = settled(v_cruise=V_EGO + 10.)
+  run(ctl, 1, build_sm(V_EGO, plan_v=_plan(lambda t: V_EGO - 0.1 * t)), v_cruise=V_EGO + 10.)
+  assert ctl.bound == 0.
+  run(ctl, round(c.BOUND_TAU / DT), build_sm(V_EGO), v_cruise=V_EGO + 10.)
+  assert ctl.bound == pytest.approx(c.FLOOR_MAX * (1 - math.exp(-1.)), abs=0.02)
+
+
+def test_curve_bound_limits_speed_into_a_bend():
+  flat = np.full(len(T_IDXS), V_EGO)
+  # a bend 6 s out tight enough for 1.2 m/s^2 at today's speed: no boost into it
+  assert c.curve_bound(flat, _plan(lambda t: 1.2 / V_EGO if t >= 6. else 0.), 0.) < 0.
+  # a gentle one far enough off leaves room
+  assert c.curve_bound(flat, _plan(lambda t: 0.5 / V_EGO if t >= 8. else 0.), 0.) > 0.
+  # turning harder than CURVE_LAT_ACCEL now: none
+  assert c.curve_bound(flat, np.zeros(len(T_IDXS)), c.CURVE_LAT_ACCEL + 0.1) == 0.
+
+
+def test_curve_ahead_reports_lateral():
+  ctl = settled(v_cruise=V_EGO + 10.)
+  run(ctl, 1, build_sm(V_EGO, yaw_rate=_plan(lambda t: 1.2 / V_EGO if t >= 6. else 0.)), v_cruise=V_EGO + 10.)
+  assert ctl.inhibit == Inhibit.lateral
+  assert ctl.boost == pytest.approx(c.FLOOR_MAX - c.BOOST_FALL * DT)
+
+
 def test_friction_circle_caps_the_floor():
-  ctl = armed()
+  ctl = new_controller()
   lat = 1.65
   run(ctl, 1, build_sm(V_EGO, curvature=lat / V_EGO ** 2), v_cruise=V_EGO + 10.)
-  assert ctl.inhibit == Inhibit.lateral
   assert ctl.floor == pytest.approx(math.sqrt(1.7 ** 2 - lat ** 2))
 
 
 @pytest.mark.parametrize("accel_coast", [0.2, -0.1])
 def test_coast_caps_the_floor(accel_coast):
-  ctl = armed()
-  assert run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10., allow_throttle=False, accel_coast=accel_coast) == \
+  ctl = new_controller()
+  assert run(ctl, SETTLE_FRAMES, build_sm(V_EGO), v_cruise=V_EGO + 10., allow_throttle=False, accel_coast=accel_coast) == \
     pytest.approx(max(accel_coast, 0.))
-  assert (ctl.inhibit, ctl.authority) == (Inhibit.none, 1.)
+  assert ctl.floor == pytest.approx(accel_coast)
 
 
 def test_invalid_model_passes_through():
-  ctl = armed()
+  ctl = settled()
   sm = build_sm(V_EGO, plan_v=_plan(lambda t: float('nan') if t > 5. else V_EGO))
   assert run(ctl, 1, sm, a_model=0.05) == 0.05
   assert (ctl.inhibit, ctl.authority) == (Inhibit.invalid, 0.)

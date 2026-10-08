@@ -230,6 +230,7 @@ class LongitudinalPlannerSP:
     e2eSetSpeed.floor = float(self.e2e_set_speed.floor)
     e2eSetSpeed.boost = float(self.e2e_set_speed.boost)
     e2eSetSpeed.inhibit = self.e2e_set_speed.inhibit
+    e2eSetSpeed.bound = float(self.e2e_set_speed.bound) if math.isfinite(self.e2e_set_speed.bound) else 0.
 
     # zoompilot: experimental mode's follow-distance assist
     e2eLeadGap = longitudinalPlanSP.zoompilot.e2eLeadGap

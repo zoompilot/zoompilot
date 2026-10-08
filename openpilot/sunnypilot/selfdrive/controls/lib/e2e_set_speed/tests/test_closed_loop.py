@@ -59,7 +59,8 @@ def test_reaches_set_speed(tau):
 def test_added_jerk_bounded():
   log = simulate(True)
   added = np.diff(log[:, 3] - log[:, 2]) / DT
-  assert np.abs(added).max() <= c.BOOST_RISE + 1e-6
+  assert added.max() <= c.BOOST_RISE + 1e-6
+  assert -added.max() <= c.BOOST_FALL + 1e-6
 
 
 def test_yields_to_a_slowdown_within_a_quarter_second():

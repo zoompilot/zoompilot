@@ -33,27 +33,32 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 ## The controller
 
 ```
-e2e = a_model + authority * gain * max(0, floor - a_model)
+e2e   = a_model + gain * max(0, min(floor, bound) - a_model)
 floor = clip((v_target - v_ego) / 8 s, 0, 0.6) * fade-in over 5-8 m/s,
         capped by upstream's friction circle and, without allow_throttle, the coast limit
 gain  = interp(a_model, [-0.2, -0.05], [0, 1])
+bound = min(plan bound, curve bound), dropping at once and recovering with a 1 s filter
+  plan bound  = interp(min over t in 2-6 s of (v_plan(t) - v_plan(0)) / t, [-0.1, 0], [0, 0.6])
+  curve bound = min over t in 0.5-10 s of (sqrt(0.6 / k_plan(t)) - v_plan(0)) / t,
+                0 while turning harder than 0.6 m/s^2 now
 ```
 
 `v_target` is the planner's target after SCC vision, SCC map and SLA, so curve and limit
-targets are never pushed past. Authority rises 1/s, falls 4/s on a trip, and freezes through a
-hold after the last trip: 3 s after a hazard (FCW, hard brake, forceDecel, stop, lead, driver,
-lane change), 0.5 s after the model's own slowdown signals (model braking, plan slowing,
-lateral). Walking pace and coasting have no trip: the floor already fades out below 8 m/s and
-drops to the coast limit. The slowdown signals re-arm only once clear of a wider band (model accel -0.1, plan drop
-0.5 m/s, lateral 0.8 m/s^2) until authority is full again, and a plan-slowing trip within 3 s of
-the last trip is a slowdown in progress and gets the full hold. The boost rises at most 0.5 m/s^3.
-Off, not in e2e, long control reset, DEC active or invalid input: the model passes through
-untouched and the state resets.
+targets are never pushed past. The plan bound reads the steepest average slowdown the model's plan
+holds over the next 2-6 s (shorter windows are its wander), measured from its own v(0). The curve
+bound keeps the car from planning to pass any point of the plan faster than 0.6 m/s^2 of lateral
+acceleration allows there. Both move smoothly with the plan, so a slowdown or a bend shrinks the
+boost as it comes instead of tripping it, and nothing needs holding off once it passes. The bound
+takes a drop at once and filters its recovery, so a plan wobbling at a red light cannot pump the
+boost. The boost rises at most 0.5 m/s^3 and backs off at 1.0 m/s^3.
 
-Trips: FCW, hardBrakePredicted, forceDecel, shouldStop or a plan dipping under 2 m/s, any lead,
-gas or brake, model accel under -0.2, the plan losing more than 0.75 m/s over 5 s (from its own
-v(0)), lateral acceleration over 1.0 now or anywhere on the 10 s plan, allow_throttle false, a
-lane change, under 5 m/s.
+Hazards cut the boost at 2.4 m/s^3 and hold it off for 3 s after they clear: FCW,
+hardBrakePredicted, forceDecel, shouldStop or a plan dipping under 2 m/s, any lead, gas or brake,
+a lane change; leaving DEC or an invalid model hold the same way. Off, not in e2e, long control
+reset, DEC active or invalid input: the model passes through untouched and the state resets.
+State is the boost, the bound's filter and the hazard hold. The telemetry's inhibit names the
+hazard, `hold`, or what limits the boost: `modelBraking` (gain at zero), `planSlowing` or
+`lateral` (the bound under the floor).
 
 DEC on this car is radarless (`radarUnavailable`), so its blended mode means FCW, standstill or a
 predicted slowdown, and its acc mode drops the e2e candidate altogether: the floor has nothing to
@@ -66,16 +71,21 @@ add under DEC.
 | `TAU` | 8 s | stock MRCC set-speed steps close with ~7.7 s |
 | `FLOOR_MAX` | 0.6 m/s^2 | stock MRCC peak, median 0.57, p90 0.72 |
 | `MIN_SPEED`, `FULL_SPEED` | 5, 8 m/s | v5 trip cannot see a stop below this; floor 1.2-1.6 against a creeping model |
-| `AUTHORITY_RISE` | 1 /s | 0.5 on the first drive: full authority 5 s after every trip, felt as lag |
-| `AUTHORITY_FALL` | 4 /s | p90 overridden decel on purposeful slowdowns 0.28 -> 0.11 m/s vs 2/s |
-| `HOLD_TIME` | 3 s, hazards | override on purposeful slowdowns 21% -> 7% (open loop) |
-| `SOFT_HOLD_TIME` | 0.5 s + hysteresis | see "Re-arm lag" |
-| `BOOST_RISE` | 0.5 m/s^3 | removes 34 of 35 target-restore steps (48 in 2 h, p50 0.15, max 0.46) |
 | `GAIN_BP` | -0.2, -0.05 | model accel sd 0.11-0.19 in cruise, below 0.3 Hz; purposeful pushes 11% -> 4% |
-| `MODEL_BRAKE_ACCEL` | -0.2 | blocks 62% of purposeful slowdowns, 1.1% of drift |
-| `PLAN_SLOWDOWN` | 0.75 m/s / 5 s | 60% / 2.9%; raw, a 0.3 s low-pass raised apex excess p90 2.0 -> 2.8 m/s |
-| `LAT_ACCEL_MAX` | 1.0 on max(now, 10 s plan) | fires before 49/49 curve entries, median 5.1 s ahead |
+| `PLAN_T`, `PLAN_BP` | 2-6 s, -0.1..0 m/s^2 | -0.15..-0.05 let 84% more boost into curve entries |
+| `CURVE_LAT_ACCEL` | 0.6 m/s^2 | 1.0 (the old trip) boosted up to the curve (+84%); 0.8 only 9% under the trips; 0.6 halves it |
+| `BOUND_TAU` | 1 s, recovery only | symmetric 0.5 s doubled stops getting >0.3 m/s extra (4.4 -> 8.1%) |
+| `BOOST_RISE`, `BOOST_FALL` | 0.5, 1.0 m/s^3 | rise removes 34 of 35 target-restore steps; fall 2.4 (unfiltered bound) gave jerk p99 1.24 |
+| `HAZARD_FALL` | 2.4 m/s^3 | what authority falling 4/s did to a full boost |
+| `HOLD_TIME` | 3 s, hazards | override on purposeful slowdowns 21% -> 7% (open loop) |
 | `STOP_SPEED` | 2 m/s | shouldStop fired before standstill in 2 of 29 stops |
+
+Against the trip controller it replaced (281 exp-mode segments, 10-08, open loop): stops getting
+more than 0.3 m/s extra in the 5 s before 4.4% -> 4.4%, leads 12.3 -> 12.8%, curve entries
+11.4 -> 5.2%; re-arm after a slowdown median 3.3 -> 1.15 s; boost steps over 1 m/s^3 0.20 ->
+0.10% of frames, output jerk p99 0.89 -> 1.02, p99.9 1.90 -> 1.57 m/s^3; speed added 199 -> 161
+m/s per hour. On the car, check that it still reaches set speed promptly; if it feels lazy the
+levers are `CURVE_LAT_ACCEL` and `TAU`, not more state.
 
 vEgo reads 1.7-2.6% low against GPS on 2026 routes and the model's v(0) sits 0.3-1.4 m/s above
 it, which is why the slowdown trip compares the plan with itself.
@@ -108,6 +118,10 @@ model accel under -0.05 held at full authority. If that is common, lower `FLOOR_
   wander, doubling jerk (rms 0.16 -> 0.33, p99 0.55 -> 1.25 m/s^3); it closes at the -0.05 the
   model pushes back with, leaving 3.5-4 mph; the vEgo comparison is biased open; and the hard
   cutoff on lead status steps the output when a vision lead flickers (half of them last under 1 s).
+- The trip controller (10-03 to 10-08): authority rising 1/s and falling 4/s on trips, holds of
+  3 s (hazards) and 0.5 s (model braking, plan slowing over 0.75 m/s in 5 s, lateral over 1.0),
+  hysteresis bands while re-arming, and a full hold for plan slowing again within 3 s. It worked,
+  but every trip was a snapshot that needed memory to stop flickering, and re-arm took 3.3 s.
 - Gain ramps across the hysteresis bands instead of the bands (plan drop 0.5-0.75 m/s, lateral
   0.8-1.0 m/s^2), which drops the re-arming state: a signal sitting in the band boosts at partial
   gain instead of re-tripping, so the mean boost in the 5 s before a lateral trip rose 50% and
@@ -126,6 +140,8 @@ model accel under -0.05 held at full authority. If that is common, lower `FLOOR_
 - Shifting the model's velocity plan: a floor in disguise, bypassed on action-head bundles.
 
 ## Re-arm lag (10-07)
+
+Historical: this tuned the trip controller that the bound replaced on 10-08.
 
 On the first drive (`0000028a--4df8cbb84b`) the floor reached full authority exactly 5 s after
 every trip (3 s hold, 2 s rise), and 18 of 29 clear stretches tripped again before getting

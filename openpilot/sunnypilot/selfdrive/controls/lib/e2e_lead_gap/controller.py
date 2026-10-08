@@ -52,7 +52,9 @@ CAP = {int(Personality.aggressive): 0.5, int(Personality.standard): 0.4, int(Per
 # The model braking to hold its own gap ends the lift here: the car settles where it pushes back.
 GAIN_BP = [-0.4, -0.1]  # m/s^2
 MODEL_BRAKE_ACCEL = -0.5  # m/s^2
-PLAN_SLOWDOWN = 1.0  # m/s the model's plan loses within the nudge's PLAN_SLOWDOWN_T
+PLAN_SLOWDOWN = 1.0  # m/s the model's plan loses within PLAN_SLOWDOWN_T
+PLAN_SLOWDOWN_T = 5.0  # s
+LAT_ACCEL_MAX = 1.0  # m/s^2, now or anywhere on the plan
 # The lead: steady, not braking, moving, and the same car for a while.
 LEAD_BRAKE_ACCEL = -0.5  # m/s^2
 LEAD_SLOWDOWN = 1.0  # m/s the lead's forecast loses within LEAD_SLOWDOWN_T
@@ -64,10 +66,18 @@ LEAD_JUMP = 3.0  # m off where the last frame's lead should be
 BOOST_RISE = 0.25  # m/s^3
 # Re-arms at the nudge's original rate: behind a lead the picture changes faster than on an empty road.
 AUTHORITY_RISE = 0.5  # 1/s
+AUTHORITY_FALL = 4.0  # 1/s
 
 LEAD_T_IDXS = np.asarray(ModelConstants.LEAD_T_IDXS)
 T_IDXS = nudge.T_IDXS
 LAT_MASK = nudge.LAT_MASK
+SLOWDOWN_MASK = T_IDXS <= PLAN_SLOWDOWN_T
+
+
+def plan_drop(vel: np.ndarray) -> float:
+  """Most speed the model's plan loses within PLAN_SLOWDOWN_T, from its own v(0): a dip that recovers
+  by then counts too."""
+  return min(float(np.min(vel[SLOWDOWN_MASK])), float(np.interp(PLAN_SLOWDOWN_T, T_IDXS, vel))) - float(vel[0])
 
 
 def desired_gap(v_ego: float, v_lead: float, personality) -> float:
@@ -163,15 +173,15 @@ class E2ELeadGapController:
       return a_model
 
     lat_accel = max(abs(curvature) * v_ego ** 2, float(np.max(np.abs(yaw_rate * vel)[LAT_MASK])), abs(steer_lat_accel))
-    plan_drop = nudge.plan_drop(vel)
+    plan_drop_v = plan_drop(vel)
     plan_min_v = float(np.min(vel[LAT_MASK]))
 
     trip = self._lead_trip(sm)
     if trip is None:
-      trip = self._trip(sm, a_model, v_ego, plan_drop, plan_min_v, lat_accel, allow_throttle, fcw)
+      trip = self._trip(sm, a_model, v_ego, plan_drop_v, plan_min_v, lat_accel, allow_throttle, fcw)
     if trip is not None:
       # another car (or none) restarts from nothing; the rest are early warnings on this one
-      fall = 1. if trip in (Inhibit.leadChanged, Inhibit.noLead) else nudge.AUTHORITY_FALL * self.dt
+      fall = 1. if trip in (Inhibit.leadChanged, Inhibit.noLead) else AUTHORITY_FALL * self.dt
       self.authority = max(0., self.authority - fall)
       self.hold_left = self.hold_frames
       self.inhibit = trip
@@ -215,7 +225,7 @@ class E2ELeadGapController:
       return Inhibit.modelBraking
     if plan_drop < -PLAN_SLOWDOWN:
       return Inhibit.planSlowing
-    if lat_accel > nudge.LAT_ACCEL_MAX:
+    if lat_accel > LAT_ACCEL_MAX:
       return Inhibit.lateral
     if not allow_throttle:
       return Inhibit.coast
