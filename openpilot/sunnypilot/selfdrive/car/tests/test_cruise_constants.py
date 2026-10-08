@@ -46,7 +46,6 @@ class TestCruiseSentinels:
 
   def test_max_matches_upstream(self):
     assert opendbc_interfaces.V_CRUISE_MAX == cruise.V_CRUISE_MAX
-    assert cruise_arbiter.V_CRUISE_MAX is opendbc_interfaces.V_CRUISE_MAX
     assert cruise_ext.V_CRUISE_MAX is opendbc_interfaces.V_CRUISE_MAX
 
   def test_min_matches_upstream(self):

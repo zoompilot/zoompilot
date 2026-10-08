@@ -14,7 +14,7 @@ from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.car.cruise_arbiter import CruiseArbiter
-from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import minimum_set_speed_ms
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES as SESSION_ACTIVE_STATES, V_CRUISE_UNSET
 
 ButtonType = car.CarState.ButtonEvent.Type
@@ -108,7 +108,8 @@ class VCruiseHelperSP:
       self.v_cruise_min = V_CRUISE_MIN
       return
 
-    self.v_cruise_min = get_minimum_set_speed(is_metric)
+    # the stock ECU keeps the setpoint, so its own floor applies
+    self.v_cruise_min = minimum_set_speed_ms(self.CP_SP, is_metric) * CV.MS_TO_KPH
 
   def update_enabled_state(self, CS: car.CarState, enabled: bool) -> bool:
     # special enabled state for non pcmCruiseSpeed, unchanged for non pcmCruise
@@ -206,6 +207,7 @@ class VCruiseHelperSP:
     if self.cruise_arbiter.adopted_this_frame:
       # the arbiter wrote the setpoint; on ICBM cars the ECU's own +1 from the confirm
       # press must not be re-adopted over it
+      v_cruise_kph = float(np.clip(round(v_cruise_kph, 1), self.v_cruise_min, V_CRUISE_MAX))
       self.v_cruise_kph = v_cruise_kph
       self.v_cruise_cluster_kph = v_cruise_kph
       self.reconcile_frames = 0

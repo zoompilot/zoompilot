@@ -185,7 +185,7 @@ runs the reconciler, then publishes the session, all before `CS.vCruise` is read
 | `RECONCILE_SETTLE_TIME` | 1.0 s | trailing long-press increment lands inside 1 s on the CX-5 2022 | ICBM corpus |
 | `RECONCILE_AGREE_KPH` | 2 mph | dash-at-rest band for setpoint or session target | n/a |
 | `CONFIRM_SPEED_THRESHOLD` | 80 kph / 50 mph | upstream | n/a |
-| `get_minimum_set_speed` | 30 kph / 20 mph | stock ACC floor | n/a |
+| `minimum_set_speed_ms` | `CarParamsSP.minimumSetSpeed`, else 30 kph / 20 mph | stock ACC floor; Mazda MRCC 30 kph in both unit modes (dash 19 mph) | routes 26b-27f |
 | `V_CRUISE_UNSET` | 255 | upstream sentinel; one fork copy in `speed_limit/__init__.py`, pinned by `test_cruise_constants.py` | n/a |
 
 ## Tried and rejected

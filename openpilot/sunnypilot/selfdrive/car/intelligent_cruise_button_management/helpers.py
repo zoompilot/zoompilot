@@ -4,11 +4,15 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+from openpilot.common.constants import CV
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
 
 
-def get_minimum_set_speed(is_metric: bool) -> int:
-  return 30 if is_metric else 20
+def minimum_set_speed_ms(CP_SP, is_metric: bool) -> float:
+  """Lowest set speed the stock cruise accepts, in m/s. Callers convert to their own unit."""
+  if CP_SP.minimumSetSpeed > 0.:
+    return float(CP_SP.minimumSetSpeed)
+  return 30. * CV.KPH_TO_MS if is_metric else 20. * CV.MPH_TO_MS
 
 
 def icbm_applicable(CP, CP_SP) -> bool:
