@@ -154,9 +154,11 @@ Done 2026-10-08:
   decision in `interfaces.py` = `icbm_applicable and icbm_demanded`.
 - `IcbmLatch(CP, CP_SP)`: `capable` from `icbm_applicable`, `demanded` refreshed on card's
   10 Hz params thread, `update(engaged)` from `VCruiseHelperSP.update_enabled_state` with
-  `engaged = CC.enabled or CS.cruiseState.enabled`. On a change: zero both button-timer
-  sets (a press frozen in the passive mode would replay as a long press), reset the engage
-  gate and the reconciler, recompute the minimum set speed, move the SLA owner.
+  `engaged = CC.enabled or CS.cruiseState.enabled`, and it also waits until no cruise button
+  is down or changing (card now tracks the button timers in both modes), so no timer carries
+  across. On a change: clear the reconciler, recompute the minimum set speed, move the SLA
+  owner. The consumers are one table, `demand.CONSUMERS`, which the boot decision, the latch,
+  the migration, the settings locks and the sunnylink tests all read.
 - SLA owner: `pcm_machine_owns_sla(CP, icbm_active)`. card's arbiter `set_icbm_active`;
   plannerd keeps both the machine (pcm openpilot-long cars only) and the mirror, picks per
   frame, `reset()` on a handover.

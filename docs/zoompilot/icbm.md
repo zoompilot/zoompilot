@@ -22,7 +22,8 @@ custom increments). card owns the decision (`icbm_latch.IcbmLatch`) and publishe
 `carStateSP.zoompilot.icbmActivation`; controlsd, selfdrived, plannerd and the UI read that,
 never `CarParamsSP.pcmCruiseSpeed`, which only records the boot decision.
 
-The decision moves only while neither openpilot nor the stock cruise is engaged. There the
+The decision moves only while neither openpilot nor the stock cruise is engaged and no cruise
+button is down. There the
 two modes agree on everything (no `longActive`, the dash's setpoint, an idle servo, no SLA
 session), so a feature switched on while driving starts at the next engage and one switched
 off keeps ICBM until the next disengage. Panda safety needs nothing: on every ICBM brand the
