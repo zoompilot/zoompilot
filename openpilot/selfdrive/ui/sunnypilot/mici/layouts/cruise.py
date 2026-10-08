@@ -18,7 +18,7 @@ from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
-from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable, icbm_moves_speed_limits
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_moves_speed_limits
 
 SL_MODE_LABELS = [tr("off"), tr("info"), tr("warn"), tr("assist")]
 SL_SOURCE_LABELS = [tr("car"), tr("map"), tr("car-first"), tr("map-first"), tr("combined")]
@@ -86,8 +86,7 @@ class CruiseLayoutMici(NavScroller):
     self._acc_view = self._custom_acc_btn.link_sub_panel([self._custom_acc_toggle, self._acc_short, self._acc_long])
 
     self._sl_mode = BigMultiParamToggleSP(tr("speed limit mode"), "SpeedLimitMode", SL_MODE_LABELS)
-    # assist needs ICBM: not selectable while engaged with ICBM off (see _update_state)
-    self._sl_mode.set_blocked_options(lambda: {SL_MODE_ASSIST} if ui_state.icbm_start_locked else set())
+    self._sl_mode.set_blocked_options(lambda: set() if ui_state.icbm_turn_on_allowed("SpeedLimitMode", True) else {SL_MODE_ASSIST})
     self._sl_source = BigMultiParamToggleSP(tr("source"), "SpeedLimitPolicy", SL_SOURCE_LABELS)
     self._sl_offset_type = BigMultiParamToggleSP(tr("offset type"), "SpeedLimitOffsetType", [tr("none"), tr("fixed"), "%"])
     self._sl_offset_value = BigParamOption(tr("offset value"), "SpeedLimitValueOffset",
@@ -102,7 +101,7 @@ class CruiseLayoutMici(NavScroller):
 
     cp_ready = ui_state.CP is not None and ui_state.CP_SP is not None
     has_long = cp_ready and ui_state.has_longitudinal_control
-    has_icbm = cp_ready and icbm_applicable(ui_state.CP, ui_state.CP_SP)
+    has_icbm = cp_ready and ui_state.has_icbm
 
     self._alpha_long_btn.set_enabled(alpha_longitudinal_reachable(ui_state))
     for toggle in (self._scc_v_toggle, self._scc_m_toggle):
@@ -112,12 +111,9 @@ class CruiseLayoutMici(NavScroller):
     self._custom_acc_toggle.set_superseded(not custom_acc_available)
     self._custom_acc_btn.set_enabled(custom_acc_available)
 
-    # Engaged with ICBM off, turning on a feature that needs it would only act from the next
-    # engage: lock turning it on until the driver disengages. Turning it off stays allowed.
-    start_locked = ui_state.icbm_start_locked
-    scc_needs_icbm = start_locked and not ui_state.CP.openpilotLongitudinalControl
+    # engaged with ICBM off, only turning these off is allowed (ui_state.icbm_turn_on_allowed)
     for toggle in (self._scc_v_toggle, self._scc_m_toggle):
-      toggle.set_enabled(not (scc_needs_icbm and not toggle._checked))
+      toggle.set_enabled(ui_state.icbm_turn_on_allowed(toggle.param, not toggle._checked))
 
     # Custom ACC button subtitle
     acc_on = ui_state.params.get_bool("CustomAccIncrementsEnabled")
@@ -163,8 +159,7 @@ class CruiseLayoutMici(NavScroller):
     self._custom_acc_toggle.refresh()
     self._acc_short.refresh()
     self._acc_long.refresh()
-    # card reads it live; with ICBM off while engaged, only turning it off is allowed
-    self._custom_acc_toggle.set_enabled(not (ui_state.icbm_start_locked and not self._custom_acc_toggle._checked))
+    self._custom_acc_toggle.set_enabled(ui_state.icbm_turn_on_allowed("CustomAccIncrementsEnabled", not self._custom_acc_toggle._checked))
     # Lambda: short/long respond same-frame when toggle is tapped (see button.py docstring)
     self._acc_short.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)
     self._acc_long.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)

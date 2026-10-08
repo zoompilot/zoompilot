@@ -56,18 +56,9 @@ class SpeedLimitAssist:
     self.CP_SP = CP_SP
     self.limits = get_planning_limits(CP)
     self.frame = -1
-    self.long_engaged_timer = 0
-    self.pre_active_timer = 0
     self.is_metric = self.params.get_bool("IsMetric")
     set_speed_limit_assist_availability(self.CP, self.CP_SP, self.params)
     self.enabled = self.params.get("SpeedLimitMode", return_default=True) == Mode.assist
-    self.long_enabled = False
-    self.long_enabled_prev = False
-    self.is_enabled = False
-    self.is_active = False
-    self.output_v_target = V_CRUISE_UNSET
-    self.output_a_target = 0.
-    self._a_out = 0.
     self.v_ego = 0.
     self.a_ego = 0.
     self.v_offset = 0.
@@ -85,7 +76,7 @@ class SpeedLimitAssist:
     self.prev_speed_limit_final_last_conv = 0
     self._distance = 0.
     self.prev_settle_conv = 0
-    self.state = SpeedLimitAssistState.disabled
+    self.reset()
     # this machine only runs on pcm openpilot-long cars (the planner picks it while ICBM is passive)
     self.pcm_op_long = pcm_machine_owns_sla(CP, icbm_active=False)
 
@@ -100,8 +91,8 @@ class SpeedLimitAssist:
     }
 
   def reset(self) -> None:
-    """The planner hands the session back to this machine (card's ICBM went passive), which
-    happens only while disengaged: start from disabled, as a fresh drive does."""
+    """Fresh session state: at start, and when the planner hands the session back to this
+    machine (card's ICBM went passive), which happens only while disengaged."""
     self.state = SpeedLimitAssistState.disabled
     self.is_enabled = self.is_active = False
     self.long_enabled = self.long_enabled_prev = False

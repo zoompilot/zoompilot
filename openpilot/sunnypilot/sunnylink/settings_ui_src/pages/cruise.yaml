@@ -123,12 +123,7 @@ sections:
       - type: capability
         field: has_icbm
         equals: true
-    - type: any
-      conditions:
-      - type: not_engaged
-      - type: capability
-        field: has_icbm
-        equals: false
+    - $ref: '#/macros/icbm_feature_not_engaged'
   sub_panels:
   - id: custom_acc_intervals
     label: Custom ACC Speed Intervals Settings
@@ -285,12 +280,7 @@ sections:
       - type: capability
         field: has_icbm
         equals: true
-    - type: any
-      conditions:
-      - type: not_engaged
-      - type: capability
-        field: has_longitudinal_control
-        equals: true
+    - $ref: '#/macros/icbm_scc_not_engaged'
   - key: SmartCruiseControlMap
     widget: toggle
     title: Map
@@ -313,9 +303,4 @@ sections:
       - type: capability
         field: has_icbm
         equals: true
-    - type: any
-      conditions:
-      - type: not_engaged
-      - type: capability
-        field: has_longitudinal_control
-        equals: true
+    - $ref: '#/macros/icbm_scc_not_engaged'

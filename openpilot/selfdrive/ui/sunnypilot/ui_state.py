@@ -18,6 +18,7 @@ from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_s
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import needs_icbm
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
 
@@ -39,6 +40,7 @@ class UIStateSP:
     self.CP_SP: custom.CarParamsSP | None = None
     self.has_icbm: bool = False
     self.icbm_start_locked: bool = False
+    self.icbm_running: bool = False
     self.is_sp_release: bool = self.params.get_bool("IsReleaseSpBranch")
     self.sm_services_ext = [
       "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
@@ -97,9 +99,18 @@ class UIStateSP:
     """card moves ICBM only between engagements (icbm_latch), so a feature that needs it,
     turned on while engaged with ICBM off, would wait for the next engage. Settings lock
     turning those on until the driver disengages; turning them off stays allowed."""
+    if self.CP_SP is None or not (self.has_icbm and self.started):
+      self.icbm_running = self.CP_SP is not None and not self.CP_SP.pcmCruiseSpeed
+      self.icbm_start_locked = False
+      return
+    self.icbm_running = icbm_active(self.sm['carStateSP'], self.CP_SP)
     engaged = self.sm['selfdriveState'].enabled or self.sm['carState'].cruiseState.enabled
-    running = self.CP_SP is not None and icbm_active(self.sm['carStateSP'], self.CP_SP)
-    self.icbm_start_locked = self.has_icbm and self.started and engaged and not running
+    self.icbm_start_locked = engaged and not self.icbm_running
+
+  def icbm_turn_on_allowed(self, key: str, on: bool) -> bool:
+    """Whether a setting may be changed to (or left at) `on` now: blocked only when that would
+    bring ICBM up while engaged with it off."""
+    return not (on and self.icbm_start_locked and needs_icbm(self.CP, key))
 
   def _update_torque_utilization(self) -> None:
     torque = self.sm['carOutput'].actuatorsOutput.torque

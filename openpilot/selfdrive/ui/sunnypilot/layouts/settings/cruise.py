@@ -115,14 +115,13 @@ class CruiseLayout(Widget):
       self.sla_settings_button.set_right_value(tr("icbm") if icbm_sla else "", style.GREEN)
 
       if has_long or has_icbm:
-        # engaged with ICBM off, a feature that needs it would only act from the next engage:
-        # turning it on waits for the disengage, turning it off stays allowed
-        start_locked = ui_state.icbm_start_locked
-        scc_locked = start_locked and not ui_state.CP.openpilotLongitudinalControl
-        acc_locked = start_locked and not self.custom_acc_toggle.action_item.get_state()
-        self.custom_acc_toggle.action_item.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and not acc_locked)
-        self.scc_v_toggle.action_item.set_enabled(not (scc_locked and not self.scc_v_toggle.action_item.get_state()))
-        self.scc_m_toggle.action_item.set_enabled(not (scc_locked and not self.scc_m_toggle.action_item.get_state()))
+        # engaged with ICBM off, only turning these off is allowed (ui_state.icbm_turn_on_allowed)
+        def allowed(item, key):
+          return ui_state.icbm_turn_on_allowed(key, not item.action_item.get_state())
+        self.custom_acc_toggle.action_item.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and
+                                                      allowed(self.custom_acc_toggle, "CustomAccIncrementsEnabled"))
+        self.scc_v_toggle.action_item.set_enabled(allowed(self.scc_v_toggle, "SmartCruiseControlVision"))
+        self.scc_m_toggle.action_item.set_enabled(allowed(self.scc_m_toggle, "SmartCruiseControlMap"))
       else:
         self.custom_acc_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)

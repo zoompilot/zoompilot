@@ -22,6 +22,21 @@ macros:
     - {type: capability, field: has_longitudinal_control, equals: true}
     - {type: capability, field: has_icbm, equals: true}
 
+  # zoompilot: a feature that brings ICBM up (intelligent_cruise_button_management/demand.py)
+  # is not changed remotely while engaged on a car with ICBM, since ICBM only starts between
+  # engagements. Curve control runs without ICBM under openpilot longitudinal.
+  icbm_feature_not_engaged:
+    - type: any
+      conditions:
+        - {type: not_engaged}
+        - {type: capability, field: has_icbm, equals: false}
+  icbm_scc_not_engaged:
+    - type: any
+      conditions:
+        - {type: not_engaged}
+        - {type: capability, field: has_icbm, equals: false}
+        - {type: capability, field: has_longitudinal_control, equals: true}
+
   # Item only meaningful when "Show Advanced Controls" is enabled by the user.
   advanced_only:
     - {type: param, key: ShowAdvancedControls, equals: true}

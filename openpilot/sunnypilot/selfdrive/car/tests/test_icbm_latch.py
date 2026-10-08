@@ -14,14 +14,14 @@ from opendbc.car import structs
 from openpilot.common.params import Params
 from openpilot.selfdrive.car.cruise import VCruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
-from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import icbm_demanded
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import CONSUMERS, icbm_demanded
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import IcbmActivation, IcbmLatch, icbm_active
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.migration import LEGACY_TOGGLE, MIGRATED, migrate_icbm_toggle
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
 
 ButtonType = structs.CarState.ButtonEvent.Type
-CONSUMER_KEYS = ("SmartCruiseControlVision", "SmartCruiseControlMap", "CustomAccIncrementsEnabled")
+CONSUMER_KEYS = tuple(c.key for c in CONSUMERS if isinstance(c.on, bool))
 
 
 def _cp(op_long=False, pcm_cruise=True):
@@ -175,19 +175,17 @@ class TestCardHandover:
     helper.update_v_cruise(_cs(cruise_enabled=False), False, False)
     assert not helper.pcm_cruise_speed
 
-  def test_a_frozen_press_does_not_replay_after_activation(self, params):
+  def test_a_held_button_holds_the_switch_until_it_settles(self, params):
     helper = self._helper(params, active=True)
-    helper.update_v_cruise(_cs(cruise_enabled=True, buttons=[(ButtonType.accelCruise, True)]), True, False)
-    assert helper.button_timers[ButtonType.accelCruise] > 0
     helper.read_custom_set_speed_params()  # nothing demands ICBM
+    helper.update_v_cruise(_cs(buttons=[(ButtonType.accelCruise, True)]), False, False)
+    helper.update_v_cruise(_cs(), False, False)
+    assert not helper.pcm_cruise_speed  # still held: no switch
+    helper.update_v_cruise(_cs(buttons=[(ButtonType.accelCruise, False)]), False, False)
+    assert not helper.pcm_cruise_speed  # release frame: cruise.py's timers settle this frame
     helper.update_v_cruise(_cs(), False, False)
     assert helper.pcm_cruise_speed
-    params.put_bool("SmartCruiseControlVision", True, block=True)
-    helper.read_custom_set_speed_params()
-    helper.update_v_cruise(_cs(), False, False)
-    assert not helper.pcm_cruise_speed
-    assert all(t == 0 for t in helper.button_timers.values())
-    assert all(t == 0 for t in helper.enable_button_timers.values())
+    assert not any(helper.button_timers.values()) and not any(helper.enable_button_timers.values())
 
   def test_alpha_long_sla_owner_moves_with_icbm(self, params):
     params.put("SpeedLimitMode", int(Mode.assist), block=True)

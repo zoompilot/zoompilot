@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 import openpilot.cereal.messaging as messaging
+from opendbc.car import structs
 from openpilot.cereal import custom
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import IcbmActivation
@@ -50,3 +51,16 @@ class TestIcbmStartLock:
 
   def test_offroad_never_locks(self, monkeypatch):
     assert not _locked(monkeypatch, op_engaged=True, started=False)
+
+  @pytest.mark.parametrize("op_long, key, on, allowed", [
+    (False, "SmartCruiseControlVision", True, False),
+    (False, "SmartCruiseControlVision", False, True),  # turning off is always allowed
+    (True, "SmartCruiseControlVision", True, True),    # the planner runs curve control under op long
+    (True, "CustomAccIncrementsEnabled", True, False),
+    (True, "SpeedLimitMode", True, False),
+    (False, "IsMetric", True, True),                   # not an ICBM feature
+  ])
+  def test_turn_on_allowed(self, monkeypatch, op_long, key, on, allowed):
+    assert _locked(monkeypatch, op_engaged=True)
+    monkeypatch.setattr(ui_state, 'CP', structs.CarParams(openpilotLongitudinalControl=op_long, pcmCruise=True))
+    assert ui_state.icbm_turn_on_allowed(key, on) == allowed

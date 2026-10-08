@@ -177,7 +177,8 @@ def generate_capabilities(params: Params | None = None) -> dict:
       caps["icbm_available"] = bool(CP_SP.intelligentCruiseButtonManagementAvailable)
       if CP is not None:
         caps["icbm_applicable"] = icbm_applicable(CP, CP_SP)
-        # no toggle: the cruise features act through ICBM wherever the car has it
+        # no toggle: the cruise features act through ICBM wherever the car has it. Rules use
+        # has_icbm; icbm_available and icbm_applicable stay published for older frontends.
         caps["has_icbm"] = caps["icbm_applicable"]
       caps["tesla_has_vehicle_bus"] = bool(CP_SP.flags & TeslaFlagsSP.HAS_VEHICLE_BUS)
     except Exception:

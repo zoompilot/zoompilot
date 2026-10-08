@@ -299,12 +299,13 @@ and plannerd mirrors it. Nothing Mazda-specific decides this; two predicates do:
 - `icbm_applicable(CP, CP_SP)` (intelligent_cruise_button_management/helpers.py): ICBM applies
   where the platform declares it and the car's ECU keeps the setpoint, which is every
   button-actuated car under stock cruise and, under openpilot longitudinal, only `pcmCruise`
-  ports. With the toggle on it clears `pcmCruiseSpeed`; the ICBM toggle stays available under
-  alpha long.
-- `pcm_machine_owns_sla(CP, CP_SP)` (speed_limit/helpers.py): the plannerd SLA machine, which
+  ports. ICBM has no toggle: it runs there while a feature that needs it is on (demand.py; under
+  alpha long that is Speed Limit Assist or custom increments), and card's latch publishes the
+  decision as `carStateSP.zoompilot.icbmActivation` (icbm.md, Activation).
+- `pcm_machine_owns_sla(CP, icbm_active)` (speed_limit/helpers.py): the plannerd SLA machine, which
   confirms through the driver setting the required-max cluster speed (70/80 mph), keeps only the
   cars whose setpoint nobody but the driver can move: `openpilotLongitudinalControl` and
-  `pcmCruise` and `pcmCruiseSpeed`. The planner, the arbiter's `applicable` and the pre-active
+  `pcmCruise` with ICBM not running. The planner, the arbiter's `applicable` and the pre-active
   alert text all read it.
 
 Under alpha long the servo differs in two ways (`OP_LONG_PLANNER_SOURCES`): a curve target from
@@ -315,8 +316,9 @@ exactly as under stock cruise. Tests: `TestAlphaLong` in test_icbm_sla_session.p
 `TestOpenpilotLongitudinal` in test_icbm_servo.py, the applicability matrix in
 test_cruise_arbiter.py and test_speed_limit_availability.py.
 
-Without the ICBM toggle, alpha long is an ordinary pcm-op-long car: the plannerd machine and its
-required-max confirm, as on Toyota. The 2026-09-12 capture (2025 CX-5, release build, set speed
+With ICBM not running, alpha long is an ordinary pcm-op-long car: the plannerd machine and its
+required-max confirm, as on Toyota. Since ICBM runs on demand, assist on a Mazda always brings it
+up, so that machine now only runs on pcm-op-long cars without ICBM. The 2026-09-12 capture (2025 CX-5, release build, set speed
 56 kph in a 25 mph zone, plan capped at the limit with the confirm prompt up) is that machine
 doing what upstream designed; ICBM is the way to have the dash follow the limit instead.
 

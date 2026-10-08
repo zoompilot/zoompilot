@@ -124,29 +124,30 @@ class VCruiseHelperSP:
     self.v_cruise_min = minimum_set_speed_ms(self.CP_SP, is_metric) * CV.MS_TO_KPH
 
   def update_icbm_latch(self, CS: car.CarState, enabled: bool) -> None:
-    if not self.icbm_latch.update(enabled or CS.cruiseState.enabled):
+    # Quiet = disengaged with no cruise button down or changing. Both modes then hold the
+    # dash's setpoint and every button timer (cruise.py's included, which only runs while
+    # ICBM is active) has settled at zero, so nothing carries across the switch.
+    buttons_quiet = not any(self.enable_button_timers.values()) and \
+                    not any(b.type.raw in self.enable_button_timers for b in CS.buttonEvents)
+    if not self.icbm_latch.update(enabled or CS.cruiseState.enabled or not buttons_quiet):
       return
-    # Disengaged, so both modes hold the same setpoint (the dash's). Drop what the other mode
-    # left behind: button timers frozen mid-press would replay as a long press.
     cloudlog.event("icbm activation", active=self.icbm_latch.active)
-    for timers in (self.enable_button_timers, getattr(self, "button_timers", {})):
-      for k in timers:
-        timers[k] = 0
-    for state in getattr(self, "button_change_states", {}).values():
-      state.update(standstill=False, enabled=False)
-    self.enabled_prev = False
-    self.reconcile_frames = 0
-    self.reconcile_allowed = False
-    self.reconcile_floor = False
+    self._clear_reconcile()
     self.get_minimum_set_speed(self.is_metric)
     self.cruise_arbiter.set_icbm_active(self.icbm_latch.active)
 
+  def _clear_reconcile(self) -> None:
+    self.reconcile_frames = 0
+    self.reconcile_allowed = False
+    self.reconcile_floor = False
+
   def update_enabled_state(self, CS: car.CarState, enabled: bool) -> bool:
+    # tracked in both modes: the ICBM latch waits for them to settle
+    update_manual_button_timers(CS, self.enable_button_timers)
     self.update_icbm_latch(CS, enabled)
 
     # special enabled state for non pcmCruiseSpeed, unchanged for non pcmCruise
     if not self.pcm_cruise_speed:
-      update_manual_button_timers(CS, self.enable_button_timers)
       button_pressed = any(self.enable_button_timers[k] > 0 for k in self.enable_button_timers)
 
       if enabled and not self.enabled_prev:
@@ -242,6 +243,4 @@ class VCruiseHelperSP:
       v_cruise_kph = float(np.clip(round(v_cruise_kph, 1), self.v_cruise_min, V_CRUISE_MAX))
       self.v_cruise_kph = v_cruise_kph
       self.v_cruise_cluster_kph = v_cruise_kph
-      self.reconcile_frames = 0
-      self.reconcile_allowed = False
-      self.reconcile_floor = False
+      self._clear_reconcile()

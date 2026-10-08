@@ -1135,6 +1135,11 @@
                     },
                     {
                       "type": "capability",
+                      "field": "has_icbm",
+                      "equals": false
+                    },
+                    {
+                      "type": "capability",
                       "field": "has_longitudinal_control",
                       "equals": true
                     }
@@ -1185,6 +1190,11 @@
                   "conditions": [
                     {
                       "type": "not_engaged"
+                    },
+                    {
+                      "type": "capability",
+                      "field": "has_icbm",
+                      "equals": false
                     },
                     {
                       "type": "capability",

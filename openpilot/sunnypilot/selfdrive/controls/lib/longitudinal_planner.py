@@ -53,13 +53,13 @@ class LongitudinalPlannerSP:
     self.lead_forecast = LeadForecast()
     self.lead_forecast.install(mpc)
     self.scc = make_smart_cruise_control(CP)
+    self.CP = CP
     self.CP_SP = CP_SP
     self.resolver = SpeedLimitResolver(CP)
     # cars whose setpoint only the driver can move run the SLA machine here; everywhere
     # else it runs in card (the cruise arbiter, next to the buttons and the setpoint) and
     # gets mirrored (speed_limit.helpers.pcm_machine_owns_sla). On Mazda alpha long the owner
     # follows card's ICBM decision, which only moves between engagements.
-    self.CP = CP
     self.sla_machine = SpeedLimitAssist(CP, CP_SP) if pcm_machine_owns_sla(CP, icbm_active=False) else None
     self.sla_mirror = SpeedLimitAssistMirror(CP, CP_SP)
     self.sla = self._sla_owner(not CP_SP.pcmCruiseSpeed)
@@ -79,9 +79,8 @@ class LongitudinalPlannerSP:
     return experimental_mode and self.dec.mode() == "blended"
 
   def _sla_owner(self, icbm: bool):
-    if self.sla_machine is not None and pcm_machine_owns_sla(self.CP, icbm):
-      return self.sla_machine
-    return self.sla_mirror
+    # the machine exists only on pcm openpilot-long cars, where it owns SLA while ICBM is passive
+    return self.sla_machine if self.sla_machine is not None and not icbm else self.sla_mirror
 
   def update_targets(self, sm: messaging.SubMaster, v_ego: float, a_ego: float, v_cruise: float) -> tuple[float, float]:
     CS = sm['carState']
