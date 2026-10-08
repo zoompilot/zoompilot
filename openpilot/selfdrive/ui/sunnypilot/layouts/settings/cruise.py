@@ -79,10 +79,10 @@ class CruiseLayout(Widget):
       *self._alpha_long.items,
       self.scc_v_toggle,
       self.scc_m_toggle,
+      self.sla_settings_button,
       self.custom_acc_toggle,
       self.custom_acc_short_increment,
       self.custom_acc_long_increment,
-      self.sla_settings_button,
     ]
     return items
 

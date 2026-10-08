@@ -43,7 +43,7 @@ def _offset_label(value):
 
 
 class CruiseLayoutMici(NavScroller):
-  """Cruise settings: alpha longitudinal, SCC, custom ACC increments, speed limit assist.
+  """Cruise settings: alpha longitudinal, SCC, speed limit assist, custom ACC increments.
 
   State gating pattern:
     - _update_state runs every frame, reads params and enables/disables widgets
@@ -71,7 +71,7 @@ class CruiseLayoutMici(NavScroller):
     self._scroller.add_widgets([
       self._alpha_long_btn,
       self._scc_v_toggle, self._scc_m_toggle,
-      self._custom_acc_btn, self._speed_limit_btn,
+      self._speed_limit_btn, self._custom_acc_btn,
     ])
 
     self._custom_acc_toggle = BigParamControl(tr("enable custom increments"), "CustomAccIncrementsEnabled")
