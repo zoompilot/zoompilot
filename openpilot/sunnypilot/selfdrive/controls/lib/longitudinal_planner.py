@@ -25,6 +25,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.forecast import L
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import make_smart_cruise_control
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.assist_mirror import SpeedLimitAssistMirror
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import pcm_machine_owns_sla
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
@@ -52,9 +53,8 @@ class LongitudinalPlannerSP:
     self.lead_forecast = LeadForecast()
     self.lead_forecast.install(mpc)
     self.scc = make_smart_cruise_control(CP)
-    # SCC has nothing to act through without openpilot long or ICBM (pcmCruiseSpeed off), the
-    # same condition controlsd gates longActive on. Its params outlive that, so gate it here.
-    self.scc_actionable = CP.openpilotLongitudinalControl or not CP_SP.pcmCruiseSpeed
+    self.op_long = CP.openpilotLongitudinalControl
+    self.CP_SP = CP_SP
     self.resolver = SpeedLimitResolver(CP)
     # cars whose setpoint only the driver can move run the SLA machine here; everywhere
     # else it runs in card (the cruise arbiter, next to the buttons and the setpoint) and
@@ -87,7 +87,10 @@ class LongitudinalPlannerSP:
     long_override = sm['carControl'].cruiseControl.override
 
     # Smart Cruise Control
-    self.scc.update(sm, long_enabled and self.scc_actionable, long_override, v_ego, a_ego, v_cruise)
+    # SCC has nothing to act through without openpilot long or ICBM, the same condition
+    # controlsd gates longActive on. Its params outlive that, so gate it here.
+    scc_actionable = self.op_long or icbm_active(sm['carStateSP'], self.CP_SP)
+    self.scc.update(sm, long_enabled and scc_actionable, long_override, v_ego, a_ego, v_cruise)
 
     # Speed Limit Resolver
     self.resolver.update(v_ego, sm)

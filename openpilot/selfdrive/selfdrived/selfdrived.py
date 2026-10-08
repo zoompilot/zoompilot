@@ -548,6 +548,7 @@ class SelfdriveD(CruiseHelper):
         self.params.put('LongitudinalPersonality', self.personality)
         self.events.add(EventName.personalityChanged)
 
+    self.icbm.update_activation(self.sm['carStateSP'])
     self.icbm.run(CS, self.sm['carControl'], self.sm['longitudinalPlanSP'], self.is_metric)
 
   def data_sample(self):

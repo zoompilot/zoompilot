@@ -18,6 +18,7 @@ from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import CRUISE_BUTTON_TIMER, update_manual_button_timers
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import V_CRUISE_UNSET
 
@@ -82,6 +83,7 @@ class IntelligentCruiseButtonManagement:
     self.CP = CP
     self.CP_SP = CP_SP
     self.profile = get_actuation_profile(CP.brand)
+    self.active = not CP_SP.pcmCruiseSpeed  # card's decision, kept current by update_activation
 
     self.v_target = 0
     self.v_cruise_cluster = 0
@@ -332,8 +334,11 @@ class IntelligentCruiseButtonManagement:
 
     self.is_ready = ready and not button_pressed
 
+  def update_activation(self, CS_SP: custom.CarStateSP) -> None:
+    self.active = icbm_active(CS_SP, self.CP_SP)
+
   def run(self, CS: car.CarState, CC: car.CarControl, LP_SP: custom.LongitudinalPlanSP, is_metric: bool) -> None:
-    if self.CP_SP.pcmCruiseSpeed:
+    if not self.active:
       return
 
 

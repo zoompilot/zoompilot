@@ -576,6 +576,16 @@ struct CarStateZP @0xc879af11c43cb400 {
   # The car's own lane keep is back on after the driver switched it off, and the EPS has not
   # applied torque since. MADS keeps the driver told lateral is disabled until it does.
   lkasArming @3 :Bool;
+  # Whether ICBM drives the set speed this frame, decided by card alone (icbm_latch.py); every
+  # other process reads it here instead of CarParamsSP.pcmCruiseSpeed. unset is a log from
+  # before the field: readers fall back to that boot flag.
+  icbmActivation @4 :IcbmActivation;
+
+  enum IcbmActivation {
+    unset @0;
+    passive @1;
+    active @2;
+  }
 
   enum StockEcuState {
     notNeeded @0;

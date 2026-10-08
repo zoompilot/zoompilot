@@ -133,6 +133,20 @@ danger-unstable after phase 2 for driving.
 - Exit: process replay identical against refs, for routes with ICBM off and on (stock ACC
   CX-5, alpha-long CX-5, one non-Mazda ICBM brand from upstream refs). Unit tests green.
 
+Done 2026-10-07, except the process replay run:
+- `CarStateZP.icbmActivation` is an enum with `unset` first, so logs from before it (process
+  replay refs, old routes) fall back to the boot flag and replay unchanged.
+- card: `IcbmLatch` lives on `VCruiseHelperSP`; `pcm_cruise_speed` is a property over it.
+  controlsd: `ControlsExt.pcm_cruise_speed` reads `carStateSP` (added to its sm and to the
+  controlsd/selfdrived process replay pubs). selfdrived: one `update_activation` line before
+  the servo runs. plannerd: SCC gating per frame. ui: `hud_renderer`.
+- Left for phases 2/3: `pcm_machine_owns_sla` (SLA owner, init-time in plannerd and the
+  arbiter) and the boot SLA demotion.
+- opendbc audit: of the ICBM brands (Mazda, Chrysler, Honda Bosch, Hyundai), `longActive`
+  and `override` are read only on openpilot-long / alpha-long paths. No opendbc change.
+- Test baseline: `test_following_distance` and `test_cruise_speed` (plant maneuvers) already
+  fail 27 cases on danger-unstable; same count with phase 1.
+
 ### Phase 2: demand, still boot-latched
 
 - `demand.py` registry. The latch input becomes `icbm_applicable and icbm_demanded`, still

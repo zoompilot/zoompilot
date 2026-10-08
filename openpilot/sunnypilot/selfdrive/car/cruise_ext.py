@@ -15,6 +15,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.car.cruise_arbiter import CruiseArbiter
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import IcbmLatch
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES as SESSION_ACTIVE_STATES, V_CRUISE_UNSET
 
 ButtonType = car.CarState.ButtonEvent.Type
@@ -56,6 +57,7 @@ class VCruiseHelperSP:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP) -> None:
     self.CP = CP
     self.CP_SP = CP_SP
+    self.icbm_latch = IcbmLatch(CP_SP)
     self.v_cruise_kph = V_CRUISE_UNSET
     self.v_cruise_cluster_kph = V_CRUISE_UNSET
     self.params = Params()
@@ -81,6 +83,11 @@ class VCruiseHelperSP:
     self.cruise_arbiter = CruiseArbiter(CP, CP_SP)
     self.cruise_arbiter.read_params(self.params)
 
+  @property
+  def pcm_cruise_speed(self) -> bool:
+    """CarParamsSP.pcmCruiseSpeed as it stands this frame: False while ICBM drives the set speed."""
+    return not self.icbm_latch.active
+
   def read_custom_set_speed_params(self) -> None:
     self.custom_acc_enabled = self.params.get_bool("CustomAccIncrementsEnabled")
     self.short_increment = self.params.get("CustomAccShortPressIncrement", return_default=True)
@@ -104,7 +111,7 @@ class VCruiseHelperSP:
     return round_to_nearest, v_cruise_delta
 
   def get_minimum_set_speed(self, is_metric: bool) -> None:
-    if self.CP_SP.pcmCruiseSpeed:
+    if self.pcm_cruise_speed:
       self.v_cruise_min = V_CRUISE_MIN
       return
 
@@ -112,7 +119,7 @@ class VCruiseHelperSP:
 
   def update_enabled_state(self, CS: car.CarState, enabled: bool) -> bool:
     # special enabled state for non pcmCruiseSpeed, unchanged for non pcmCruise
-    if not self.CP_SP.pcmCruiseSpeed:
+    if not self.pcm_cruise_speed:
       update_manual_button_timers(CS, self.enable_button_timers)
       button_pressed = any(self.enable_button_timers[k] > 0 for k in self.enable_button_timers)
 
@@ -136,7 +143,7 @@ class VCruiseHelperSP:
     pass
 
   def reconcile_setpoint_with_dash(self, CS: car.CarState) -> None:
-    if self.CP_SP.pcmCruiseSpeed or not self.CP.pcmCruise:
+    if self.pcm_cruise_speed or not self.CP.pcmCruise:
       return
 
     if not CS.cruiseState.available or self.v_cruise_kph in (V_CRUISE_UNSET, -1):

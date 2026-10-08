@@ -51,7 +51,7 @@ class VCruiseHelper(VCruiseHelperSP):
     _enabled = self.update_enabled_state(CS, enabled)
 
     if CS.cruiseState.available:
-      if not self.CP.pcmCruise or (not self.CP_SP.pcmCruiseSpeed and _enabled):
+      if not self.CP.pcmCruise or (not self.pcm_cruise_speed and _enabled):
         # if stock cruise is completely disabled, then we can use our own set speed logic
         self._update_v_cruise_non_pcm(CS, _enabled, is_metric)
         self.update_speed_limit_assist_v_cruise_non_pcm()
@@ -69,7 +69,7 @@ class VCruiseHelper(VCruiseHelperSP):
       self.v_cruise_kph = V_CRUISE_UNSET
       self.v_cruise_cluster_kph = V_CRUISE_UNSET
 
-    if not self.CP.pcmCruise or not self.CP_SP.pcmCruiseSpeed:
+    if not self.CP.pcmCruise or not self.pcm_cruise_speed:
       self.update_button_timers(CS, enabled)
 
   def _update_v_cruise_non_pcm(self, CS, enabled, is_metric):
@@ -124,7 +124,7 @@ class VCruiseHelper(VCruiseHelperSP):
     # Only valid when openpilot owns the set speed: on ICBM cars (pcmCruise with
     # pcmCruiseSpeed False) the stock ECU simply decrements on SET-, so clipping to vEgo
     # here inflates v_cruise above the real dash and ICBM would then chase the overridden speed.
-    op_owns_set_speed = not self.CP.pcmCruise or self.CP_SP.pcmCruiseSpeed
+    op_owns_set_speed = not self.CP.pcmCruise or self.pcm_cruise_speed
     if CS.gasPressed and op_owns_set_speed and button_type in (ButtonType.decelCruise, ButtonType.setCruise):
       self.v_cruise_kph = max(self.v_cruise_kph, CS.vEgo * CV.MS_TO_KPH)
 
