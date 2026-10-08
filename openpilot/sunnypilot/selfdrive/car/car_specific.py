@@ -73,6 +73,12 @@ class CarSpecificEventsSP:
         # LKA back on with lateral coming back, the EPS not delivering yet
         events_sp.add(EventNameSP.stockLkasArming)
 
+    self.update_stock_ecu(CS, CS_SP, events_sp)
+    return events_sp
+
+  def update_stock_ecu(self, CS: structs.CarState, CS_SP, events_sp: EventsSP) -> None:
+    """Also run by selfdrived before it initializes: card reports the takeover from its first
+    frame, up to 6 s before the init gate lets car events through."""
     # A SET/RES press before the stock ECU openpilot stands in for is owned lands on a body
     # that will not engage (Mazda route 0000020d: six presses, nothing shown): name what the
     # driver has to do. Alert-only; the press itself does nothing.
@@ -87,5 +93,3 @@ class CarSpecificEventsSP:
     if stock_ecu == StockEcuState.ready and self.stock_ecu_prev != StockEcuState.ready:
       events_sp.add(EventNameSP.stockEcuReady)
     self.stock_ecu_prev = stock_ecu
-
-    return events_sp

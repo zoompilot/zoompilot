@@ -243,6 +243,8 @@ class SelfdriveD(CruiseHelper):
     # Don't add any more events if not initialized
     if not self.initialized:
       self.events.add(EventName.selfdriveInitializing)
+      if CS.canValid:
+        self.car_events_sp.update_stock_ecu(CS, self.sm['carStateSP'], self.events_sp)
       return
 
     if self.model_startup.update(self.sm) and not self.big_model_loading:  # modeld's first load outlasts the 6 s initialization

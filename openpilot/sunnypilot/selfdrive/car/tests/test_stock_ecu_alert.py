@@ -11,14 +11,16 @@ parkToTakeOver with lateral off, nothing shown.
 """
 import pytest
 
-from openpilot.cereal import custom, messaging
+from openpilot.cereal import custom, log, messaging
 from opendbc.car import DT_CTRL, structs
+from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
 from openpilot.selfdrive.selfdrived.events import Events
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
-from openpilot.sunnypilot.selfdrive.selfdrived.events import EVENTS_SP
+from openpilot.sunnypilot.selfdrive.selfdrived.events import EVENTS_SP, EventsSP
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import ET, AudibleAlert
 
+EventName = log.OnroadEvent.EventName
 EventNameSP = custom.OnroadEventSP.EventName
 ButtonType = structs.CarState.ButtonEvent.Type
 
@@ -152,3 +154,30 @@ class TestStockEcuUnprompted:
     shown = lambda events_sp: [a.alert_type for a in events_sp.create_alerts(machine.current_alert_types, args)]  # noqa: E731
     assert shown(_update(car_events, "starting", standstill=True)) == ["stockEcuInitializing/permanent"]
     assert shown(_update(car_events, "ready")) == ["stockEcuReady/permanent"]
+
+  def test_before_selfdrived_initializes(self):
+    # selfdrived runs the stock ECU block ahead of its init gate; the ready edge carries over
+    car_events = _car_events()
+    for state, standstill, expected in (("starting", True, True), ("starting", False, False), ("notNeeded", True, False)):
+      CS = structs.CarState(standstill=standstill)
+      events_sp = EventsSP()
+      car_events.update_stock_ecu(CS, _car_state_sp(state), events_sp)
+      assert events_sp.has(EventNameSP.stockEcuInitializing) == expected
+    car_events.update_stock_ecu(structs.CarState(), _car_state_sp("ready"), EventsSP())
+    assert not _update(car_events, "ready").has(EventNameSP.stockEcuReady)  # told once, pre-init
+
+  def test_not_covered_by_the_boot_banners(self):
+    # startup (LOWER, frame 0) and the big model banner (LOW, raised later) both lose to it
+    machine = StateMachine()
+    machine.update(Events())
+    sm = {'carStateSP': _car_state_sp("starting"), 'modelDataV2SP': messaging.new_message('modelDataV2SP').modelDataV2SP}
+    args = [structs.CarParams(), structs.CarState(), sm, False, 0, None]
+    startup, initializing, big_model = Events(), EventsSP(), EventsSP()
+    startup.add(EventName.startup)
+    initializing.add(EventNameSP.stockEcuInitializing)
+    big_model.add(EventNameSP.bigModelReady)
+    AM = AlertManager()
+    for frame, events in enumerate((startup, initializing, big_model)):
+      AM.add_many(frame, events.create_alerts(machine.current_alert_types, args))
+    AM.process_alerts(2, set())
+    assert AM.current_alert.alert_type == "stockEcuInitializing/permanent"

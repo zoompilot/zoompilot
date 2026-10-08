@@ -285,9 +285,10 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: stock_ecu_not_ready_alert,
   },
 
-  # Parked with the takeover still starting: unprompted, re-raised every frame it holds.
+  # Parked with the takeover still starting: unprompted, re-raised every frame it holds. MID so
+  # the startup and big model banners (LOWER/LOW) cannot cover it while the driver waits.
   EventNameSP.stockEcuInitializing: {
-    ET.PERMANENT: NormalPermanentAlert(*STOCK_ECU_ALERT_TEXT[StockEcuState.STARTING]),
+    ET.PERMANENT: NormalPermanentAlert(*STOCK_ECU_ALERT_TEXT[StockEcuState.STARTING], priority=Priority.MID),
   },
 
   EventNameSP.stockEcuReady: {
