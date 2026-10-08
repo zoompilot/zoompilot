@@ -169,6 +169,19 @@ Done 2026-10-08:
 - Tests: `test_icbm_latch.py` (latch, publication, demand, migration, card and planner
   handovers); harnesses now declare the capability.
 
+Replay check 2026-10-08 (card, controlsd, plannerd, selfdrived against danger-unstable
+4ac8ad4d65): four CX-5 drives (stock ACC and alpha long, each recorded with ICBM on and off),
+settings "no ICBM feature" and "toggle on + SCC vision". Every output is identical except
+selfdrived's startup alert on one alpha-long drive, which comes from adding `carStateSP` to
+selfdrived's process-replay inputs (the base replay never fed it; a car always does): with
+danger-unstable's replay config the branch is identical there too.
+
+Settings locks (2026-10-08): while engaged with ICBM off, the device does not let a feature
+that needs ICBM be turned on (`ui_state.icbm_start_locked`; mici selector skips "assist" via
+`set_blocked_options`, TICI disables the assist button). sunnylink locks those features while
+engaged on ICBM cars in both directions: its validator forbids a toggle gating on its own
+value. The assist option there stays selectable when already selected.
+
 ### Phase 4: activate while engaged
 
 Not done. A feature switched on or off while engaged takes effect at the next disengage.
