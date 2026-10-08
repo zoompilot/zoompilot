@@ -147,11 +147,31 @@ class TestMigration:
     assert all(params.get_bool(k) for k in CONSUMER_KEYS)
     assert params.get("SpeedLimitMode", return_default=True) == Mode.assist
 
-  def test_car_without_the_buttons_is_left_alone(self, params):
+  def test_boot_without_the_buttons_waits_for_one_with_them(self, params):
+    # a mock fingerprint, or a long mode the buttons can't act in, decides nothing
     self._all_on(params)
     migrate_icbm_toggle(_cp(), _cp_sp(available=False), params)
+    migrate_icbm_toggle(_cp(op_long=True, pcm_cruise=False), _cp_sp(), params)
     assert all(params.get_bool(k) for k in CONSUMER_KEYS)
+    assert not params.get_bool(MIGRATED)
+    migrate_icbm_toggle(_cp(), _cp_sp(), params)
+    assert not any(params.get_bool(k) for k in CONSUMER_KEYS)
     assert params.get_bool(MIGRATED)
+
+  def test_a_failed_migration_retries(self, params, monkeypatch):
+    self._all_on(params)
+    real_put_bool = Params.put_bool
+
+    def failing_put_bool(self, key, *args, **kwargs):
+      if key == "SmartCruiseControlMap":
+        raise OSError("disk")
+      return real_put_bool(self, key, *args, **kwargs)
+    monkeypatch.setattr(Params, "put_bool", failing_put_bool)
+    migrate_icbm_toggle(_cp(), _cp_sp(), params)
+    monkeypatch.undo()
+    assert not params.get_bool(MIGRATED)
+    migrate_icbm_toggle(_cp(), _cp_sp(), params)
+    assert not any(params.get_bool(k) for k in CONSUMER_KEYS) and params.get_bool(MIGRATED)
 
   def test_runs_once(self, params):
     migrate_icbm_toggle(_cp(), _cp_sp(), params)

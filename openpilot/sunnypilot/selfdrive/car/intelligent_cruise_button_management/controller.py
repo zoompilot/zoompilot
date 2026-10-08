@@ -84,7 +84,13 @@ class IntelligentCruiseButtonManagement:
     self.CP_SP = CP_SP
     self.profile = get_actuation_profile(CP.brand)
     self.active = not CP_SP.pcmCruiseSpeed  # card's decision, kept current by update_activation
+    self.overshoot_params = DECEL_OVERSHOOT_PARAMS.get(CP.brand)  # brands with a measured plant
+    self.fast_faulted = False  # disable the stream for this drive if the dash never moves
+    self.reset()
 
+  def reset(self) -> None:
+    """Servo state for one engagement's worth of moves; what the drive learned about the dash
+    (fast_faulted) is kept."""
     self.v_target = 0
     self.v_cruise_cluster = 0
     self.v_cruise_min = 0
@@ -112,13 +118,11 @@ class IntelligentCruiseButtonManagement:
     self.prompting = False
     self.prompt_ceiling: int | None = None
     self.overshoot_mph = 0.0
-    self.overshoot_params = DECEL_OVERSHOOT_PARAMS.get(CP.brand)  # brands with a measured plant
     self.limiter_active = False
 
     self.fast_active = False
     self.fast_stall_frames = 0
     self.fast_last_cluster = 0
-    self.fast_faulted = False  # disable the stream for this drive if the dash never moves
 
     self.cruise_button_timers = dict(CRUISE_BUTTON_TIMER)
 
@@ -338,11 +342,8 @@ class IntelligentCruiseButtonManagement:
     active = icbm_active(CS_SP, self.CP_SP)
     if active == self.active:
       return
-    # card moves this only while disengaged, where the servo idles: start the next
-    # engagement clean, keeping what this drive learned about the dash
-    fast_faulted = self.fast_faulted
-    self.__init__(self.CP, self.CP_SP)
-    self.fast_faulted = fast_faulted
+    # card moves this only while disengaged, where the servo idles: start the next one clean
+    self.reset()
     self.active = active
 
   def run(self, CS: car.CarState, CC: car.CarControl, LP_SP: custom.LongitudinalPlanSP, is_metric: bool) -> None:

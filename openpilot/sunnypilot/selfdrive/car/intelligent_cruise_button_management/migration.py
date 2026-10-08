@@ -22,11 +22,13 @@ MIGRATED = "IcbmDemandMigrated"
 
 
 def migrate_icbm_toggle(CP, CP_SP, params: Params) -> None:
-  if params.get_bool(MIGRATED):
+  # Done only once it has run on a boot with ICBM: a mock fingerprint, or a long mode where
+  # the buttons can't act, says nothing about which features were inert.
+  if params.get_bool(MIGRATED) or not icbm_applicable(CP, CP_SP):
     return
 
   try:
-    if icbm_applicable(CP, CP_SP) and not params.get_bool(LEGACY_TOGGLE):
+    if not params.get_bool(LEGACY_TOGGLE):
       op_long = CP.openpilotLongitudinalControl
       for consumer in CONSUMERS:
         if (consumer.inert_under_op_long or not op_long) and consumer.is_on(params):
@@ -36,7 +38,9 @@ def migrate_icbm_toggle(CP, CP_SP, params: Params) -> None:
           else:
             params.put(consumer.key, consumer.off, block=True)
   except Exception:
-    cloudlog.exception("ICBM migration failed, leaving the features as set")
+    # not marked done: the next boot tries again rather than leaving inert features on
+    cloudlog.exception("ICBM migration failed, retrying next boot")
+    return
 
   params.remove(LEGACY_TOGGLE)
   params.put_bool(MIGRATED, True, block=True)
