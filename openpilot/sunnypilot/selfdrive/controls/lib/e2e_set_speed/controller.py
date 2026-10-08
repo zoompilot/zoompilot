@@ -8,25 +8,29 @@ Set-speed floor for experimental mode.
 
 The driving model has no set-speed input. With no lead it cruises at its own pace, and the
 planner's min() keeps the car there: in our experimental-mode logs the model was the binding
-candidate for 90% of lead-free straight cruise, a median 5.5 mph under the set speed. The model
-barely defends that pace (about -0.02 m/s^2 per m/s above it, a ~50 s time constant); it
+candidate for 90% of lead-free straight cruise, a median 5.5 mph under the set speed. It
 accelerates lazily and then holds.
 
-This raises the e2e candidate toward the set speed while the model shows no reason to slow:
+This raises the e2e candidate toward the set speed, inside a speed envelope read from the
+model's own plan:
 
-  e2e = a_model + gain * max(0, min(floor, bound) - a_model)
+  e2e = a_model + boost,  boost -> gain * max(0, min(floor, bound) - a_model)
 
-floor approaches the target the way stock cruise does and gain fades the boost out as the model
-starts to decelerate. bound reads the model's plan over its horizon: the steepest average
-slowdown it holds over the next few seconds, and the curve speeds along it. Both move smoothly
-with the plan, so a slowdown or a bend shrinks the boost as it approaches instead of tripping it,
-and nothing has to be held off once it passes. bound drops at once and recovers through a filter,
-which keeps a wobbling plan from pumping the boost. Hazards (FCW, a stop, a lead, the driver, a
-lane change) still cut the boost and hold it off for a few seconds.
+floor approaches the target the way stock cruise does, a little firmer. bound is the envelope:
+the model's plan with the speed we added taken back out (the model keeps speed it did not
+choose, so its plan carries ours), scaled up toward the target where the plan is flat and left
+at the model's own speed where it means to slow, capped at a comfortable curve speed. A backward
+pass in distance turns that into the fastest speed at every point from which a gentle slowdown
+still meets every ceiling further on, and the boost may only accelerate toward it.
+
+Because the model will not shed speed we added before a bend or a stop, the boost goes negative
+when the car is over the envelope: it gives back the speed it put on, never more, so the car
+reaches each slowdown at the model's own speed. Hazards (FCW, a lead, the driver, a lane change)
+cut the boost and hold it off for a few seconds.
 
 Without a lead nothing above the e2e candidate bounds it (the MPC's synthetic lead and the e2e
-cruise candidate both sit near +2 m/s^2), so the bound and the hazards are the whole safety case.
-Design and data: docs/zoompilot/e2e-set-speed.md.
+cruise candidate both sit near +2 m/s^2), so the envelope and the hazards are the whole safety
+case. Design and data: docs/zoompilot/e2e-set-speed.md.
 """
 import math
 
@@ -44,10 +48,10 @@ LaneChangeState = log.LaneChangeState
 
 PARAM = "ExperimentalModeSetSpeed"
 
-# Floor: close the gap the way stock MRCC does after a set-speed step (~7.7 s, peaking at a
-# median 0.57 m/s^2), faded in above walking pace.
-TAU = 8.0  # s
-FLOOR_MAX = 0.6  # m/s^2
+# Floor: close the gap a little firmer than stock MRCC after a set-speed step (~7.7 s, peaking at
+# a median 0.57 m/s^2, p90 0.72), faded in above walking pace.
+TAU = 6.0  # s
+FLOOR_MAX = 0.8  # m/s^2
 MIN_SPEED = 5.0  # m/s
 FULL_SPEED = 8.0  # m/s
 
@@ -55,27 +59,34 @@ FULL_SPEED = 8.0  # m/s
 # outside that band.
 GAIN_BP = [-0.2, -0.05]  # m/s^2
 
-# Plan bound: the steepest average acceleration the plan holds from now to any point in
-# PLAN_T, measured from its own v(0) (vEgo reads 2-3% low against GPS). Shorter windows are the
-# model's wander. The bound closes from FLOOR_MAX to 0 across PLAN_BP.
-PLAN_T = (2.0, 6.0)  # s
-PLAN_BP = [-0.1, 0.]  # m/s^2
-# Curve bound: never plan to pass a point of the plan faster than CURVE_LAT_ACCEL allows there,
-# and no boost at all while turning harder than that now.
-CURVE_LAT_ACCEL = 0.6  # m/s^2
-CURVE_T = (0.5, 10.0)  # s
-# bound drops at once and recovers with this time constant
+# Envelope. Where the plan has dropped TAPER_DROP below where it starts, the model means it and
+# the ceiling is its own speed; where it is flat, the ceiling scales its pace up to the target.
+TAPER_DROP = 1.5  # m/s
+RATIO_MAX = 1.5
+CURVE_LAT_ACCEL = 1.0  # m/s^2, no boost past this in a bend the model takes slower than it allows
+# Fastest speed from which A_DEC still meets every ceiling further on; the boost accelerates
+# toward the value LOOK_T ahead.
+A_DEC = 0.4  # m/s^2
+LOOK_T = 2.0  # s
+# Where the plan has dropped SLOWING_DROP or more, the boost must also reach the model's speed there
+# at a constant rate from now: a slowdown starts shaping the boost as soon as it shows.
+SLOWING_DROP = 0.5  # m/s
+SLOWING_T = (1.0, 10.0)  # s
+# The envelope drops at once and recovers with this time constant, so a wobbling plan cannot pump
+# the boost.
 BOUND_TAU = 1.0  # s
 
-# The boost rises gently and backs off faster; a hazard cuts it at the rate a full boost used to
-# fall when authority dropped 4/s.
-BOOST_RISE = 0.5  # m/s^3
-BOOST_FALL = 1.0  # m/s^3
-HAZARD_FALL = 2.4  # m/s^3
+# Give-back: speed this controller put on the car, shed by the model at SHED_RATE in cruise and
+# not at all before a slowdown. Over the envelope it is handed back over GIVE_T, at most GIVE_MAX.
+SHED_RATE = 0.038  # 1/s
+GIVE_T = 2.0  # s
+GIVE_MAX = 0.6  # m/s^2
+
+BOOST_RATE = 0.5  # m/s^3, both ways
+HAZARD_FALL = 2.4  # m/s^3, cutting a boost for a hazard
 HOLD_TIME = 3.0  # s after the last hazard
 
-LAT_HORIZON = 10.0  # s, for the friction circle and the stop check
-STOP_SPEED = 2.0  # m/s; a plan dipping below this is a stop
+LAT_HORIZON = 10.0  # s, for the friction circle
 
 # Upstream's ACC friction circle (selfdrive/controls/lib/longitudinal_planner.py), mirrored
 # because importing it from here is circular; tests pin the copy.
@@ -84,21 +95,33 @@ A_TOTAL_MAX_V = [1.7, 3.2]
 
 T_IDXS = np.asarray(ModelConstants.T_IDXS)
 LAT_MASK = T_IDXS <= LAT_HORIZON
-PLAN_MASK = (T_IDXS >= PLAN_T[0]) & (T_IDXS <= PLAN_T[1])
-CURVE_MASK = (T_IDXS >= CURVE_T[0]) & (T_IDXS <= CURVE_T[1])
+SLOWING_MASK = (T_IDXS >= SLOWING_T[0]) & (T_IDXS <= SLOWING_T[1])
 
 
-def plan_bound(vel: np.ndarray) -> float:
-  worst_mean = float(np.min((vel[PLAN_MASK] - vel[0]) / T_IDXS[PLAN_MASK]))
-  return float(np.interp(worst_mean, PLAN_BP, [0., FLOOR_MAX]))
+def envelope_bound(vel: np.ndarray, yaw_rate: np.ndarray, pos: np.ndarray, v_target: float, added: float) -> float:
+  """Most acceleration the envelope allows now. vel, pos and v_target in the plan's own frame."""
+  v_now = float(vel[0])
+  curvature = np.abs(yaw_rate) / np.maximum(vel, 1.)
+  # the model's own plan: ours taken back out. It holds speed it did not choose before a slowdown
+  # (it sheds it only in open cruise, slowly), so its plan carries all of it.
+  vel = np.maximum(vel - added, 0.)
+  pos = np.maximum.accumulate(pos - pos[0] - added * T_IDXS)
+  v0 = max(float(vel[0]), 0.1)
+  drop = v0 - np.minimum.accumulate(vel)
 
-
-def curve_bound(vel: np.ndarray, yaw_rate: np.ndarray, lat_now: float) -> float:
-  if lat_now > CURVE_LAT_ACCEL:
-    return 0.
-  curvature = np.abs(yaw_rate[CURVE_MASK]) / np.maximum(vel[CURVE_MASK], 1.)
+  ratio = 1. + (min(max(v_target / v0, 1.), RATIO_MAX) - 1.) * np.clip(1. - drop / TAPER_DROP, 0., 1.)
   v_curve = np.sqrt(CURVE_LAT_ACCEL / np.maximum(curvature, 1e-6))
-  return min(float(np.min((v_curve - vel[0]) / T_IDXS[CURVE_MASK])), FLOOR_MAX)
+  ceil = np.minimum(vel * ratio, np.maximum(vel, v_curve))
+
+  # vmax[n] = min over m >= n of sqrt(ceil[m]^2 + 2 A_DEC (pos[m] - pos[n])): a running min in v^2
+  reach = ceil ** 2 + 2. * A_DEC * pos
+  vmax = np.sqrt(np.minimum.accumulate(reach[::-1])[::-1] - 2. * A_DEC * pos)
+  bound = (float(np.interp(max(v_now, 0.5) * LOOK_T, pos, vmax)) - v_now) / LOOK_T
+
+  slowing = SLOWING_MASK & (drop > SLOWING_DROP)
+  if slowing.any():
+    bound = min(bound, float(np.min((ceil[slowing] - v_now) / T_IDXS[slowing])))
+  return bound
 
 
 class E2ESetSpeedController:
@@ -117,6 +140,8 @@ class E2ESetSpeedController:
     self.floor = 0.
     self.bound = math.nan  # unset: the next bound is taken as is
     self.boost = 0.
+    self.added = 0.
+    self.a_model = 0.
     # DEC here means FCW, standstill or a predicted stop, and invalid means no model to trust: both
     # hazards. Engaging or leaving experimental mode is not.
     self.hold_left = self.hold_frames if reason in (Inhibit.decActive, Inhibit.invalid) else 0
@@ -125,23 +150,28 @@ class E2ESetSpeedController:
   @property
   def authority(self) -> float:
     """1 unless a hazard holds the boost off."""
-    return 1. if self.inhibit in (Inhibit.none, Inhibit.modelBraking, Inhibit.planSlowing, Inhibit.lateral) else 0.
+    return 1. if self.inhibit in (Inhibit.none, Inhibit.modelBraking, Inhibit.planSlowing) else 0.
 
   def _update_params(self) -> None:
     if self.frame % self.params_frames == 0:
       self.enabled = self.params.get_bool(PARAM)
 
+  def delivered(self, a_out: float) -> None:
+    """The planner's output this frame: the part of the boost that reached the car is speed added.
+    Clipped to the boost, so another lift on the same candidate or a lower one taking over counts
+    as none of ours."""
+    if self.inhibit not in (Inhibit.disabled, Inhibit.inactive, Inhibit.decActive, Inhibit.invalid):
+      self.added = max(0., self.added + float(np.clip(a_out - self.a_model, min(self.boost, 0.), max(self.boost, 0.))) * self.dt)
+
   @staticmethod
-  def _hazard(sm: messaging.SubMaster, plan_min_v: float, fcw: bool):
-    CS, md, rs = sm['carState'], sm['modelV2'], sm['radarState']
+  def _hazard(sm: messaging.SubMaster, fcw: bool):
+    CS, md, rs, cs = sm['carState'], sm['modelV2'], sm['radarState'], sm['controlsState']
     if fcw:
       return Inhibit.fcw
     if md.meta.hardBrakePredicted:
       return Inhibit.hardBrake
-    if sm['controlsState'].forceDecel:
+    if cs.forceDecel:
       return Inhibit.forceDecel
-    if md.action.shouldStop or plan_min_v < STOP_SPEED:
-      return Inhibit.stop
     if rs.leadOne.present or rs.leadTwo.present:
       return Inhibit.lead
     if CS.gasPressed or CS.brakePressed:
@@ -152,7 +182,8 @@ class E2ESetSpeedController:
 
   def update(self, sm: messaging.SubMaster, a_model: float, v_cruise: float, is_e2e: bool, reset_state: bool,
              dec_active: bool, allow_throttle: bool, fcw: bool, accel_coast: float, steer_lat_accel: float = 0.) -> float:
-    """Return the e2e candidate; a_model unchanged whenever the feature is off or idle.
+    """Return the e2e candidate; a_model unchanged whenever the feature is off or idle. Call delivered()
+    with the planner's output once it has chosen.
     steer_lat_accel: lateral acceleration from the measured steering angle."""
     self.frame += 1
     self._update_params()
@@ -172,12 +203,16 @@ class E2ESetSpeedController:
     v_ego = sm['carState'].vEgo
     vel = np.asarray(md.velocity.x, dtype=float)
     yaw_rate = np.asarray(md.orientationRate.z, dtype=float)
+    pos = np.asarray(md.position.x, dtype=float)
     curvature = md.action.desiredCurvature
-    if (len(vel) != ModelConstants.IDX_N or len(yaw_rate) != ModelConstants.IDX_N or
-        not all(math.isfinite(x) for x in (v_ego, a_model, v_cruise, accel_coast, curvature)) or
-        not (np.isfinite(vel).all() and np.isfinite(yaw_rate).all())):
+    plan = (vel, yaw_rate, pos)
+    if (any(len(x) != ModelConstants.IDX_N for x in plan) or not all(np.isfinite(x).all() for x in plan) or
+        not all(math.isfinite(x) for x in (v_ego, a_model, v_cruise, accel_coast, curvature))):
       self._reset(Inhibit.invalid)
       return a_model
+
+    self.a_model = a_model
+    self.added *= 1. - SHED_RATE * self.dt
 
     lat_now = max(abs(curvature) * v_ego ** 2, abs(steer_lat_accel))
     lat_accel = max(lat_now, float(np.max(np.abs(yaw_rate * vel)[LAT_MASK])))
@@ -189,15 +224,15 @@ class E2ESetSpeedController:
       floor = min(floor, accel_coast)
     self.floor = floor
 
-    a_plan, a_curve = plan_bound(vel), curve_bound(vel, yaw_rate, lat_now)
-    bound = min(a_plan, a_curve)
+    # the plan's speeds run a little above vEgo (which reads 2-3% low); compare like with like
+    bound = envelope_bound(vel, yaw_rate, pos, v_cruise + float(vel[0]) - v_ego, self.added)
     if math.isnan(self.bound) or bound < self.bound:
       self.bound = bound
     else:
       self.bound += self.bound_k * (bound - self.bound)
     self.gain = float(np.interp(a_model, GAIN_BP, [0., 1.]))
 
-    hazard = self._hazard(sm, float(np.min(vel[LAT_MASK])), fcw)
+    hazard = self._hazard(sm, fcw)
     if hazard is not None:
       self.hold_left = self.hold_frames
       self.inhibit = hazard
@@ -207,13 +242,16 @@ class E2ESetSpeedController:
     elif self.gain == 0.:
       self.inhibit = Inhibit.modelBraking
     elif self.bound < floor:
-      self.inhibit = Inhibit.planSlowing if a_plan <= a_curve else Inhibit.lateral
+      self.inhibit = Inhibit.planSlowing
     else:
       self.inhibit = Inhibit.none
 
-    if self.authority:
-      target, fall = self.gain * max(0., min(floor, self.bound) - a_model), BOOST_FALL
-    else:
-      target, fall = 0., HAZARD_FALL
-    self.boost = max(0., min(max(target, self.boost - fall * self.dt), self.boost + BOOST_RISE * self.dt))
+    target = self.gain * max(0., min(floor, self.bound) - a_model) if self.authority else 0.
+    # over the envelope, hand back what we added; behind a lead the MPC and the gap assist own the speed
+    give = 0. if hazard == Inhibit.lead else min(self.added / GIVE_T, GIVE_MAX)
+    if self.bound < a_model and give > 0.:
+      target = -min(give, a_model - self.bound)
+    # a hazard cuts a boost fast; handing speed back is never urgent
+    fall = HAZARD_FALL if not self.authority and self.boost > 0. else BOOST_RATE
+    self.boost = max(-give, float(np.clip(target, self.boost - fall * self.dt, self.boost + BOOST_RATE * self.dt)))
     return a_model + self.boost

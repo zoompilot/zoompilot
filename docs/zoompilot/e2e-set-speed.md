@@ -33,83 +33,102 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 ## The controller
 
 ```
-e2e   = a_model + gain * max(0, min(floor, bound) - a_model)
-floor = clip((v_target - v_ego) / 8 s, 0, 0.6) * fade-in over 5-8 m/s,
-        capped by upstream's friction circle and, without allow_throttle, the coast limit
-gain  = interp(a_model, [-0.2, -0.05], [0, 1])
-bound = min(plan bound, curve bound), dropping at once and recovering with a 1 s filter
-  plan bound  = interp(min over t in 2-6 s of (v_plan(t) - v_plan(0)) / t, [-0.1, 0], [0, 0.6])
-  curve bound = min over t in 0.5-10 s of (sqrt(0.6 / k_plan(t)) - v_plan(0)) / t,
-                0 while turning harder than 0.6 m/s^2 now
+e2e    = a_model + boost
+boost -> gain * max(0, min(floor, bound) - a_model)     at most 0.5 m/s^3 either way
+floor  = clip((v_target - v_ego) / 6 s, 0, 0.8) * fade-in over 5-8 m/s,
+         capped by upstream's friction circle and, without allow_throttle, the coast limit
+gain   = interp(a_model, [-0.2, -0.05], [0, 1])
+bound  = the speed envelope (below), dropping at once and recovering with a 1 s filter
 ```
 
-`v_target` is the planner's target after SCC vision, SCC map and SLA, so curve and limit
-targets are never pushed past. The plan bound reads the steepest average slowdown the model's plan
-holds over the next 2-6 s (shorter windows are its wander), measured from its own v(0). The curve
-bound keeps the car from planning to pass any point of the plan faster than 0.6 m/s^2 of lateral
-acceleration allows there. Both move smoothly with the plan, so a slowdown or a bend shrinks the
-boost as it comes instead of tripping it, and nothing needs holding off once it passes. The bound
-takes a drop at once and filters its recovery, so a plan wobbling at a red light cannot pump the
-boost. The boost rises at most 0.5 m/s^3 and backs off at 1.0 m/s^3.
+`v_target` is the planner's target after SCC vision, SCC map and SLA.
 
-Hazards cut the boost at 2.4 m/s^3 and hold it off for 3 s after they clear: FCW,
-hardBrakePredicted, forceDecel, shouldStop or a plan dipping under 2 m/s, any lead, gas or brake,
-a lane change; leaving DEC or an invalid model hold the same way. Off, not in e2e, long control
-reset, DEC active or invalid input: the model passes through untouched and the state resets.
-State is the boost, the bound's filter and the hazard hold. The telemetry's inhibit names the
-hazard, `hold`, or what limits the boost: `modelBraking` (gain at zero), `planSlowing` or
-`lateral` (the bound under the floor).
+**The envelope.** The model keeps speed it did not choose: on drives with the boost on, its
+acceleration did not respond to the boost's extra speed before a bend or a slowdown, and shed it
+at only 0.04 /s in open cruise. So speed added on a straight arrives at the next bend unless
+something takes it back, and a boost-only controller trades reaching the set speed against
+carrying speed into features almost one for one. The envelope works from the model's own intent:
+
+1. Take the speed this controller has added back out of the plan. `added` integrates the part of
+   the boost that reached the car: the planner reports its output after choosing (`delivered()`,
+   from the SP planner's publish), clipped to the boost so the gap assist's lift or a lower
+   candidate taking over counts as none of ours. The model sheds it at 0.038 /s in cruise.
+2. Ceiling at each plan point: the model's speed scaled up toward the target where the plan is
+   flat, tapering back to the model's own speed where the plan has dropped 1.5 m/s below its
+   start, and never past 1.0 m/s^2 of lateral acceleration in a bend the model takes slower.
+3. A backward pass in distance gives the fastest speed at every point from which 0.4 m/s^2
+   still meets every ceiling further on; the boost accelerates toward its value 2 s ahead.
+4. Where the plan has dropped 0.5 m/s or more, the boost must also reach the model's speed there
+   at a constant rate from now, so a slowdown shapes the boost as soon as it shows.
+
+Over the envelope with speed it added, the boost goes negative: it hands back `added / 2 s`, at
+most 0.6 m/s^2 and never more than it put on, so the car reaches each slowdown at the model's
+own speed. It can never make the car slower than the model alone would have been. Behind a lead
+it pauses.
+
+Hazards cut a positive boost at 2.4 m/s^3 and hold it off for 3 s after they clear: FCW,
+hardBrakePredicted, forceDecel, any lead, gas or brake, a lane change; leaving DEC or an
+invalid model hold the same way. Stops need no hazard: a plan running down to zero closes the
+envelope. Off, not in e2e, long control reset, DEC active or invalid input: the model passes
+through untouched and the state resets.
+
+State: the boost, the envelope's filter, `added`, the hazard hold. The telemetry's inhibit names
+the hazard, `hold`, `modelBraking` (gain at zero) or `planSlowing` (the envelope under the floor).
 
 DEC on this car is radarless (`radarUnavailable`), so its blended mode means FCW, standstill or a
 predicted slowdown, and its acc mode drops the e2e candidate altogether: the floor has nothing to
 add under DEC.
 
+## Closed-loop scorecard
+
+`tools/mazda_long/e2e_set_speed_sim.py` re-drives every experimental-mode alpha-long stretch in
+the logs (252 segments, about 3.5 h) with each controller and scores it against the same sim with
+the boost off: tracking on road hindsight shows was clear, speed carried into curve apexes, stops
+and slowdowns, time gap to leads, jerk. Routes are split in two; everything was tuned on one half.
+
+| | Trip controller | Rate bound (9deca743f6) | Stateless blend | Envelope |
+|---|---|---|---|---|
+| holdout: clear-road deficit, mph (off 9.1) | 6.4 | 6.6 | 7.4 | **5.8** |
+| holdout: apexes > 0.5 m/s faster | 30% | 25% | 28% | **17%** |
+| holdout: 30 m before a stop > 0.5 m/s | 25% | 25% | 25% | **12.5%** |
+| holdout: slowdowns > 0.5 m/s, p90 | 31%, 1.80 | 27%, 1.84 | **15%, 1.02** | 23%, 1.12 |
+| holdout: lead frames under 1 s gap (off 0.10%) | 0.35% | **0.15%** | 0.32% | 0.23% |
+| holdout: output jerk p99 / p99.9, m/s^3 | 1.24 / 2.38 | 1.23 / 2.23 | 1.43 / 4.80 | **1.21 / 1.70** |
+| all: clear-road deficit, mph (off 8.9) | | 6.8 | | **6.0** |
+| all: apexes / stops 30 m / stops 10 m | | 15.6 / 15.8 / 18.9% | | **9.6 / 7.9 / 8.1%** |
+| all: slowdowns > 0.5 m/s, p90 | | 12.3%, 0.79 | | 12.3%, **0.64** |
+
+Leads still cut the boost; the hand-back pauses behind one, where the MPC and the gap assist own the speed. A model bundle that pushes back hard (tau
+25 s against the usual 50) plans a steady slowdown once past its pace, which the envelope cannot
+tell from a real one: test_closed_loop shows it closing about half the gap there.
+
 ## Constants
 
 | Name | Value | Measurement |
 |---|---|---|
-| `TAU` | 8 s | stock MRCC set-speed steps close with ~7.7 s |
-| `FLOOR_MAX` | 0.6 m/s^2 | stock MRCC peak, median 0.57, p90 0.72 |
-| `MIN_SPEED`, `FULL_SPEED` | 5, 8 m/s | v5 trip cannot see a stop below this; floor 1.2-1.6 against a creeping model |
-| `GAIN_BP` | -0.2, -0.05 | model accel sd 0.11-0.19 in cruise, below 0.3 Hz; purposeful pushes 11% -> 4% |
-| `PLAN_T`, `PLAN_BP` | 2-6 s, -0.1..0 m/s^2 | -0.15..-0.05 let 84% more boost into curve entries |
-| `CURVE_LAT_ACCEL` | 0.6 m/s^2 | 1.0 (the old trip) boosted up to the curve (+84%); 0.8 only 9% under the trips; 0.6 halves it |
-| `BOUND_TAU` | 1 s, recovery only | symmetric 0.5 s doubled stops getting >0.3 m/s extra (4.4 -> 8.1%) |
-| `BOOST_RISE`, `BOOST_FALL` | 0.5, 1.0 m/s^3 | rise removes 34 of 35 target-restore steps; fall 2.4 (unfiltered bound) gave jerk p99 1.24 |
-| `HAZARD_FALL` | 2.4 m/s^3 | what authority falling 4/s did to a full boost |
-| `HOLD_TIME` | 3 s, hazards | override on purposeful slowdowns 21% -> 7% (open loop) |
-| `STOP_SPEED` | 2 m/s | shouldStop fired before standstill in 2 of 29 stops |
-
-Against the trip controller it replaced (281 exp-mode segments, 10-08, open loop): stops getting
-more than 0.3 m/s extra in the 5 s before 4.4% -> 4.4%, leads 12.3 -> 12.8%, curve entries
-11.4 -> 5.2%; re-arm after a slowdown median 3.3 -> 1.15 s; boost steps over 1 m/s^3 0.20 ->
-0.10% of frames, output jerk p99 0.89 -> 1.02, p99.9 1.90 -> 1.57 m/s^3; speed added 199 -> 161
-m/s per hour. On the car, check that it still reaches set speed promptly; if it feels lazy the
-levers are `CURVE_LAT_ACCEL` and `TAU`, not more state.
-
-vEgo reads 1.7-2.6% low against GPS on 2026 routes and the model's v(0) sits 0.3-1.4 m/s above
-it, which is why the slowdown trip compares the plan with itself.
+| `TAU`, `FLOOR_MAX` | 6 s, 0.8 m/s^2 | stock MRCC closes in ~7.7 s at p90 0.72; with the envelope guarding features, 6 s / 0.8 tracks 8 points better at the same feature tails |
+| `MIN_SPEED`, `FULL_SPEED` | 5, 8 m/s | floor 1.2-1.6 against a creeping model |
+| `GAIN_BP` | -0.2, -0.05 | model accel sd 0.11-0.19 in cruise; nearly redundant with the envelope, kept as the most direct signal |
+| `TAPER_DROP` | 1.5 m/s | without it stops 30 m 5.3 -> 7.9%, apexes 10.4 -> 11.9% |
+| `CURVE_LAT_ACCEL` | 1.0 m/s^2 | 1.5 let apex excess 13 -> 18% |
+| `A_DEC`, `LOOK_T` | 0.4 m/s^2, 2 s | LOOK_T 1 s: apexes 6.1 vs 4.9%, slowdowns 6.4 vs 4.3% (dev) |
+| `SLOWING_DROP` | 0.5 m/s | 0.75 tracks 1 point better but slowdowns 13.7 -> 15.1% |
+| `BOUND_TAU` | 1 s, recovery only | without it apexes 10.4 -> 15.6% |
+| `SHED_RATE`, `GIVE_T`, `GIVE_MAX` | 0.038 /s, 2 s, 0.6 m/s^2 | shed rate measured; without give-back apexes 29%, stops 16% |
+| `BOOST_RATE` | 0.5 m/s^3 | fall 1.0 -> 0.5: jerk p99 1.16 -> 1.04 at the same tails |
+| `HAZARD_FALL`, `HOLD_TIME` | 2.4 m/s^3, 3 s | without the hold stops 10 m 8.8 -> 14.7% |
 
 ## Expected behaviour
 
-Distance-domain closed loop over 22 min of the logs with the fitted 50 s model response and a
-0.2 s + 0.5 s actuator: deficit median 1.55 mph (model alone 5.5), 4% of purposeful slowdowns
-pushed more than 0.5 m/s, no boost at curve entry, apex lateral acceleration p90 unchanged at
-2.43 m/s^2, jerk rms 0.20 vs 0.17 for the model alone.
+What the car should feel: the floor picks up within a second or two on an open road and holds the
+set speed; approaching a bend, a stop or a slowdown the model plans, the extra speed comes off
+gently (at most 0.5 m/s^3, 0.6 m/s^2) a few seconds before the model starts its own slowdown,
+which then runs as it would have without the floor. Leads still cut the boost.
 
-The shipped controller replayed open loop over all 189 segments (118 min of active e2e at any
-speed, leads included; `e2e_set_speed_replay.py`): boosting 20% of the time, median +0.26, p90
-+0.51 m/s^2; off for a lead 20%, in the hold 15%, a stop 13%, lateral 9%; jerk p99 0.86 -> 0.93
-m/s^3; full authority while the model asked for under -0.05 in 7% of the boosting time.
-
-The residual: about a third of the model's gentle anticipations (min accel about -0.24, a turn,
-stop or lead 15-30 s later, ~13 an hour) get overridden by a mean 0.34 m/s. No model signal
-separated them from drift at an acceptable false-block rate; the hard trips still fire before
-the turn or stop, curves p10 2.9 s ahead, stops 3-9 s.
-
-On the car: watch turn and yellow-light approaches, and `e2e_set_speed_replay.py --logged` for
-model accel under -0.05 held at full authority. If that is common, lower `FLOOR_MAX` or raise
-`TAU`.
+On the car: watch turn and yellow-light approaches. `e2eSetSpeed.added` should fall toward zero
+before each one; `e2eSetSpeed.boost` going negative is the hand-back. If the car still arrives
+fast, lower `CURVE_LAT_ACCEL` or `A_DEC`; if it feels hesitant on open road, look for `bound`
+under `floor` with nothing ahead.
 
 ## Tried and rejected
 
@@ -129,12 +148,27 @@ model accel under -0.05 held at full authority. If that is common, lower `FLOOR_
 - A -0.3 trip with an instant fall and no hold: the model spends 17% of cruise in (-0.3, -0.05]
   starting slowdowns, gates flicker and authority re-armed mid-decel; 21% of purposeful slowdowns
   overridden by more than 0.5 m/s.
-- Faster convergence (tau 5-6 s): overrides 44% of anticipations for 0.4 mph.
+- Faster convergence (tau 5-6 s) with the trip controller: overrides 44% of anticipations for
+  0.4 mph. The envelope's hand-back is what makes `TAU` 6 s safe now.
 - A headway taper with leads: leads were slower than the target in 87-96% of lead frames; only 3%
   of lead time would reach the set speed. Lead present is a trip.
 - ACC drives and the model only vetoes: the model sits below the ACC cruise accel 83-92% of the
   time, so a cruise-relative veto is always on; the intent-gated form is this controller with
   instant authority, and hunts.
+- The rate bound (9deca743f6, 10-08): the plan's steepest average slowdown over 2-6 s and the
+  curve speeds at 0.6 m/s^2 capped total acceleration. In closed loop it closed 69% of what was
+  achievable and still carried speed into a quarter of the curve apexes: added speed persists, and a
+  cap on adding cannot take it back. It also closed on any plan wobble of -0.1 m/s^2 however far
+  under the target the car was.
+- The envelope from the plan as logged, without taking our added speed out: it scales our own
+  addition up again (curve apexes 45% faster than the model, against 10%).
+- The plan's added speed shed at the cruise rate over its horizon, instead of held: tracks 3% better
+  but curves 10.4 -> 12.6%, slowdowns p90 0.71 -> 0.97 m/s. The model does not shed before a
+  slowdown.
+- A time-gap bound for leads instead of the lead hazard: stops 30 m 3.3 -> 10% (dev). It boosts
+  behind a lead that then stops.
+- The model's predicted brake press fading the scale-up, and a margin from the plan's growing
+  position uncertainty: no change, and 7% less tracking for a little stop margin.
 - Making DEC the answer: radarless DEC only blends to slow down, and its mode flips step the
   output.
 - Shifting the model's velocity plan: a floor in disguise, bypassed on action-head bundles.

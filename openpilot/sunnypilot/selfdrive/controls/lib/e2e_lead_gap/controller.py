@@ -55,6 +55,7 @@ MODEL_BRAKE_ACCEL = -0.5  # m/s^2
 PLAN_SLOWDOWN = 1.0  # m/s the model's plan loses within PLAN_SLOWDOWN_T
 PLAN_SLOWDOWN_T = 5.0  # s
 LAT_ACCEL_MAX = 1.0  # m/s^2, now or anywhere on the plan
+STOP_SPEED = 2.0  # m/s; a plan dipping below this is a stop
 # The lead: steady, not braking, moving, and the same car for a while.
 LEAD_BRAKE_ACCEL = -0.5  # m/s^2
 LEAD_SLOWDOWN = 1.0  # m/s the lead's forecast loses within LEAD_SLOWDOWN_T
@@ -217,7 +218,7 @@ class E2ELeadGapController:
       return Inhibit.hardBrake
     if sm['controlsState'].forceDecel:
       return Inhibit.forceDecel
-    if md.action.shouldStop or plan_min_v < nudge.STOP_SPEED:
+    if md.action.shouldStop or plan_min_v < STOP_SPEED:
       return Inhibit.stop
     if CS.gasPressed or CS.brakePressed:
       return Inhibit.driver

@@ -162,6 +162,9 @@ class LongitudinalPlannerSP:
     self.e2e_alerts_helper.update(sm, self.events_sp)
 
   def publish_longitudinal_plan_sp(self, sm: messaging.SubMaster, pm: messaging.PubMaster) -> None:
+    # the host has chosen: tell the set-speed floor how much of its boost reached the car
+    self.e2e_set_speed.delivered(float(self.output_a_target))
+
     plan_sp_send = messaging.new_message('longitudinalPlanSP')
 
     plan_sp_send.valid = sm.all_checks(service_list=['carState', 'controlsState'])
@@ -231,6 +234,7 @@ class LongitudinalPlannerSP:
     e2eSetSpeed.boost = float(self.e2e_set_speed.boost)
     e2eSetSpeed.inhibit = self.e2e_set_speed.inhibit
     e2eSetSpeed.bound = float(self.e2e_set_speed.bound) if math.isfinite(self.e2e_set_speed.bound) else 0.
+    e2eSetSpeed.added = float(self.e2e_set_speed.added)
 
     # zoompilot: experimental mode's follow-distance assist
     e2eLeadGap = longitudinalPlanSP.zoompilot.e2eLeadGap

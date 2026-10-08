@@ -18,6 +18,7 @@ rlogs_validation/
 
 # derived from the above, all regenerable
 .lkas_block_cache/
+.e2e_set_speed_cache/
 .undelivered_cache/
 .protocol_cache/
 .lead_event_cache/

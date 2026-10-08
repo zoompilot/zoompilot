@@ -14,19 +14,22 @@ from openpilot.common.realtime import DT_MDL as DT
 from openpilot.selfdrive.controls.lib import longitudinal_planner as upstream
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import controller as c
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController, Inhibit
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, MockParams, build_sm
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, MockParams, build_sm, plan_pos
 
 V_EGO = 20.
-V_CRUISE = 24.  # floor (24 - 20) / 8 = 0.5
+V_CRUISE = 23.  # floor (23 - 20) / 6 = 0.5
 HOLD_FRAMES = round(c.HOLD_TIME / DT)
-SETTLE_FRAMES = round(c.FLOOR_MAX / (c.BOOST_RISE * DT)) + 10
+SETTLE_FRAMES = round(c.FLOOR_MAX / (c.BOOST_RATE * DT)) + 10
 
 
-def run(ctl, n, sm, a_model=0., v_cruise=V_CRUISE, **kwargs):
+def run(ctl, n, sm, a_model=0., v_cruise=V_CRUISE, deliver=False, **kwargs):
+  """deliver: the planner drives the e2e candidate, so the boost reaches the car."""
   args = {**ENGAGED, **kwargs}
   out = a_model
   for _ in range(n):
     out = ctl.update(sm, a_model, v_cruise, **args)
+    if deliver:
+      ctl.delivered(out)
   return out
 
 
@@ -34,15 +37,25 @@ def new_controller(enabled=True):
   return E2ESetSpeedController(params=MockParams(enabled), dt=DT)
 
 
-def settled(v_cruise=V_CRUISE):
+def settled(v_cruise=V_CRUISE, **kwargs):
   ctl = new_controller()
-  run(ctl, SETTLE_FRAMES, build_sm(V_EGO), v_cruise=v_cruise)
+  run(ctl, SETTLE_FRAMES, build_sm(V_EGO), v_cruise=v_cruise, **kwargs)
   assert ctl.boost == pytest.approx(ctl.floor)
   return ctl
 
 
 def _plan(f):
   return np.asarray([f(t) for t in T_IDXS])
+
+
+def bound(vel, yaw=None, v_target=V_CRUISE, added=0.):
+  vel = np.asarray(vel, dtype=float)
+  yaw = np.zeros(len(T_IDXS)) if yaw is None else yaw
+  return c.envelope_bound(vel, yaw, plan_pos(vel), v_target, added)
+
+
+STOPPING = _plan(lambda t: max(V_EGO - 2. * t, 0.))
+BEND_AHEAD = _plan(lambda t: 1.5 / V_EGO if 5. <= t <= 8. else 0.)  # 1.5 m/s^2 at today's speed
 
 
 def test_friction_circle_matches_upstream():
@@ -62,23 +75,22 @@ def test_disabled_passes_model_through():
   ({"dec_active": True}, Inhibit.decActive),
 ])
 def test_idle_resets_at_once(kwargs, reason):
-  ctl = settled()
+  ctl = settled(deliver=True)
   assert run(ctl, 1, build_sm(V_EGO), a_model=0.05, **kwargs) == 0.05
-  assert (ctl.inhibit, ctl.authority, ctl.boost) == (reason, 0., 0.)
+  assert (ctl.inhibit, ctl.authority, ctl.boost, ctl.added) == (reason, 0., 0., 0.)
 
 
-def test_boosts_from_the_first_frame_at_the_rise_limit():
+def test_boosts_from_the_first_frame_at_the_rate_limit():
   ctl = new_controller()
-  boosts = [run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10.) - 0. for _ in range(SETTLE_FRAMES)]
-  assert boosts[0] == pytest.approx(c.BOOST_RISE * DT)
-  assert max(np.diff([0.] + boosts)) <= c.BOOST_RISE * DT + 1e-9
+  boosts = [run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10.) for _ in range(SETTLE_FRAMES)]
+  assert boosts[0] == pytest.approx(c.BOOST_RATE * DT)
+  assert max(np.diff([0.] + boosts)) <= c.BOOST_RATE * DT + 1e-9
   assert boosts[-1] == pytest.approx(c.FLOOR_MAX)
   assert ctl.inhibit == Inhibit.none
 
 
-def test_floor_closes_the_gap_like_stock_cruise():
-  ctl = settled()
-  assert ctl.boost == pytest.approx((V_CRUISE - V_EGO) / c.TAU)
+def test_floor_closes_the_gap():
+  assert settled().boost == pytest.approx((V_CRUISE - V_EGO) / c.TAU)
 
 
 @pytest.mark.parametrize("v, floor", [
@@ -108,19 +120,10 @@ def test_never_adds_throttle_at_set_speed():
   assert run(ctl, 5, build_sm(V_EGO), a_model=0.1, v_cruise=V_EGO - 1.) == pytest.approx(0.1)
 
 
-def test_backs_off_at_the_fall_limit():
-  ctl = settled()
-  start = ctl.boost
-  run(ctl, 1, build_sm(V_EGO), a_model=-0.5)
-  assert ctl.boost == pytest.approx(start - c.BOOST_FALL * DT)
-
-
 @pytest.mark.parametrize("sm_kwargs, update_kwargs, reason", [
   ({"lead": True}, {}, Inhibit.lead),
   ({"gas": True}, {}, Inhibit.driver),
   ({"brake": True}, {}, Inhibit.driver),
-  ({"should_stop": True}, {}, Inhibit.stop),
-  ({"plan_v": _plan(lambda t: max(V_EGO - 3. * t, 1.))}, {}, Inhibit.stop),
   ({"hard_brake": True}, {}, Inhibit.hardBrake),
   ({"force_decel": True}, {}, Inhibit.forceDecel),
   ({"lane_change": True}, {}, Inhibit.laneChange),
@@ -151,63 +154,96 @@ def test_leaving_dec_holds_like_a_hazard(kwargs, hold):
   assert run(ctl, 1, build_sm(V_EGO)) > 0.
 
 
-@pytest.mark.parametrize("mean_accel, bound", [
-  (0., c.FLOOR_MAX),
-  (-0.05, c.FLOOR_MAX / 2),
-  (-0.1, 0.),
-  (-0.2, 0.),
-])
-def test_plan_bound_reads_the_plans_average_slowdown(mean_accel, bound):
-  assert c.plan_bound(_plan(lambda t: V_EGO + mean_accel * t)) == pytest.approx(bound)
+def test_an_empty_road_does_not_limit_the_floor():
+  assert bound(np.full(len(T_IDXS), V_EGO)) > c.FLOOR_MAX
 
 
-def test_plan_bound_ignores_the_first_seconds_wander():
-  # a dip that is gone by PLAN_T[0] is the model's wander, not a slowdown
-  assert c.plan_bound(_plan(lambda t: V_EGO - (0.2 if t < c.PLAN_T[0] - 0.5 else 0.))) == pytest.approx(c.FLOOR_MAX)
+def test_the_model_wobbling_does_not_limit_the_floor():
+  # a 0.4 m/s dip and back, well under the target: not a slowdown
+  assert bound(_plan(lambda t: V_EGO - 0.4 * math.sin(math.pi * min(t, 4.) / 4.))) > c.FLOOR_MAX
+
+
+def test_a_stop_ahead_closes_the_envelope():
+  assert bound(STOPPING) < 0.
+
+
+def test_a_planned_slowdown_is_met_at_the_models_speed():
+  # the plan slows 3 m/s over 6 s: the boost may not take the car past it
+  slowing = _plan(lambda t: V_EGO - 0.5 * min(t, 6.))
+  assert bound(slowing) <= min(float(np.min((slowing[c.SLOWING_MASK] - V_EGO) / T_IDXS[c.SLOWING_MASK])), 0.) + 1e-9
+
+
+def test_a_bend_the_model_takes_slower_than_allowed_limits_the_boost():
+  assert bound(np.full(len(T_IDXS), V_EGO), BEND_AHEAD) < c.FLOOR_MAX
+  # a gentle one leaves the floor alone
+  assert bound(np.full(len(T_IDXS), V_EGO), BEND_AHEAD * 0.4 / 1.5) > c.FLOOR_MAX
 
 
 @pytest.mark.parametrize("offset", [1.0, -0.6])
-def test_plan_bound_is_relative_to_the_plan(offset):
+def test_envelope_is_relative_to_the_plan(offset):
   # the model reads vEgo a few percent off; a flat plan offset from it is not a slowdown
   ctl = settled()
   run(ctl, 1, build_sm(V_EGO, plan_v=V_EGO + offset))
   assert ctl.inhibit == Inhibit.none
 
 
-def test_a_slowing_plan_shrinks_the_boost_without_a_hold():
+def test_envelope_drops_at_once_and_recovers_through_the_filter():
   ctl = settled(v_cruise=V_EGO + 10.)
-  slowing = build_sm(V_EGO, plan_v=_plan(lambda t: V_EGO - 0.05 * t))
-  run(ctl, SETTLE_FRAMES, slowing, v_cruise=V_EGO + 10.)
-  assert ctl.inhibit == Inhibit.planSlowing
-  assert ctl.boost == pytest.approx(c.FLOOR_MAX / 2)
-  # the plan clears: recovers through the filter, no hold
-  run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10.)
-  assert ctl.boost > c.FLOOR_MAX / 2
-
-
-def test_bound_drops_at_once_and_recovers_through_the_filter():
-  ctl = settled(v_cruise=V_EGO + 10.)
-  run(ctl, 1, build_sm(V_EGO, plan_v=_plan(lambda t: V_EGO - 0.1 * t)), v_cruise=V_EGO + 10.)
-  assert ctl.bound == 0.
+  run(ctl, 1, build_sm(V_EGO, plan_v=STOPPING), v_cruise=V_EGO + 10.)
+  closed = ctl.bound
+  assert closed < 0.
   run(ctl, round(c.BOUND_TAU / DT), build_sm(V_EGO), v_cruise=V_EGO + 10.)
-  assert ctl.bound == pytest.approx(c.FLOOR_MAX * (1 - math.exp(-1.)), abs=0.02)
+  assert closed < ctl.bound < bound(np.full(len(T_IDXS), V_EGO), v_target=V_EGO + 10.)
 
 
-def test_curve_bound_limits_speed_into_a_bend():
-  flat = np.full(len(T_IDXS), V_EGO)
-  # a bend 6 s out tight enough for 1.2 m/s^2 at today's speed: no boost into it
-  assert c.curve_bound(flat, _plan(lambda t: 1.2 / V_EGO if t >= 6. else 0.), 0.) < 0.
-  # a gentle one far enough off leaves room
-  assert c.curve_bound(flat, _plan(lambda t: 0.5 / V_EGO if t >= 8. else 0.), 0.) > 0.
-  # turning harder than CURVE_LAT_ACCEL now: none
-  assert c.curve_bound(flat, np.zeros(len(T_IDXS)), c.CURVE_LAT_ACCEL + 0.1) == 0.
+def test_added_speed_counts_only_what_reached_the_car():
+  assert settled().added == 0.
+  ctl = settled(deliver=True)
+  assert ctl.added > 0.
+  # a lower candidate took over: none of the boost reached the car
+  before = ctl.added
+  ctl.update(build_sm(V_EGO), 0., V_CRUISE, **ENGAGED)
+  shed = ctl.added
+  ctl.delivered(-0.5)
+  assert ctl.added == shed < before
+  # another lift on top of ours counts only as ours
+  ctl.update(build_sm(V_EGO), 0., V_CRUISE, **ENGAGED)
+  shed = ctl.added
+  ctl.delivered(ctl.boost + 0.3)
+  assert ctl.added == pytest.approx(shed + ctl.boost * DT)
 
 
-def test_curve_ahead_reports_lateral():
-  ctl = settled(v_cruise=V_EGO + 10.)
-  run(ctl, 1, build_sm(V_EGO, yaw_rate=_plan(lambda t: 1.2 / V_EGO if t >= 6. else 0.)), v_cruise=V_EGO + 10.)
-  assert ctl.inhibit == Inhibit.lateral
-  assert ctl.boost == pytest.approx(c.FLOOR_MAX - c.BOOST_FALL * DT)
+def test_added_speed_is_shed_like_the_model_sheds_it():
+  ctl = settled(deliver=True)
+  added = ctl.added
+  run(ctl, 40, build_sm(V_EGO, lead=True), deliver=True)  # boost cut, nothing more added
+  before = ctl.added
+  run(ctl, 1, build_sm(V_EGO, lead=True), deliver=True)
+  assert ctl.added == pytest.approx(before * (1. - c.SHED_RATE * DT))
+  assert before < added + 1.
+
+
+def test_gives_back_what_it_added_before_a_stop():
+  ctl = settled(deliver=True)
+  run(ctl, 100, build_sm(V_EGO), deliver=True)
+  added = ctl.added
+  assert added > 0.5
+  boosts = []
+  for _ in range(200):
+    run(ctl, 1, build_sm(V_EGO, plan_v=STOPPING), deliver=True)
+    boosts.append(ctl.boost)
+  boosts = np.asarray(boosts)
+  # under the model, through the rate limit, never past what it put on
+  assert boosts.min() < 0.
+  assert np.abs(np.diff(boosts)).max() <= c.BOOST_RATE * DT + 1e-9
+  assert boosts.min() >= -c.GIVE_MAX - 1e-9
+  assert -boosts.sum() * DT <= added + 1e-6
+
+
+def test_gives_nothing_back_when_it_added_nothing():
+  ctl = settled()
+  run(ctl, 200, build_sm(V_EGO, plan_v=STOPPING))
+  assert ctl.boost == 0.
 
 
 def test_friction_circle_caps_the_floor():
@@ -234,6 +270,14 @@ def test_invalid_model_passes_through():
   md = messaging.new_message('modelV2')
   md.modelV2.velocity.x = [V_EGO] * 10
   md.modelV2.orientationRate.z = [0.] * 10
+  md.modelV2.position.x = [0.] * 10
   sm = {**build_sm(V_EGO), 'modelV2': md.modelV2.as_reader()}
   assert run(ctl, 1, sm, a_model=0.05) == 0.05
   assert ctl.inhibit == Inhibit.invalid
+
+
+def test_no_give_back_behind_a_lead():
+  ctl = settled(deliver=True)
+  run(ctl, 100, build_sm(V_EGO), deliver=True)
+  run(ctl, 200, build_sm(V_EGO, plan_v=STOPPING, lead=True), deliver=True)
+  assert ctl.boost == 0.
