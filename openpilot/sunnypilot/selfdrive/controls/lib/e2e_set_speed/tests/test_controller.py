@@ -83,11 +83,15 @@ def test_floor_closes_the_gap_like_stock_cruise():
   assert run(ctl, 40, build_sm(V_EGO), v_cruise=V_EGO + 10.) == pytest.approx(c.FLOOR_MAX)
 
 
-def test_floor_fades_in_above_walking_pace():
+@pytest.mark.parametrize("v, floor", [
+  ((c.MIN_SPEED + c.FULL_SPEED) / 2, c.FLOOR_MAX / 2),
+  (c.MIN_SPEED - 1., 0.),
+])
+def test_floor_fades_in_above_walking_pace(v, floor):
   ctl = armed()
-  v = (c.MIN_SPEED + c.FULL_SPEED) / 2
   run(ctl, 1, build_sm(v), v_cruise=v + 10.)
-  assert ctl.floor == pytest.approx(c.FLOOR_MAX / 2)
+  assert ctl.floor == pytest.approx(floor)
+  assert (ctl.inhibit, ctl.authority) == (Inhibit.none, 1.)
 
 
 def test_gain_fades_the_boost_as_the_model_slows():
@@ -132,7 +136,6 @@ def _plan(f):
   ({"force_decel": True}, {}, 0., Inhibit.forceDecel),
   ({"lane_change": True}, {}, 0., Inhibit.laneChange),
   ({}, {"fcw": True}, 0., Inhibit.fcw),
-  ({}, {"allow_throttle": False}, 0., Inhibit.coast),
   ({}, {}, -0.25, Inhibit.modelBraking),
   ({"plan_v": _plan(lambda t: V_EGO - 0.2 * t)}, {}, 0., Inhibit.planSlowing),
   ({"curvature": 1.2 / V_EGO ** 2}, {}, 0., Inhibit.lateral),
@@ -213,12 +216,6 @@ def test_leaving_dec_holds_like_a_hazard(kwargs, hold):
   assert ctl.authority > 0.
 
 
-def test_low_speed_trips():
-  ctl = armed()
-  run(ctl, 1, build_sm(c.MIN_SPEED - 1.))
-  assert ctl.inhibit == Inhibit.lowSpeed
-
-
 def test_single_frame_trip_freezes_authority_through_the_hold():
   ctl = armed()
   run(ctl, 1, build_sm(V_EGO, lead=True))
@@ -245,10 +242,12 @@ def test_friction_circle_caps_the_floor():
   assert ctl.floor == pytest.approx(math.sqrt(1.7 ** 2 - lat ** 2))
 
 
-def test_coast_caps_the_floor():
+@pytest.mark.parametrize("accel_coast", [0.2, -0.1])
+def test_coast_caps_the_floor(accel_coast):
   ctl = armed()
-  run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10., allow_throttle=False, accel_coast=0.2)
-  assert ctl.floor == pytest.approx(0.2)
+  assert run(ctl, 1, build_sm(V_EGO), v_cruise=V_EGO + 10., allow_throttle=False, accel_coast=accel_coast) == \
+    pytest.approx(max(accel_coast, 0.))
+  assert (ctl.inhibit, ctl.authority) == (Inhibit.none, 1.)
 
 
 def test_invalid_model_passes_through():

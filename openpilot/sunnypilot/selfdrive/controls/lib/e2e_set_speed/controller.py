@@ -20,7 +20,7 @@ floor approaches the target the way stock cruise does, gain fades the boost out 
 starts to decelerate, and authority drops on any sign of a purposeful slowdown and re-arms only
 after a hold. Without a lead nothing above the e2e candidate bounds it (the MPC's synthetic lead
 and the e2e cruise candidate both sit near +2 m/s^2), so the trips are the whole safety case.
-Design, data and the IQ.Pilot comparison: docs/zoompilot/e2e-set-speed.md.
+Design and data: docs/zoompilot/e2e-set-speed.md.
 """
 import math
 
@@ -85,7 +85,7 @@ LAT_MASK = T_IDXS <= LAT_HORIZON
 SLOWDOWN_MASK = T_IDXS <= PLAN_SLOWDOWN_T
 
 
-SOFT_TRIPS = (Inhibit.modelBraking, Inhibit.planSlowing, Inhibit.lateral, Inhibit.coast, Inhibit.lowSpeed)
+SOFT_TRIPS = (Inhibit.modelBraking, Inhibit.planSlowing, Inhibit.lateral)
 
 
 def plan_drop(vel: np.ndarray) -> float:
@@ -122,8 +122,8 @@ class E2ESetSpeedController:
       self.enabled = self.params.get_bool(PARAM)
 
   @staticmethod
-  def _trip(sm: messaging.SubMaster, a_model: float, v_ego: float, plan_drop: float, plan_min_v: float,
-            lat_accel: float, allow_throttle: bool, fcw: bool, rearming: bool):
+  def _trip(sm: messaging.SubMaster, a_model: float, plan_drop: float, plan_min_v: float, lat_accel: float,
+            fcw: bool, rearming: bool):
     CS, md, rs = sm['carState'], sm['modelV2'], sm['radarState']
     if rearming:
       brake_accel, slowdown, lat_max = MODEL_BRAKE_CLEAR, PLAN_SLOWDOWN_CLEAR, LAT_ACCEL_CLEAR
@@ -147,12 +147,8 @@ class E2ESetSpeedController:
       return Inhibit.planSlowing
     if lat_accel > lat_max:
       return Inhibit.lateral
-    if not allow_throttle:
-      return Inhibit.coast
     if md.meta.laneChangeState != LaneChangeState.off:
       return Inhibit.laneChange
-    if v_ego < MIN_SPEED:
-      return Inhibit.lowSpeed
     return None
 
   def update(self, sm: messaging.SubMaster, a_model: float, v_cruise: float, is_e2e: bool, reset_state: bool,
@@ -188,8 +184,7 @@ class E2ESetSpeedController:
     plan_drop_v = plan_drop(vel)
     plan_min_v = float(np.min(vel[LAT_MASK]))
 
-    trip = self._trip(sm, a_model, v_ego, plan_drop_v, plan_min_v, lat_accel, allow_throttle, fcw,
-                      rearming=self.authority < 1.)
+    trip = self._trip(sm, a_model, plan_drop_v, plan_min_v, lat_accel, fcw, rearming=self.authority < 1.)
     if trip is not None:
       # a slowdown in progress: planSlowing again within the hold of the last trip (not this run's)
       since_trip = self.frame - self.last_trip_frame

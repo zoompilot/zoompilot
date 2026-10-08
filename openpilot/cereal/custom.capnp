@@ -720,9 +720,9 @@ struct LongitudinalPlanZP @0xc3b0556e1118c2db {
       modelBraking @12;
       planSlowing @13;
       lateral @14;
-      coast @15;        # allow_throttle false
+      coast @15;        # retired 2026-10, older logs only
       laneChange @16;
-      lowSpeed @17;
+      lowSpeed @17;     # retired 2026-10, older logs only
     }
   }
 }

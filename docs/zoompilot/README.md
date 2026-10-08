@@ -18,7 +18,7 @@ repo.
 - cruise-arbiter.md: setpoint ownership, SLA sessions, dismiss semantics, the reconciler
 - icbm.md: the button servo, actuation profiles, fast mode, restore quiet window
 - e2e-set-speed.md: experimental mode's set-speed floor, the model's lazy pace, trips and their
-  separation data, IQ.Pilot's version
+  separation data, the rejected stateless blend
 - e2e-lead-gap.md: experimental mode's follow-distance assist, how far back the model follows,
   its speed-matching behaviour, the lift tied to the MPC candidate
 - lead-forecast.md: the model's lead forecast as the MPC obstacle, forecast accuracy against

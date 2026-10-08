@@ -42,8 +42,9 @@ gain  = interp(a_model, [-0.2, -0.05], [0, 1])
 `v_target` is the planner's target after SCC vision, SCC map and SLA, so curve and limit
 targets are never pushed past. Authority rises 1/s, falls 4/s on a trip, and freezes through a
 hold after the last trip: 3 s after a hazard (FCW, hard brake, forceDecel, stop, lead, driver,
-lane change), 0.5 s after the model's own slowdown signals (model braking, plan slowing, lateral,
-coast, low speed). Those re-arm only once clear of a wider band (model accel -0.1, plan drop
+lane change), 0.5 s after the model's own slowdown signals (model braking, plan slowing,
+lateral). Walking pace and coasting have no trip: the floor already fades out below 8 m/s and
+drops to the coast limit. The slowdown signals re-arm only once clear of a wider band (model accel -0.1, plan drop
 0.5 m/s, lateral 0.8 m/s^2) until authority is full again, and a plan-slowing trip within 3 s of
 the last trip is a slowdown in progress and gets the full hold. The boost rises at most 0.5 m/s^3.
 Off, not in e2e, long control reset, DEC active or invalid input: the model passes through
@@ -102,12 +103,15 @@ model accel under -0.05 held at full authority. If that is common, lower `FLOOR_
 
 ## Tried and rejected
 
-- IQ.Pilot's version (`git.konn3kt.com/IQ.Lvbs/IQ.Pilot`, `get_e2e_accel`, param
-  `expSpeedConv`): `min((v_cruise - v_ego) / 15, 0.5)` gated on a +-0.05 m/s^2 ramp of the
+- A stateless blend: `min((v_cruise - v_ego) / 15, 0.5)` gated on a +-0.05 m/s^2 ramp of the
   model's accel and on model v(5 s) against vEgo, no lead only. The ramp sits inside the model's
   wander, doubling jerk (rms 0.16 -> 0.33, p99 0.55 -> 1.25 m/s^3); it closes at the -0.05 the
   model pushes back with, leaving 3.5-4 mph; the vEgo comparison is biased open; and the hard
   cutoff on lead status steps the output when a vision lead flickers (half of them last under 1 s).
+- Gain ramps across the hysteresis bands instead of the bands (plan drop 0.5-0.75 m/s, lateral
+  0.8-1.0 m/s^2), which drops the re-arming state: a signal sitting in the band boosts at partial
+  gain instead of re-tripping, so the mean boost in the 5 s before a lateral trip rose 50% and
+  boost while the model asked to slow 25% (281 exp-mode segments, 10-08).
 - A -0.3 trip with an instant fall and no hold: the model spends 17% of cruise in (-0.3, -0.05]
   starting slowdowns, gates flicker and authority re-armed mid-decel; 21% of purposeful slowdowns
   overridden by more than 0.5 m/s.
