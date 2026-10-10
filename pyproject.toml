@@ -81,7 +81,6 @@ tools = [
 ]
 
 submodules = [
-  "jetlink",
   "msgq",
   "opendbc",
   "pandacan",
@@ -175,7 +174,6 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
-jetlink = { path = "jetlink_repo", editable = true }
 msgq = { path = "msgq_repo", editable = true }
 opendbc = { path = "opendbc_repo", editable = true }
 pandacan = { path = "panda", editable = true }

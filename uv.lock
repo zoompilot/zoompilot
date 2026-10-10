@@ -530,35 +530,6 @@ wheels = [
 ]
 
 [[package]]
-name = "jetlink"
-version = "0.4.3"
-source = { editable = "jetlink_repo" }
-dependencies = [
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cuda-python", marker = "extra == 'server'", specifier = ">=12.6,<13" },
-    { name = "cuda-python", marker = "extra == 'server-cu13'", specifier = ">=13,<14" },
-    { name = "cuda-python", marker = "extra == 'trt'", specifier = ">=12.6,<13" },
-    { name = "libusb1", marker = "extra == 'usb'", specifier = ">=3.0" },
-    { name = "numpy", specifier = ">=1.24" },
-    { name = "nvidia-ml-py", marker = "extra == 'nvml'", specifier = ">=12" },
-    { name = "onnx", marker = "extra == 'dev'", specifier = ">=1.16" },
-    { name = "onnx", marker = "extra == 'ort'", specifier = ">=1.16" },
-    { name = "onnx", marker = "extra == 'server'", specifier = ">=1.16" },
-    { name = "onnx", marker = "extra == 'server-cu13'", specifier = ">=1.16" },
-    { name = "onnx", marker = "extra == 'trt'", specifier = ">=1.16" },
-    { name = "onnxruntime", marker = "extra == 'ort'", specifier = ">=1.22" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7" },
-    { name = "ruff", marker = "extra == 'dev'" },
-    { name = "tensorrt-cu12", marker = "extra == 'trt'", specifier = ">=10.3" },
-    { name = "tinygrad", marker = "extra == 'tinygrad'", specifier = ">=0.11" },
-]
-provides-extras = ["usb", "server", "server-cu13", "trt", "ort", "tinygrad", "nvml", "dev"]
-
-[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -814,7 +785,6 @@ docs = [
     { name = "zensical" },
 ]
 submodules = [
-    { name = "jetlink" },
     { name = "msgq" },
     { name = "opendbc" },
     { name = "pandacan" },
@@ -861,7 +831,6 @@ requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'dev'" },
     { name = "inputs" },
     { name = "jeepney" },
-    { name = "jetlink", marker = "extra == 'submodules'", editable = "jetlink_repo" },
     { name = "matplotlib", marker = "extra == 'tools'" },
     { name = "msgq", marker = "extra == 'submodules'", editable = "msgq_repo" },
     { name = "numpy", specifier = ">=2.0" },
