@@ -339,7 +339,7 @@ restarts the controller's ramp from zero, which is the one command the panda acc
 the report lands one or two card cycles behind the refusal. Refused zero-torque frames are not
 counted: the tx hook refuses every LKA frame while the panda is not controlling, and a zero the
 controller already sent carries nothing it needs. The closed-loop test in
-`opendbc/safety/tests/test_mazda.py` runs the real controller through the compiled safety model
+`opendbc/car/mazda/tests/test_mazda_steering.py` runs the real controller through the compiled safety model
 with the report delayed one, two and three cycles and bounds the outage at the driver-sample
 staleness plus that delay (route 148's stale sample) and at exactly the delay for a lone reference
 reset, against the EPS's 60 frames; the same scenario starves the EPS for the rest of the run

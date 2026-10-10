@@ -236,8 +236,8 @@ stock state has to pass through idle once before `cruiseState.enabled` may follo
 
 The radar teardown silences the radar-owned CRZ_CTRL frame, so cruise state comes from PEDALS
 (0x165): ACC_OFF (bit 2) means MRCC is armed but idle, ACC_ACTIVE (bit 3) means engaged.
-Main follows arming and falls once both bits have been low for `MAIN_OFF_DEBOUNCE_T` (0.1 s, 10
-samples of the 100 Hz PEDALS frame), brake or no brake. Carstate counts PEDALS samples rather
+Main follows arming and falls once both bits have been low for `MAIN_OFF_DEBOUNCE_SAMPLES` (10
+samples of the 100 Hz PEDALS frame, 0.1 s), brake or no brake. Carstate counts PEDALS samples rather
 than its own frames, so it and the panda rx hook (`MAZDA_MAIN_OFF_DEBOUNCE`) drop main on the same
 sample. A main that falls on one side only is what produced "Controls Mismatch: Lateral" on
 route 000001c9--0b2a64a214 seg 0: main toggled at a red light with the brake held, the software
@@ -745,9 +745,9 @@ the dash lane indicators, so those two stay zeroed.
 | `STOCK_RADAR_GUARD_T` | 1.27 s | about 12x the longest stock gap (105.7 ms); the value every engaged drive ran on | 0000002d seg 28 |
 | `RADAR_SESSION_LIMIT_FRAMES` | 10.0 s | per-episode UDS budget | design |
 | `MAZDA_ENGAGE_BTN_WINDOW` | 10 CRZ_BTNS frames | press 30 to 70 ms before ACC_ACTIVE, 104 engagements | corpus |
-| `MAIN_OFF_DEBOUNCE_T` | 0.1 s (10 PEDALS samples) | no self-recovering both-low run in 4026 segments; main-off lands 0.1 s late | corpus |
+| `MAIN_OFF_DEBOUNCE_SAMPLES` | 10 PEDALS samples (0.1 s) | no self-recovering both-low run in 4026 segments; main-off lands 0.1 s late | corpus |
 | `CANCEL_SETTLE_T` | 0.2 s | the car answers its own cancels 60 to 90 ms after openpilot disengages on them; the request lasted 6 to 10 frames on all five wheel cancels | 00000260, 269, 26a, 26b |
-| `MAZDA_MAIN_OFF_DEBOUNCE` | 10 PEDALS samples | `MAIN_OFF_DEBOUNCE_T` on the 100 Hz PEDALS clock | derived |
+| `MAZDA_MAIN_OFF_DEBOUNCE` | 10 PEDALS samples | `MAIN_OFF_DEBOUNCE_SAMPLES` | derived |
 | `RESUME_UNLATCH_LATCHED_FRAMES` | 0.18 s (9 wire frames) | latched pulses 6 to 11 wire frames, mode 9 | 33-pulse census |
 | `RESUME_REPULSE_FRAMES` | 1.0 s | body answered all 10 pulses in 30 to 51 ms | 103, 115, 118, 11d, 12c, 132, 139, fe |
 | `RELEASE_DEBOUNCE_FRAMES` | 0.2 s | lead opening >= +0.31 m/s at all 23 stock latched pulses | corpus |
