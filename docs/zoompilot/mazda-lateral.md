@@ -502,6 +502,10 @@ long); `test_camera_tja_press_bytes`; the golden tx unchanged; mads `TestMadsTja
 
 ### The press-induced MRCC arm and the undo (built 2026-09-18, merged 2026-09-25, opendbc 74fdc8686f)
 
+The undo and the white wheel below live in `opendbc/sunnypilot/car/mazda/mads.py`
+(`MadsCarController` on the controller, `MadsCarState` decoding the TJA and MRCC buttons and the
+raw PEDALS arm, and the two frames' builders), as sunnypilot's other brands keep their MADS code.
+
 The arm cannot be prevented: the wheel's TJA frame reaches every bus-0 ECU directly, and PEDALS
 reflects it ~80 ms after the press edge. Left standing, it is cruise armed by a button the
 driver declared as the lateral switch, and it holds `mrcc off` false so the white wheel below
@@ -552,9 +556,8 @@ why the allowlist and the fail-closed default are the design (chinna244's findin
 the 2026-09-09 note above).
 
 The MRCC undo above is what makes the window reachable: without it, the press-induced arm
-keeps cruise-off false after the first press. Tests: `TestShipsDark` and `TestWhiteWheelGate`
-in `test_mazda_mads_white_wheel.py`, plus the mazdacan allowlist and interface raw-latch
-tests.
+keeps cruise-off false after the first press. Tests: `TestShipsDark`, `TestWhiteWheelGate` and
+the allowlist tests in `test_mazda_mads_white_wheel.py`, plus the interface raw-latch tests.
 
 ### The hands-on-wheel frame (mapped on the car 2026-09-30, route 00000267)
 
