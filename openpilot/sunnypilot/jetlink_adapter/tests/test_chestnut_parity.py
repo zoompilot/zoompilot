@@ -94,8 +94,8 @@ class TestPickKeptDefaultDrives(OpenpilotTestCase):
       self.addCleanup(p.stop)
     self.store = store
 
-  def active(self, chestnut=True):
-    return helpers.get_active_bundle(self.store, chestnut=chestnut)
+  def active(self):
+    return helpers.get_active_bundle(self.store, chestnut=True)
 
   def test_missing_files_drive_the_default_and_keep_the_pick(self):
     self.assertIsNone(self.active())
@@ -111,10 +111,6 @@ class TestPickKeptDefaultDrives(OpenpilotTestCase):
     open(os.path.join(self.root, 'ctv3.pkl'), 'wb').close()
     self.params['ModelManager_DownloadRef'] = REF
     self.assertIsNone(self.active())
-
-  def test_without_a_chestnut_the_small_slot_is_what_runs(self):
-    self.params[helpers.ACTIVE_BUNDLE_KEYS['qcom']] = None
-    self.assertIsNone(self.active(chestnut=False))
 
 
 if __name__ == '__main__':

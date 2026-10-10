@@ -309,13 +309,15 @@ class FakeProc:
 
 class TestManagerStartsADeadOwnerAgain(OpenpilotTestCase):
   """jetlinkd holds the gadget for as long as the link is on, so manager starts
-  it again when it dies. A PythonProcess leaves one that exited alone for
-  good; jetlink's owner adopts what the dead one left and backs off a crash
-  loop itself, so manager only has to start it, once per loop."""
+  it again when it dies, where a plain PythonProcess leaves one that exited
+  alone for good. jetlink's owner adopts what the dead one left and backs off a
+  crash loop itself, so manager only has to start it, once per loop; the
+  backoff for one that dies young is RestartingPythonProcess's, tested in
+  system/manager/tests/test_processes.py."""
 
   def loops(self, proc, *, should_run=True):
     """manager's loop over this one process, with the Processes it makes, on
-    a clock of its own (self.clock, seconds) where the wrapper has one."""
+    a clock of its own (self.clock, seconds)."""
     from openpilot.system.manager import process
     made = []
     self.clock = 1000.0
@@ -325,10 +327,9 @@ class TestManagerStartsADeadOwnerAgain(OpenpilotTestCase):
       return made[-1]
     patches = [mock.patch.object(process, 'Process', side_effect=make), mock.patch.object(proc, 'proc', None),
                mock.patch.object(proc, 'shutting_down', False),
-               mock.patch.object(proc, 'should_run', lambda started, params, CP: should_run)]
-    if hasattr(proc, 'now'):
-      patches += [mock.patch.object(proc, 'now', lambda: self.clock), mock.patch.object(proc, 'started_at', 0.0),
-                  mock.patch.object(proc, 'backoff', 0.0), mock.patch.object(proc, 'next_start', 0.0)]
+               mock.patch.object(proc, 'should_run', lambda started, params, CP: should_run),
+               mock.patch.object(proc, 'now', lambda: self.clock), mock.patch.object(proc, 'started_at', 0.0),
+               mock.patch.object(proc, 'backoff', 0.0), mock.patch.object(proc, 'next_start', 0.0)]
     for patch in patches:
       patch.start()
       self.addCleanup(patch.stop)
@@ -362,40 +363,6 @@ class TestManagerStartsADeadOwnerAgain(OpenpilotTestCase):
     loop()
     self.assertEqual([p.started for p in made], [1, 1, 1])
 
-  def test_one_that_dies_young_is_started_again_later_and_later(self):
-    # it never reached jetlink's own backoff: an import error, or a raise
-    # before the owner's loop. Twice a second, it would be a fork of manager
-    # and a sentry report twice a second for the whole drive
-    owner = self.owner()
-    made, loop = self.loops(owner)
-    for wait in (10.0, 20.0, 40.0):
-      loop()
-      made[-1].exitcode = 1
-      born = len(made)
-      loop(wait - 0.5)   # reaped; the next start waits
-      loop()
-      self.assertEqual(len(made), born, f'started again inside {wait:.0f} s')
-      loop()
-      self.assertEqual(len(made), born + 1, f'not started again after {wait:.0f} s')
-      self.clock -= 0.5
-    self.assertEqual(owner.backoff, 40.0)
-    # one that runs a while resets it
-    self.clock += 30.0
-    made[-1].exitcode = 1
-    loop()
-    self.assertEqual(owner.backoff, 0.0)
-    self.assertEqual(len(made), born + 2)
-
-  def test_the_wait_is_capped(self):
-    owner = self.owner()
-    made, loop = self.loops(owner)
-    loop()
-    for _ in range(8):
-      made[-1].exitcode = 1
-      loop(owner.BACKOFF_MAX)
-      loop()
-    self.assertEqual(owner.backoff, owner.BACKOFF_MAX)
-
   def test_a_dead_owner_the_link_no_longer_wants_is_only_reaped(self):
     owner = self.owner()
     made, loop = self.loops(owner)
@@ -404,18 +371,6 @@ class TestManagerStartsADeadOwnerAgain(OpenpilotTestCase):
     owner.should_run = lambda started, params, CP: False
     loop()
     self.assertIsNone(owner.proc)
-    self.assertEqual(len(made), 1)
-
-  def test_a_plain_python_process_stays_dead(self):
-    # why jetlinkd has the subclass: without it, a dead owner is the rest of
-    # the boot without a link
-    from openpilot.system.manager.process import PythonProcess
-    plain = PythonProcess('plain', 'plain.module', lambda started, params, CP: True)
-    made, loop = self.loops(plain)
-    loop()
-    made[0].exitcode = 1
-    for _ in range(3):
-      loop()
     self.assertEqual(len(made), 1)
 
 

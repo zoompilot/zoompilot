@@ -68,6 +68,16 @@ class TestRestartingProcess(OpenpilotTestCase):
     p.start()
     assert p.backoff == 0. and p.proc is not None
 
+  def test_backoff_is_capped(self):
+    p = FakeRestarting("fake", "openpilot.fake", always_run)
+    p.start()
+    for _ in range(8):
+      p.die()
+      p.start()
+      p.t = p.next_start
+      p.start()
+    assert p.backoff == p.BACKOFF_MAX
+
   def test_audio_processes_wait_for_the_sound_card(self):
     for name in ("micd", "soundd"):
       assert isinstance(managed_processes[name], AudioProcess), name
