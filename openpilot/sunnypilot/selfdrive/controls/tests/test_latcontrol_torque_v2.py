@@ -82,14 +82,11 @@ def friction_term(pid_log, v_ego, desired_curvature):
   return pid_log.f - desired_curvature * v_ego ** 2
 
 
-class NoKD(LatControlTorqueV2):
-  KD_SCHEDULE = 0.0
-
-
 def make_v0_equivalent(monkeypatch, friction=0.0):
   """v2 with its three shaping deltas neutralized: KD 0, deadzone 0, jerk filter identity."""
   monkeypatch.setattr(v2_module, 'get_center_chatter_jerk_deadzone', lambda v, s: 0.0)
-  v2 = make_lac(NoKD, friction=friction)
+  v2 = make_lac(LatControlTorqueV2, friction=friction)
+  v2.pid._k_d = ([0], [0.0])
   v2.jerk_filter.update = lambda x: x
   return v2
 

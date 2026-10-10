@@ -73,7 +73,7 @@ p90). The ramp cut replay release slew p90 from 29.4 to 14.7 /s.
 
 ### 3. Low-speed D term, gated while pressed
 
-`KD_SCHEDULE = [7.5, 10, 12, 14.5] m/s -> [1.65, 1.05, 0.85, 0.0]`, i.e. `kd = 0.3 s * KP(v)`,
+`KD_INTERP_SPEEDS = [7.5, 10, 12, 14.5] m/s -> KD_INTERP = [1.65, 1.05, 0.85, 0.0]`, i.e. `kd = 0.3 s * KP(v)`,
 capped below 7.5 m/s and zero by 14.5 m/s. The D input is `-measurement_rate` (v0 already
 feeds it; v0 keeps KD = 0) and is zeroed while `steeringPressed`, because the measured rate
 is then the driver's.

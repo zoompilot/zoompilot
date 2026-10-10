@@ -52,11 +52,11 @@ def get_center_chatter_jerk_deadzone(v_ego, setpoint):
 
 
 class LatControlTorque(LatControlTorqueV0):
-  # v0 already supplies negative measurement rate to the shared PID.
-  KD_SCHEDULE = [KD_INTERP_SPEEDS, KD_INTERP]
-
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
+    # v0 already supplies negative measurement rate to the shared PID; the extension holds the
+    # same PID object, so the schedule reaches it too
+    self.pid._k_d = [KD_INTERP_SPEEDS, KD_INTERP]
     # Buffer curvature and apply current v^2 on read to avoid speed-change artifacts in jerk.
     self.curvature_request_buffer = deque([0.] * self.lat_accel_request_buffer_len, maxlen=self.lat_accel_request_buffer_len)
     self.jerk_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
