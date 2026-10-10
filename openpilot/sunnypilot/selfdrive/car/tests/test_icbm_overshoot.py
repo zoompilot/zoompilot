@@ -113,18 +113,17 @@ class TestDecelOvershootIsALever:
   def run_frames(self, *args, icbm, **kwargs):
     return run_frames(icbm, *args, **kwargs)
 
-  def test_a_prompt_caps_the_dash_where_it_opened(self):
-    """A confirm prompt must not let the servo raise the dash past the limit and be adopted as
-    a confirm: a restore that falls due while the prompt is open waits, and the quiet window
-    restarts when it closes."""
+  def test_a_prompt_held_dash_is_not_a_stalled_stream(self):
+    """card's gate alone keeps a restore off the dash while a confirm prompt is open
+    (cruise_arbiter), so the dash stands still under the servo's up stream. That must not read
+    as a stalled stream and fall back to taps for the drive; the restore goes on once the
+    prompt closes."""
     icbm = self.make_icbm()
     self.run_frames(30, 30, n=60, icbm=icbm, v_ego_mph=30.)
-    sends = self.run_frames(40, 30, n=500, icbm=icbm, source='cruise', v_ego_mph=30.,
-                            session_state=SessionState.preActive)
-    up = (SendButtonState.increase, SendButtonState.increaseHold)
-    assert all(s not in up for s in sends), "restore raised the dash during the prompt"
-    sends = self.run_frames(40, 30, n=400, icbm=icbm, source='cruise', v_ego_mph=30.)
-    assert any(s in up for s in sends), "restore never resumed after the prompt"
+    self.run_frames(45, 30, n=500, icbm=icbm, source='cruise', v_ego_mph=30., session_state=SessionState.preActive)
+    assert not icbm.fast_faulted, "a prompt-held dash faulted the stream"
+    sends = self.run_frames(45, 30, n=100, icbm=icbm, source='cruise', v_ego_mph=30.)
+    assert any(s in (SendButtonState.increase, SendButtonState.increaseHold) for s in sends), "restore never resumed after the prompt"
 
   def test_a_limiter_descends_through_a_prompt(self):
     """A prompt is the driver's decision about the limit, not about the road: route 269 t=185

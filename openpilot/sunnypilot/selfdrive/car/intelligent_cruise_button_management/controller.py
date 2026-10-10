@@ -99,12 +99,9 @@ class IntelligentCruiseButtonManagement:
     self.is_ready = False
     self.is_ready_prev = False
     self.is_metric = False
-    # A pending SLA confirmation caps the dash where it was when the prompt opened, so a
-    # restore cannot raise it past the limit and be adopted as a confirm; down moves (a curve)
-    # go through. card also vetoes up moves from its same-frame session state, since this view
-    # is a message hop old.
+    # A pending SLA confirmation: card vetoes up moves while it is open (cruise_arbiter), so a
+    # dash that does not move then is not a stalled stream.
     self.prompting = False
-    self.prompt_ceiling: int | None = None
     self.overshoot_mph = 0.0
     self.limiter_active = False
 
@@ -180,10 +177,6 @@ class IntelligentCruiseButtonManagement:
     self.v_target_raw = round(LP_SP.vTarget * speed_conv)
     self.v_cruise_min = round(minimum_set_speed_ms(self.CP_SP, self.is_metric) * speed_conv)
     self.v_cruise_cluster = round(CS.cruiseState.speedCluster * speed_conv)
-    if not self.prompting:
-      self.prompt_ceiling = None
-    elif self.prompt_ceiling is None:
-      self.prompt_ceiling = self.v_cruise_cluster
 
     # Track driver setpoints exactly and apply a jitter band to generated targets.
     self.react_deadband = REACT_DEADBAND if self.limiter_active or self.overshoot_mph > 0 else 1
@@ -198,16 +191,11 @@ class IntelligentCruiseButtonManagement:
       if v_ahead - self.v_cruise_cluster >= self.react_deadband:
         self.v_target = min(self.v_target, v_ahead)
         self.dip_ahead = False
-    if self.prompt_ceiling is not None:
-      self.v_target = min(self.v_target, self.prompt_ceiling)
 
   def update_restore_quiet_timer(self) -> None:
-    # Measure stable restore demand against the unmodified target. Confirmation prompts
-    # reset the window so restoration still requires a full quiet period afterward.
+    # Measure stable restore demand against the unmodified target.
     up_error = self.v_target_raw - self.v_cruise_cluster
-    if self.prompting:
-      self.restore_quiet_timer = 0
-    elif up_error >= self.react_deadband and self.v_target_raw == self.v_target_raw_prev:
+    if up_error >= self.react_deadband and self.v_target_raw == self.v_target_raw_prev:
       self.restore_quiet_timer += 1
     else:
       self.restore_quiet_timer = 0
@@ -224,7 +212,7 @@ class IntelligentCruiseButtonManagement:
     elif self.fast_active:
       if remaining < FAST_MODE_MIN:
         self.fast_active = False
-      elif self.v_cruise_cluster != self.fast_last_cluster:
+      elif self.v_cruise_cluster != self.fast_last_cluster or self.prompting:
         self.fast_last_cluster = self.v_cruise_cluster
         self.fast_stall_frames = 0
       else:
