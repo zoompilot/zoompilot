@@ -22,7 +22,7 @@ previous v2 (routes 132, 139, 12d, 12f, 123, 124, 126) tied it to a felt improve
 ## What left, and where it went
 
 - Steer-limit classification and the EPS rail moved to the shared layer (`steer_limit.py`,
-  `LatControlTorqueExt.update_override_torque_params` setting `lac.steer_max`). The tune
+  `LatControlTorqueExtZP.update_override_torque_params` setting `lac.steer_max`). The tune
   receives `steer_limited_by_safety` meaning driver-limited only and keeps v0's freeze on it;
   the PID limits and v0's saturation check land at the rail with no tune code. This replaced
   the directional freeze, `_rail_limit_scale` and the rail-aware saturation block.

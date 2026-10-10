@@ -4,10 +4,10 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-The per-frame speed-dependent torque interpolation in LatControlTorqueExtOverride: the
+The per-frame speed-dependent torque interpolation in LatControlTorqueExtZP: the
 latAccelFactor and friction the controller reads, toggle-off behavior, manual override
-priority, its tune scale and change detection. Tested on the override directly (the class
-that owns the interpolation) rather than LatControlTorqueExt, which inherits from NNLC and
+priority, its tune scale and change detection. Tested on the override chain alone
+(conftest.TorqueParamsOverride) rather than LatControlTorqueExt, which inherits from NNLC and
 needs model files to init. The torqued message handling is in test_speed_dep_ext_update.py.
 """
 import numpy as np

@@ -6,8 +6,8 @@ justified them is here. Routes are the CX-5 2022 test car's unless stated. The a
 plan for the next on-car pass is in `lateral-tune-roadmap.md`.
 
 Files: `openpilot/sunnypilot/selfdrive/controls/lib/latcontrol_torque_v2.py` (the tune),
-`latcontrol_torque_ext.py` and `latcontrol_torque_ext_override.py` (the shared extension:
-EPS rail, speed-dependent torque), `steer_limit.py` (the classifier),
+`latcontrol_torque_ext_zp.py` (the fork layer on the shared extension:
+EPS rail, speed-dependent torque, manual override scale), `steer_limit.py` (the classifier),
 `controls_lateral_zp.py` (wiring), `openpilot/sunnypilot/selfdrive/locationd/speed_bin_learner.py` (the
 speed-bin learner and its cache), `openpilot/sunnypilot/selfdrive/car/interfaces.py` (the
 Mazda seed).
@@ -167,7 +167,7 @@ carOutput, so a starved EPS looks clean here; the carcontroller's non-delivery l
 Replay A/B of the directional freeze (routes 132/139): corner |i| falls 4 to 6x,
 stale-integrator-vs-error frames 59% -> 5%, open-loop output delta < 0.014.
 
-### EPS rail via `steer_max` (`latcontrol_torque_ext.py`)
+### EPS rail via `steer_max` (`latcontrol_torque_ext_zp.py`)
 
 `get_steer_rail_schedule(CP)` gives EPS_CEILING / STEER_MAX: on the CX-5 the rail falls
 monotonically from 1148/1200 = 0.96 below 8 m/s to 620/1200 = 0.52 from 14.5 m/s up. The
