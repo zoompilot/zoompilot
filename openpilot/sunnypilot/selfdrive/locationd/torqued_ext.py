@@ -51,7 +51,7 @@ class TorqueEstimatorExt(SpeedBinLearner):
 
       if self._params.get_bool("CustomTorqueParams"):
         # typed on upstream's tune scale, like the manual override they share with
-        from opendbc.sunnypilot.car.interfaces import get_tune_scale
+        from opendbc.sunnypilot.car.lateral_tune import get_tune_scale
         scale = get_tune_scale(self.CP)
         self.offline_latAccelFactor = float(self._params.get("TorqueParamsOverrideLatAccelFactor", return_default=True)) * scale
         self.offline_friction = float(self._params.get("TorqueParamsOverrideFriction", return_default=True)) / scale

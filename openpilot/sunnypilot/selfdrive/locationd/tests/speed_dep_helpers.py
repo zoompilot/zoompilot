@@ -12,7 +12,7 @@ import numpy as np
 
 import openpilot.cereal.messaging as messaging
 from opendbc.car.structs import car
-from opendbc.sunnypilot.car.interfaces import get_speed_dep_config
+from opendbc.sunnypilot.car.lateral_tune import get_speed_dep_config
 from openpilot.selfdrive.locationd.torqued import VERSION, MIN_FILTER_DECAY
 from openpilot.sunnypilot.selfdrive.locationd.speed_bin_learner import (
   DEFAULT_SPEED_BIN_BOUNDS, DEFAULT_SPEED_BIN_CENTERS, LIVE_TORQUE_PARAMETERS_SP_SERVICE, SpeedBinLearner,

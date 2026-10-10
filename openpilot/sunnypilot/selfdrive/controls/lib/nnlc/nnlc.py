@@ -9,7 +9,8 @@ import math
 import numpy as np
 
 from opendbc.car.lateral import FRICTION_THRESHOLD, get_friction
-from opendbc.sunnypilot.car.interfaces import LatControlInputs, get_tune_scale
+from opendbc.sunnypilot.car.interfaces import LatControlInputs
+from opendbc.sunnypilot.car.lateral_tune import get_tune_scale
 from opendbc.sunnypilot.car.lateral_ext import get_friction as get_friction_in_torque_space
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params

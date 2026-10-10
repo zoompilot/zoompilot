@@ -10,7 +10,7 @@ import numpy as np
 
 from openpilot.cereal import messaging, log, custom
 from opendbc.car.structs import car
-from opendbc.sunnypilot.car.interfaces import get_steer_rail_schedule
+from opendbc.sunnypilot.car.lateral_tune import get_steer_rail_schedule
 from openpilot.common.params import Params
 from openpilot.sunnypilot import jetlink_adapter
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness

@@ -9,7 +9,7 @@ import numpy as np
 import openpilot.cereal.messaging as messaging
 
 from opendbc.car import structs
-from opendbc.sunnypilot.car.interfaces import get_steer_slew_schedule
+from opendbc.sunnypilot.car.lateral_tune import get_steer_slew_schedule
 from openpilot.common.realtime import DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.locationd.speed_bin_learner import LIVE_TORQUE_PARAMETERS_SP_SERVICE

@@ -19,7 +19,7 @@ import pytest
 
 from opendbc.car.mazda.values import MazdaFlags
 from opendbc.car.structs import car
-from opendbc.sunnypilot.car.interfaces import get_steer_slew_schedule
+from opendbc.sunnypilot.car.lateral_tune import get_steer_slew_schedule
 from openpilot.cereal import custom
 from openpilot.common.params import Params
 from openpilot.common.prefix import OpenpilotPrefix

@@ -11,7 +11,7 @@ sanity bounds and the seed-validity gate on speed_dependent.toml entries.
 import numpy as np
 import pytest
 
-from opendbc.sunnypilot.car.interfaces import get_speed_dep_config, get_speed_dep_config_for_car
+from opendbc.sunnypilot.car.lateral_tune import get_speed_dep_config, get_speed_dep_config_for_car
 from openpilot.selfdrive.locationd import torqued
 from openpilot.selfdrive.locationd.torqued import TorqueEstimator
 from openpilot.sunnypilot.selfdrive.locationd import torqued_ext

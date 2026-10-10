@@ -76,7 +76,7 @@ class SpeedBinLearner:
     if not self.speed_binned:
       return
 
-    from opendbc.sunnypilot.car.interfaces import get_speed_dep_config_for_car
+    from opendbc.sunnypilot.car.lateral_tune import get_speed_dep_config_for_car
 
     cfg = get_speed_dep_config_for_car(self.CP)
     # the TOML entry's seed_version, bumped with a seed refresh to retire every cache learned

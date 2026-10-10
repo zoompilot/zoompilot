@@ -13,7 +13,7 @@ import pytest
 
 from opendbc.car import structs
 from opendbc.car.mazda.values import CAR, MazdaFlags
-from opendbc.sunnypilot.car.interfaces import get_steer_rail_schedule
+from opendbc.sunnypilot.car.lateral_tune import get_steer_rail_schedule
 from openpilot.selfdrive.ui.mici.onroad.torque_bar import TorqueBar
 from openpilot.selfdrive.ui.ui_state import ui_state
 

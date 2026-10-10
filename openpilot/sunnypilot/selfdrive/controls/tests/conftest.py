@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from opendbc.sunnypilot.car import interfaces as sp_interfaces
+from opendbc.sunnypilot.car import lateral_tune
 from openpilot.sunnypilot.selfdrive.controls.lib import latcontrol_torque_ext_override as override_module
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_override import LatControlTorqueExtOverride
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_zp import LatControlTorqueExtZP
@@ -40,5 +40,5 @@ def make_override(monkeypatch):
 def set_speed_dep_config(monkeypatch):
   """Replaces the speed_dependent.toml contents get_speed_dep_config_for_car reads."""
   def _set(cfg):
-    monkeypatch.setattr(sp_interfaces, "get_speed_dep_config", lambda: cfg)
+    monkeypatch.setattr(lateral_tune, "get_speed_dep_config", lambda: cfg)
   return _set
