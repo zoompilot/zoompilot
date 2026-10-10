@@ -9,7 +9,7 @@ Files: `openpilot/sunnypilot/selfdrive/controls/lib/latcontrol_torque_v2.py` (th
 `latcontrol_torque_ext_zp.py` (the fork layer on the shared extension:
 EPS rail, speed-dependent torque, manual override scale), `steer_limit.py` (the classifier),
 `controls_lateral_zp.py` (wiring), `openpilot/sunnypilot/selfdrive/locationd/speed_bin_learner.py` (the
-speed-bin learner and its cache), `openpilot/sunnypilot/selfdrive/car/interfaces.py` (the
+speed-bin learner and its cache), `openpilot/sunnypilot/selfdrive/car/mazda_torque_seed.py` (the
 Mazda seed).
 
 ## Lineage
@@ -18,7 +18,7 @@ Mazda seed).
 |---|---|---|
 | v0 | sunnypilot's `latcontrol_torque_v0.py`: setpoint == the live request, error corrected in lateral-accel space, the extension owning the feedforward params. Byte-identical to sunnypilot's; the only change it sees is the corrected `steer_limited_by_safety` flag from the classifier. | `TorqueControlTune = 0.0`, and any torque car with Enforce Torque Control off (`torque_tune.resolved_tune_versions`) |
 | v1 | sunnypilot's current `LatControlTorque` (the `lac` controlsd built), untouched | `TorqueControlTune = 1.0` |
-| v2 | v0 plus the four mechanisms below | `TorqueControlTune = 2.0`; seeded on steer-to-zero Mazdas by `_seed_mazda_torque_defaults` (`MAZDA_STEER_TO_ZERO_TORQUE_TUNE = 2.0`) |
+| v2 | v0 plus the four mechanisms below | `TorqueControlTune = 2.0`; seeded on steer-to-zero Mazdas by `seed_mazda_torque_defaults` (`MAZDA_STEER_TO_ZERO_TORQUE_TUNE = 2.0`) |
 
 `TorqueControlTune` is the small-model tune, declared default v0 (v2 on the seeded Mazdas).
 `TorqueControlTuneBig` picks the tune for a big model (chestnut or jetlink), declared default

@@ -11,8 +11,8 @@ Tests for the one-time steer-to-zero Mazda torque-control default seeding.
 from opendbc.car.mazda.values import MazdaFlags
 from opendbc.car.structs import car
 
-from openpilot.sunnypilot.selfdrive.car.interfaces import (MAZDA_STEER_TO_ZERO_TORQUE_TUNE, _seed_mazda_torque_defaults,
-                                                          seed_car_defaults_offroad)
+from openpilot.sunnypilot.selfdrive.car.mazda_torque_seed import (MAZDA_STEER_TO_ZERO_TORQUE_TUNE, seed_car_defaults_offroad,
+                                                                 seed_mazda_torque_defaults)
 
 CarParams = car.CarParams
 
@@ -62,28 +62,28 @@ def _non_mazda_cp():
 class TestMazdaTorqueDefaultsSeed:
   def test_steer_to_zero_mazda_gets_defaults(self):
     params = FakeParams()
-    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     for key in SEEDED_KEYS:
       assert params.get_bool(key) is True
     assert params.get_bool("MazdaTorqueDefaultsApplied") is True
 
   def test_pre_2022_mazda_not_seeded(self):
     params = FakeParams()
-    _seed_mazda_torque_defaults(_pre_2022_mazda_cp(), params)
+    seed_mazda_torque_defaults(_pre_2022_mazda_cp(), params)
     for key in SEEDED_KEYS:
       assert params.get_bool(key) is False
     assert params.get_bool("MazdaTorqueDefaultsApplied") is False
 
   def test_legacy_firmware_mazda_gets_defaults(self):
     params = FakeParams()
-    _seed_mazda_torque_defaults(_legacy_fw_cp(), params)
+    seed_mazda_torque_defaults(_legacy_fw_cp(), params)
     for key in SEEDED_KEYS:
       assert params.get_bool(key) is True
     assert params.get("TorqueControlTune") == MAZDA_STEER_TO_ZERO_TORQUE_TUNE
 
   def test_non_mazda_not_seeded(self):
     params = FakeParams()
-    _seed_mazda_torque_defaults(_non_mazda_cp(), params)
+    seed_mazda_torque_defaults(_non_mazda_cp(), params)
     for key in SEEDED_KEYS:
       assert params.get_bool(key) is False
     assert params.get_bool("MazdaTorqueDefaultsApplied") is False
@@ -91,7 +91,7 @@ class TestMazdaTorqueDefaultsSeed:
   def test_idempotent_respects_user_override(self):
     # Already applied once, and the user has since turned the toggles back off.
     params = FakeParams({"MazdaTorqueDefaultsApplied": True})
-    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     for key in SEEDED_KEYS:
       assert params.get_bool(key) is False  # not re-seeded
 
@@ -103,43 +103,43 @@ class TestMazdaTorqueTuneSeed:
 
   def test_unset_tune_is_seeded_to_v2(self):
     params = FakeParams()
-    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     assert params.get("TorqueControlTune") == 2.0
     assert params.get("MazdaTorqueTuneSeeded") == MAZDA_STEER_TO_ZERO_TORQUE_TUNE
 
   def test_manager_default_on_disk_is_overridden(self):
     # what every device looks like when card first runs: manager_init already wrote the 0.0 default
     params = FakeParams({"TorqueControlTune": 0.0})
-    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     assert params.get("TorqueControlTune") == 2.0
 
   def test_already_marked_device_still_gets_the_tune(self):
     # seeded before the tune was part of the seed: the toggle marker is set, the tune is not
     params = FakeParams({"MazdaTorqueDefaultsApplied": True, "TorqueControlTune": 0.0})
-    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     assert params.get("TorqueControlTune") == 2.0
     for key in SEEDED_KEYS:
       assert params.get_bool(key) is False  # toggles still not re-seeded
 
   def test_choice_made_after_the_seed_is_kept(self):
     params = FakeParams({"TorqueControlTune": 0.0, "MazdaTorqueTuneSeeded": MAZDA_STEER_TO_ZERO_TORQUE_TUNE})
-    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     assert params.get("TorqueControlTune") == 0.0
 
   def test_bumped_default_reseeds_once(self):
     # a marker from an older seeded version moves the device to the new default, once
     params = FakeParams({"TorqueControlTune": 1.0, "MazdaTorqueTuneSeeded": 1.0})
-    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     assert params.get("TorqueControlTune") == 2.0
     assert params.get("MazdaTorqueTuneSeeded") == 2.0
     params.put("TorqueControlTune", 0.0)
-    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     assert params.get("TorqueControlTune") == 0.0
 
   def test_other_cars_are_not_seeded(self):
     for cp in (_pre_2022_mazda_cp(), _non_mazda_cp()):
       params = FakeParams()
-      _seed_mazda_torque_defaults(cp, params)
+      seed_mazda_torque_defaults(cp, params)
       assert params.get("TorqueControlTune") is None
       assert params.get("MazdaTorqueTuneSeeded") is None
 

@@ -10,7 +10,7 @@ See the LICENSE.md file in the root directory for more details.
 # a bare params.get() returns None for an unset param, and float(None) raises, or, guarded,
 # can otherwise fall through to the upstream controller without an explicit error.
 # The small model's declared default is upstream's 0.0; the steer-to-zero Mazdas are seeded to
-# 2.0 by _seed_mazda_torque_defaults instead, so other brands never inherit a tune fitted to
+# 2.0 by seed_mazda_torque_defaults instead, so other brands never inherit a tune fitted to
 # that EPS. A big model's is v1 for every brand.
 #
 # The v0 constructor is patched out: these tests pin the branch that gets taken, not the
