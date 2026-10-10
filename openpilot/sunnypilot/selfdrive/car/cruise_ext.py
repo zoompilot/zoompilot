@@ -92,6 +92,12 @@ class VCruiseHelperSP:
     """CarParamsSP.pcmCruiseSpeed as it stands this frame: False while ICBM drives the set speed."""
     return not self.icbm_latch.active
 
+  @property
+  def op_owns_set_speed(self) -> bool:
+    """openpilot computes the set speed. Under ICBM the stock ECU steps it on SET- itself, so the
+    gas-override clip to vEgo would put v_cruise above the dash and ICBM would chase that."""
+    return not self.CP.pcmCruise or self.pcm_cruise_speed
+
   def read_custom_set_speed_params(self) -> None:
     self.custom_acc_enabled = self.params.get_bool("CustomAccIncrementsEnabled")
     self.short_increment = self.params.get("CustomAccShortPressIncrement", return_default=True)
