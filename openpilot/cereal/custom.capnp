@@ -498,7 +498,7 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
 
   bigModelAvailableDEPRECATED @3 :Bool;  # acceleratorState ready says it; ordinal kept for old logs
 
-  # Runtime state of an off-board accelerator (sunnypilot/accelerators). Offroad
+  # Runtime state of an off-board accelerator (sunnypilot/jetlink_adapter). Offroad
   # progress stays in the AcceleratorProgress param; telemetry waits for a customReserved slot.
   acceleratorState @4 :AcceleratorState;
   acceleratorNameDEPRECATED @5 :Text;  # always jetlink; ordinal kept for old logs

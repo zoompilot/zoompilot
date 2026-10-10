@@ -147,7 +147,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     // --- sunnypilot params --- //
 
-    // Accelerators: what runs the large model. See sunnypilot/accelerators/.
+    // Accelerators: what runs the large model. See sunnypilot/jetlink_adapter/.
     {"AcceleratorProgress", {CLEAR_ON_MANAGER_START, JSON}},
     {"Offroad_AcceleratorUnavailable", {CLEAR_ON_MANAGER_START, JSON}},
     // jetlink backend. JetlinkSpec carries whether the engine is built, which must

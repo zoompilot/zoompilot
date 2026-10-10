@@ -14,6 +14,7 @@ license requiring permission for use.
 | `LICENSE` | 2018, Comma.ai, Inc. | openpilot. MIT. |
 | `LICENSE.md` | 2024, Haibin Wen, SUNNYPILOT LLC | sunnypilot. A custom license: it permits viewing and modifying the software, and requires explicit written permission for commercial, for-profit, or closed source use. |
 | `opendbc_repo/LICENSE` | Comma.ai, Inc. | The opendbc submodule. MIT. |
+| `jetlink_repo/LICENSE` | 2026, Zeph Leggett | The jetlink submodule (the large-model link). MIT. |
 
 `LICENSE.md` is the most restrictive of these and governs the work as a whole. Redistributing
 zoompilot, modified or unmodified, means retaining that license notice and carrying the
