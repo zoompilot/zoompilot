@@ -51,7 +51,6 @@ class SteeringLayoutMici(NavScroller):
     super().__init__()
 
     # None forces the initial cleanup pass.
-    self._prev_torque_allowed: bool | None = None
     self._prev_mads_limited: bool | None = None
 
     # Cache state used by enable callbacks each frame.
@@ -221,14 +220,9 @@ class SteeringLayoutMici(NavScroller):
 
     self._nnlc_toggle.refresh()
 
+    # an angle car's torque params are cleared by ui_state's _enforce_constraints
     torque_allowed = self._torque_allowed = (ui_state.CP is not None and
                                              ui_state.CP.steerControlType != car.CarParams.SteerControlType.angle)
-    # Wait for fingerprinting before clearing torque settings to avoid racing seeded defaults.
-    if ui_state.CP is not None and not torque_allowed and self._prev_torque_allowed is not False:
-      ui_state.params.remove("EnforceTorqueControl")
-      ui_state.params.remove("NeuralNetworkLateralControl")
-      ui_state.params.remove("LateralJerkTorqueController")
-    self._prev_torque_allowed = torque_allowed
 
     mads_on = ui_state.params.get_bool("Mads")
     offroad = ui_state.is_offroad()
