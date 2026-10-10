@@ -70,6 +70,9 @@ class DisplayLayoutMici(NavScroller):
       picker_label_callback=_brightness_picker_label,
       picker_unit="%",
       picker_item_width=140,
+      description=tr("Screen brightness while driving, after the brightness delay.\n" +
+                     "Auto (dark) lets auto brightness go dimmer.\n" +
+                     "Alerts brighten the screen again."),
     )
     self._brightness_timer = BigParamOption(
       tr("brightness delay"), "OnroadScreenOffTimer",
@@ -78,6 +81,7 @@ class DisplayLayoutMici(NavScroller):
       label_callback=_timer_label,
       picker_label_callback=_timer_picker_label,
       picker_unit=_timer_picker_unit,
+      description=tr("How long to wait before the brightness setting applies."),
     )
     self._ui_timeout = BigParamOption(
       tr("ui timeout"), "InteractivityTimeout",
@@ -85,9 +89,13 @@ class DisplayLayoutMici(NavScroller):
       label_callback=_timeout_label,
       picker_label_callback=lambda v: tr("default") if not v else str(v),
       picker_unit=tr("seconds"),
+      description=tr("How long settings stay open without a touch.\n" +
+                     "Offroad, the screen then turns off, or the screen saver starts.\n" +
+                     "Default keeps the stock timing."),
     )
 
-    self._screensaver = BigParamControl(tr("screen saver"), "ScreenSaverEnabled")
+    self._screensaver = BigParamControl(tr("screen saver"), "ScreenSaverEnabled",
+                                        description=tr("Shows a screen saver when offroad and idle, instead of a dark screen."))
     # Match the TICI screen-saver range and one-minute step.
     self._screensaver_timeout = BigParamOption(
       tr("saver duration"), "ScreenSaverTimeout",
@@ -95,6 +103,7 @@ class DisplayLayoutMici(NavScroller):
       label_callback=_timer_label,
       picker_label_callback=_timer_picker_label,
       picker_unit=tr("minutes"),
+      description=tr("How long the screen saver runs before the screen turns off."),
     )
 
     self._scroller.add_widgets([self._brightness, self._brightness_timer, self._ui_timeout,

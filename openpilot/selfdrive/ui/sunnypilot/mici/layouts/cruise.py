@@ -60,8 +60,12 @@ class CruiseLayoutMici(NavScroller):
     self._alpha_long_btn = BigButtonSP(tr("alpha longitudinal"))
     alpha_long_view = AlphaLongitudinalLayoutMici()
     self._alpha_long_btn.set_click_callback(lambda: gui_app.push_widget(alpha_long_view))
-    self._scc_v_toggle = BigParamControlSP(tr("slow for curves: vision"), "SmartCruiseControlVision")
-    self._scc_m_toggle = BigParamControlSP(tr("slow for curves: map"), "SmartCruiseControlMap")
+    self._scc_v_toggle = BigParamControlSP(tr("slow for curves: vision"), "SmartCruiseControlVision",
+                                           description=tr("Slows for curves the camera sees, then resumes your set speed.\n" +
+                                                          "Works alone or with slow for curves: map."))
+    self._scc_m_toggle = BigParamControlSP(tr("slow for curves: map"), "SmartCruiseControlMap",
+                                           description=tr("Slows for curves in map data, then resumes your set speed.\n" +
+                                                          "Download maps in sunnylink first."))
     self._custom_acc_btn = BigButtonSP(tr("custom increments"))
     self._speed_limit_btn = BigButtonSP(tr("speed limit"))
 
@@ -74,23 +78,35 @@ class CruiseLayoutMici(NavScroller):
       self._speed_limit_btn, self._custom_acc_btn,
     ])
 
-    self._custom_acc_toggle = BigParamControlSP(tr("enable custom increments"), "CustomAccIncrementsEnabled")
+    self._custom_acc_toggle = BigParamControlSP(tr("enable custom increments"), "CustomAccIncrementsEnabled",
+                                                description=tr("Set how far a short press and a long press of + or - move your set speed."))
 
     def _speed_label(v):
       return f"{v} {speed_unit()}"
     self._acc_short = BigParamOption(tr("short press"), "CustomAccShortPressIncrement",
-                                     min_value=1, max_value=10, label_callback=_speed_label, picker_unit=speed_unit)
+                                     min_value=1, max_value=10, label_callback=_speed_label, picker_unit=speed_unit,
+                                     description=tr("How far one tap of + or - moves your set speed."))
     self._acc_long = BigParamOption(tr("long press"), "CustomAccLongPressIncrement",
                                     min_value=1, max_value=3, value_map=ACC_LONG_PRESS_MAP,
-                                    label_callback=_speed_label, picker_unit=speed_unit)
+                                    label_callback=_speed_label, picker_unit=speed_unit,
+                                    description=tr("How far holding + or - moves your set speed at each step."))
     self._acc_view = self._custom_acc_btn.link_sub_panel([self._custom_acc_toggle, self._acc_short, self._acc_long])
 
-    self._sl_mode = BigMultiParamToggleSP(tr("speed limit mode"), "SpeedLimitMode", SL_MODE_LABELS)
+    self._sl_mode = BigMultiParamToggleSP(tr("speed limit mode"), "SpeedLimitMode", SL_MODE_LABELS,
+                                          description=tr("Assist: when the limit changes, press - or + to set your speed to match.\n" +
+                                                         "Info and warn show the sign on a comma 3X only."))
     self._sl_mode.set_blocked_options(lambda: set() if ui_state.icbm_turn_on_allowed("SpeedLimitMode", True) else {SL_MODE_ASSIST})
-    self._sl_source = BigMultiParamToggleSP(tr("source"), "SpeedLimitPolicy", SL_SOURCE_LABELS)
-    self._sl_offset_type = BigMultiParamToggleSP(tr("offset type"), "SpeedLimitOffsetType", [tr("none"), tr("fixed"), "%"])
+    self._sl_source = BigMultiParamToggleSP(tr("source"), "SpeedLimitPolicy", SL_SOURCE_LABELS,
+                                            description=tr("Car uses the signs your car reads. Map uses downloaded maps.\n" +
+                                                           "Car-first and map-first use the other when the first has none.\n" +
+                                                           "Combined uses the lower of the two.\n" +
+                                                           "On a Mazda, car needs a nav SD card."))
+    self._sl_offset_type = BigMultiParamToggleSP(tr("offset type"), "SpeedLimitOffsetType", [tr("none"), tr("fixed"), "%"],
+                                                 description=tr("Adds an offset to the speed limit.\n" +
+                                                                "Fixed adds a set amount of speed. % adds a percentage of the limit."))
     self._sl_offset_value = BigParamOption(tr("offset value"), "SpeedLimitValueOffset",
-                                           min_value=-30, max_value=30, label_callback=_offset_label, picker_unit=_offset_unit)
+                                           min_value=-30, max_value=30, label_callback=_offset_label, picker_unit=_offset_unit,
+                                           description=tr("The amount added to the speed limit. Negative values go below it."))
     self._sl_view = self._speed_limit_btn.link_sub_panel([self._sl_mode, self._sl_source, self._sl_offset_type, self._sl_offset_value])
 
   def _update_state(self):

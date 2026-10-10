@@ -35,7 +35,10 @@ class AcceleratorLinkToggle(BigMultiToggle):
   the model buttons beside it: jetlink switches the link only parked."""
 
   def __init__(self):
-    super().__init__(tr("jetlink"), [tr(LINK_MODE_LABELS[m]) for m in LINK_MODES])
+    super().__init__(tr("jetlink"), [tr(LINK_MODE_LABELS[m]) for m in LINK_MODES],
+                     description=tr("Runs big models on a computer or phone plugged into the comma.\n" +
+                                    "USB for a Mac, Jetson, Linux PC or Android. iOS for an iPhone or iPad.\n" +
+                                    "Turns off ADB. The small model drives until the big model is ready."))
     self._mode = link_mode()
     self._show()
     self.set_enabled(lambda: ui_state.is_offroad())
@@ -134,20 +137,23 @@ class ModelsLayoutMici(NavScroller):
     self._was_downloading = False
     self._selection_source: str | None = None
 
-    self.select_model_btn = BigButton(tr("select model"))
+    self.select_model_btn = BigButton(tr("select model"), description=tr("Choose the driving model. Small models run on the comma.\n" +
+                                                                         "Big models run on a Chestnut or over Jetlink."))
     self.select_model_btn.set_click_callback(self._show_folders)
 
-    self.refresh_btn = BigButton(tr("refresh models"))
+    self.refresh_btn = BigButton(tr("refresh models"), description=tr("Fetches the latest list of driving models."))
     self.refresh_btn.set_click_callback(self._refresh_models)
     self._refresh_start: float | None = None
 
-    self.cancel_download_btn = BigButton(tr("cancel download"))
+    self.cancel_download_btn = BigButton(tr("cancel download"), description=tr("Stops the model download in progress."))
     self.cancel_download_btn.set_click_callback(lambda: ui_state.params.remove("ModelManager_DownloadRef"))
 
     self.link_toggle = AcceleratorLinkToggle()
     self.link_toggle.set_visible(link_toggle_meaningful())
 
-    self.clear_cache_btn = BigButton(tr("clear cache"), value=f"{model_cache_size_mb():.1f} MB")
+    self.clear_cache_btn = BigButton(tr("clear cache"), value=f"{model_cache_size_mb():.1f} MB",
+                                     description=tr("Deletes downloaded models to free up space.\n" +
+                                                    "Your selected small and big models are kept."))
     self.clear_cache_btn.set_click_callback(self._confirm_clear_cache)
     self._cache_size_time = 0.0
 

@@ -80,17 +80,23 @@ class SettingsLayoutSP(OP.SettingsLayout):
     sunnylink_btn = SunnylinkBigButton(tr("sunnylink"), "", gui_app.texture("../../sunnypilot/selfdrive/assets/icons_mici/sunnylink.png", 76, 44))
     sunnylink_btn.set_click_callback(lambda: gui_app.push_widget(sunnylink_panel))
 
+    always_offroad_desc = tr("Keeps the device offroad while the car is on, so zoompilot won't engage.\n" +
+                             "Settings that need the car off can be changed.")
+
     # onroad: enable button sits at the front (left of toggles)
-    self._enable_offroad_btn_onroad = BigCircleButton(self.icon_offroad_enable, red=True)
+    self._enable_offroad_btn_onroad = BigCircleButton(self.icon_offroad_enable, red=True, title=tr("enable always offroad"),
+                                                      description=always_offroad_desc)
     self._enable_offroad_btn_onroad.set_click_callback(lambda: self._handle_always_offroad(True))
     self._enable_offroad_btn_onroad.set_visible(lambda: ui_state.started and not ui_state.always_offroad)
 
     # offroad: enable button sits at the end (right of developer)
-    self._enable_offroad_btn_offroad = BigCircleButton(self.icon_offroad_enable, red=True)
+    self._enable_offroad_btn_offroad = BigCircleButton(self.icon_offroad_enable, red=True, title=tr("enable always offroad"),
+                                                       description=always_offroad_desc)
     self._enable_offroad_btn_offroad.set_click_callback(lambda: self._handle_always_offroad(True))
     self._enable_offroad_btn_offroad.set_visible(lambda: not ui_state.started and not ui_state.always_offroad)
 
-    self._disable_offroad_btn = BigCircleButton(self.icon_offroad_disable, red=False)
+    self._disable_offroad_btn = BigCircleButton(self.icon_offroad_disable, red=False, title=tr("exit always offroad"),
+                                                description=tr("Ends always offroad, so zoompilot can engage again."))
     self._disable_offroad_btn.set_click_callback(lambda: self._handle_always_offroad(False))
     self._disable_offroad_btn.set_visible(lambda: ui_state.always_offroad)
 

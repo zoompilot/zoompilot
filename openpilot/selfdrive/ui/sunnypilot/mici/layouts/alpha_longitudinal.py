@@ -22,11 +22,28 @@ class AlphaLongitudinalLayoutMici(NavScroller):
   def __init__(self):
     super().__init__()
 
-    self._alpha_long_toggle = BigToggle(tr("alpha longitudinal"), toggle_callback=self._on_alpha_long)
-    self._experimental_toggle = BigToggle(tr("experimental mode"), toggle_callback=self._on_experimental_mode)
-    self._dec_toggle = BigParamControlSP(tr("dynamic experimental control"), "DynamicExperimentalControl")
-    self._set_speed_toggle = BigParamControlSP(tr("speed assist"), "ExperimentalModeSetSpeed")
-    self._lead_gap_toggle = BigParamControlSP(tr("lead follow assist"), "ExperimentalModeLeadGap")
+    self._alpha_long_toggle = BigToggle(tr("alpha longitudinal"), toggle_callback=self._on_alpha_long,
+                                        description=tr("Lets zoompilot control the gas and brakes instead of stock cruise.\n" +
+                                                       "This may turn off Automatic Emergency Braking (AEB)."))
+    # upstream's row (TogglesLayoutMici), text and icon
+    self._experimental_toggle = BigToggle(tr("experimental mode"), toggle_callback=self._on_experimental_mode,
+                                          description_icon=gui_app.texture("icons_mici/experimental_mode.png", 64, 64),
+                                          description=tr("Let the driving model control gas and brakes.\n" +
+                                                         "Includes stopping for red lights and stop signs.\n" +
+                                                         "Set speed is a maximum, not a target.\n" +
+                                                         "These are alpha features. Expect mistakes.\n" +
+                                                         "The path colors show acceleration and braking."))
+    self._dec_toggle = BigParamControlSP(tr("dynamic experimental control"), "DynamicExperimentalControl",
+                                         description=tr("Switches between chill and Experimental Mode on its own.\n" +
+                                                        "Experimental for stops and slowdowns ahead, chill otherwise."))
+    self._set_speed_toggle = BigParamControlSP(tr("speed assist"), "ExperimentalModeSetSpeed",
+                                               description=tr("Experimental Mode often cruises below your set speed.\n" +
+                                                              "It gently raises your speed toward it when the road ahead is clear.\n" +
+                                                              "Does nothing while Dynamic Experimental Control is on."))
+    self._lead_gap_toggle = BigParamControlSP(tr("lead follow assist"), "ExperimentalModeLeadGap",
+                                              description=tr("Experimental Mode often follows farther back than your following distance.\n" +
+                                                             "It closes the gap behind a steady car, never closer than chill mode.\n" +
+                                                             "Does nothing while Dynamic Experimental Control is on."))
 
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),

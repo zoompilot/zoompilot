@@ -63,15 +63,20 @@ class SunnylinkLayoutMici(NavScroller):
 
     self._sunnylink_toggle = BigToggle(text=tr("enable sunnylink"),
                                        initial_state=self._sunnylink_enabled,
-                                       toggle_callback=self._sunnylink_toggle_callback)
+                                       toggle_callback=self._sunnylink_toggle_callback,
+                                       description=tr("Connects to sunnylink for backups, map downloads and remote settings.\n" +
+                                                      "Off stops all sunnylink requests."))
     self._sunnylink_sponsor_button = SunnylinkPairBigButton(sponsor_pairing=False)
     self._sunnylink_pair_button = SunnylinkPairBigButton(sponsor_pairing=True)
-    self._backup_btn = BigButton(tr("backup settings"), "")
+    self._backup_btn = BigButton(tr("backup settings"), "", description=tr("Saves your zoompilot settings to sunnylink."))
     self._backup_btn.set_click_callback(lambda: self._handle_backup_restore_btn(restore=False))
-    self._restore_btn = BigButton(tr("restore settings"), "")
+    self._restore_btn = BigButton(tr("restore settings"), "", description=tr("Restores your settings from your last sunnylink backup.\n" +
+                                                                             "Restart to apply them."))
     self._restore_btn.set_click_callback(lambda: self._handle_backup_restore_btn(restore=True))
     self._sunnylink_uploader_toggle = BigToggle(text=tr("sunnylink uploader"), initial_state=False,
-                                                toggle_callback=self._sunnylink_uploader_callback)
+                                                toggle_callback=self._sunnylink_uploader_callback,
+                                                description=tr("Uploads your driving data to sunnylink servers.\n" +
+                                                               "A test for the highest sponsor tiers. It does nothing for you yet."))
 
     self._scroller.add_widgets([
       self._sunnylink_info,
@@ -230,7 +235,12 @@ class SunnylinkLayoutMici(NavScroller):
 class SunnylinkPairBigButton(BigButton):
   def __init__(self, sponsor_pairing: bool = False):
     self.sponsor_pairing = sponsor_pairing
-    super().__init__("")
+    # the long-press dialog keeps the constructor's title; _update_state sets the shown one
+    if sponsor_pairing:
+      super().__init__(tr("pair"), description=tr("Pair your GitHub account to give this device your sponsor benefits."))
+    else:
+      super().__init__(tr("sponsor"), description=tr("Shows a QR code to sponsor sunnypilot, the project behind sunnylink.\n" +
+                                                     "Sponsors get early access to new sunnylink features."))
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     super()._handle_mouse_release(mouse_pos)

@@ -651,6 +651,29 @@ class TestLayoutsSurviveRender:
     render(MiciHomeLayoutSP())
 
 
+class TestRowDescriptions:
+  """A long press opens a row's description; a row without one only shakes."""
+
+  # toggles, developer and software keep upstream's rows; trips rows are read-only stats
+  @pytest.mark.parametrize(("module", "cls"), [t for t in LAYOUT_TARGETS if t[0] not in ("developer", "software", "toggles", "trips")])
+  def test_every_setting_has_a_description(self, params, module, cls):
+    import importlib
+    from openpilot.selfdrive.ui.mici.layouts.settings.settings import SettingsBigButton
+    from openpilot.selfdrive.ui.mici.widgets.button import BaseButton
+    from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigButtonSP, SubPanelSP
+
+    layout = getattr(importlib.import_module(f"openpilot.selfdrive.ui.sunnypilot.mici.layouts.{module}"), cls)()
+    rows = list(layout._scroller.items)
+    for view in vars(layout).values():
+      if isinstance(view, SubPanelSP):
+        rows += view._scroller.items
+    # rows that open a panel have none, like upstream's
+    settings = [r for r in rows if isinstance(r, BaseButton) and not isinstance(r, (BigButtonSP, SettingsBigButton))]
+    assert settings, f"{cls} has no setting rows, so this guard would pass vacuously"
+    missing = [getattr(r, "text", type(r).__name__) for r in settings if r._long_press_callback == r.trigger_shake]
+    assert not missing, f"{cls} rows without a description: {missing}"
+
+
 class TestAcceleratorProgressRenders:
   """the models panel's provisioning line; the layout sweep above runs with no progress set"""
 
