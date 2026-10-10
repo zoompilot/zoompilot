@@ -194,7 +194,7 @@ class ModularAssistiveDrivingSystem:
         self.events.remove(EventName.pcmEnable)
         self.events.remove(EventName.buttonEnable)
     else:
-      if self.main_enabled_toggle and not self.no_main_cruise:
+      if self.main_enabled_toggle and not self.button_owns_lateral:
         if CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available:
           self.events_sp.add(EventNameSP.lkasEnable)
 
