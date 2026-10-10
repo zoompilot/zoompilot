@@ -11,13 +11,13 @@ import pyray as rl
 from openpilot.cereal import custom
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigConfirmationDialog, BigDialog
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_selected_bundle
-from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigMultiToggle
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.ui_state import ui_state, device
-from openpilot.selfdrive.ui.sunnypilot.accelerator_link import big_model_note, big_model_progress, link_mode, link_toggle_meaningful, \
-  standin_model
+from openpilot.selfdrive.ui.sunnypilot.accelerator_link import big_model_note, big_model_progress, link_toggle_meaningful, standin_model
 from openpilot.selfdrive.ui.sunnypilot.model_info import (active_source, big_model_state, bundles_for_source, carrying_model,
                                                            default_model_name, model_cache_size_mb, model_info, queued_name,
                                                            refresh_in_progress, refresh_model_list)
+from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP
 from openpilot.sunnypilot.jetlink_adapter import KEYS, MODES
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.lib.multilang import tr
@@ -28,43 +28,6 @@ from openpilot.system.ui.widgets.scroller import NavScroller
 
 # the value line: the mode
 LINK_MODE_LABELS = {"off": "off", "usb": "usb", "ios": "iOS"}
-
-
-class AcceleratorLinkToggle(BigMultiToggle):
-  """off, usb, ios, a pill each, and the value line names the mode.
-  The pills follow the param, not a tap. Locked while onroad and drawn so, like
-  the model buttons beside it: jetlink switches the link only parked."""
-
-  def __init__(self):
-    super().__init__(tr("jetlink"), [tr(LINK_MODE_LABELS[m]) for m in MODES],
-                     description=tr("Runs big models on a computer or phone plugged into the comma.\n" +
-                                    "USB for a Mac, Jetson, Linux PC or Android. iOS for an iPhone or iPad.\n" +
-                                    "Turns off ADB. The small model drives until the big model is ready."))
-    self._mode = link_mode()
-    self._show()
-    self.set_enabled(lambda: ui_state.is_offroad())
-
-  def _show(self) -> None:
-    value = self._options[MODES.index(self._mode)]
-    if value != self.get_value():
-      self.set_value(value)
-
-  def _handle_mouse_release(self, mouse_pos) -> None:
-    BigButton._handle_mouse_release(self, mouse_pos)
-    if self.enabled:
-      self._mode = MODES[(MODES.index(self._mode) + 1) % len(MODES)]
-      ui_state.params.put(KEYS.link, MODES.index(self._mode), block=True)
-    self._show()
-
-  def _draw_content(self, btn_y: float) -> None:
-    BigButton._draw_content(self, btn_y)
-    x = self._rect.x + self._rect.width - self._txt_enabled_toggle.width
-    for i in range(len(MODES)):
-      self._draw_pill(x, btn_y + 35 * i, MODES[i] == self._mode)
-
-  def refresh(self) -> None:
-    self._mode = link_mode()
-    self._show()
 
 
 def _model_info() -> tuple[str, str, str]:
@@ -149,7 +112,13 @@ class ModelsLayoutMici(NavScroller):
     self.cancel_download_btn = BigButton(tr("cancel download"), description=tr("Stops the model download in progress."))
     self.cancel_download_btn.set_click_callback(lambda: ui_state.params.remove("ModelManager_DownloadRef"))
 
-    self.link_toggle = AcceleratorLinkToggle()
+    # the pills follow the param; locked onroad like the model buttons beside it: jetlink switches the link only parked
+    self.link_toggle = BigMultiParamToggleSP(tr("jetlink"), KEYS.link, [tr(LINK_MODE_LABELS[m]) for m in MODES],
+                                             values=list(range(len(MODES))),
+                                             description=tr("Runs big models on a computer or phone plugged into the comma.\n" +
+                                                            "USB for a Mac, Jetson, Linux PC or Android. iOS for an iPhone or iPad.\n" +
+                                                            "Turns off ADB. The small model drives until the big model is ready."))
+    self.link_toggle.set_enabled(lambda: ui_state.is_offroad())
     self.link_toggle.set_visible(link_toggle_meaningful())
 
     self.clear_cache_btn = BigButton(tr("clear cache"), value=f"{model_cache_size_mb():.1f} MB",

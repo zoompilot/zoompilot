@@ -877,6 +877,21 @@ class TestAcceleratorLinkToggle:
     status = jetlink_status(**fields) if installed or any(fields.values()) else None
     return mock.patch.object(ui_state, "jetlink", status)
 
+  @staticmethod
+  def _toggle():
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
+    return ModelsLayoutMici().link_toggle
+
+  @staticmethod
+  def _tap(widget):
+    """A press and a release through Widget.render, as a finger makes them."""
+    import time
+    from openpilot.system.ui.lib.application import MouseEvent, MousePos, gui_app
+    for pressed in (True, False):
+      event = MouseEvent(MousePos(10, 10), 0, pressed, not pressed, pressed, time.monotonic())
+      with mock.patch.object(gui_app, "_mouse_events", [event]):
+        render(widget)
+
   def _meaningful(self, **accelerators) -> bool:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import link_toggle_meaningful
     with self._accelerators(**accelerators):
@@ -897,10 +912,8 @@ class TestAcceleratorLinkToggle:
     assert self._meaningful(installed=True)
 
   def test_the_value_line_says_what_each_mode_is_for(self, params):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle
-
     params.remove(self.PARAM)
-    toggle = AcceleratorLinkToggle()
+    toggle = self._toggle()
     assert toggle.get_value() == "off"
     for index, value in enumerate(("off", "usb", "iOS")):
       params.put(self.PARAM, index, block=True)
@@ -926,7 +939,7 @@ class TestAcceleratorLinkToggle:
     assert not self._meaningful()
 
   def test_absent_reads_as_off(self, params):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import link_mode
+    from openpilot.selfdrive.ui.sunnypilot.accelerator_link import link_mode
 
     params.remove(self.PARAM)
     assert link_mode() == "off"
@@ -935,12 +948,11 @@ class TestAcceleratorLinkToggle:
       assert link_mode() == mode
 
   def test_tap_cycles_off_usb_ios(self, params):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle
     from openpilot.system.ui.lib.application import MousePos
 
     params.remove(self.PARAM)
-    toggle = AcceleratorLinkToggle()
-    assert toggle._mode == "off"
+    toggle = self._toggle()
+    assert toggle.get_value() == "off"
     # the small model is the model manager's: the toggle never touches the runner cache
     with mock.patch.object(params, "remove", wraps=params.remove) as remove, \
          mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=True):
@@ -950,32 +962,25 @@ class TestAcceleratorLinkToggle:
     assert "ModelRunnerTypeCache" not in {c.args[0] for c in remove.call_args_list}
 
   def test_refresh_follows_the_param(self, params):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle
-
     params.remove(self.PARAM)
-    toggle = AcceleratorLinkToggle()
+    toggle = self._toggle()
     params.put(self.PARAM, 2, block=True)
     toggle.refresh()
-    assert toggle._mode == "ios"
+    assert toggle.get_value() == "iOS"
 
   def test_link_toggle_cannot_change_after_ignition(self, params):
-    from unittest import mock
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle
-    from openpilot.system.ui.lib.application import MousePos
-
     params.put(self.PARAM, 2, block=True)
-    toggle = AcceleratorLinkToggle()
+    toggle = self._toggle()
     with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=False):
       # drawn disabled, as the model buttons beside it are onroad: a refused
       # tap used to animate with nothing changing
       assert not toggle.enabled
-      render(toggle)
-      toggle._handle_mouse_release(MousePos(0, 0))
+      self._tap(toggle)
       assert params.get(self.PARAM) == 2
-      assert toggle._mode == "ios", "the pills must not show a mode the param does not have"
+      assert toggle.get_value() == "iOS", "the pills must not show a mode the param does not have"
     with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=True):
       assert toggle.enabled
-      toggle._handle_mouse_release(MousePos(0, 0))
+      self._tap(toggle)
       assert params.get(self.PARAM) == 0
 
   def test_layout_hides_the_toggle_until_it_means_something(self, params):
