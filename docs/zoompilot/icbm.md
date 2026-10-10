@@ -125,9 +125,8 @@ servo's own sends.
 ## Actuation profile
 
 `ICBMActuationProfile` carries what the servo needs to know about a body ECU.
-`DEFAULT_PROFILE` is discrete taps only, no grid, no hold, no stable-setpoint
-requirement: the long-standing ICBM behaviour. A brand changes behaviour only by adding
-a measured entry.
+`DEFAULT_PROFILE` is discrete taps only, no hold, no stable-setpoint requirement: the
+long-standing ICBM behaviour. A brand changes behaviour only by adding a measured entry.
 
 Mazda CX-5 2022, from a 52-episode driver long-press corpus and an injected-press
 efficiency analysis over 674 rlog segments:
@@ -310,7 +309,6 @@ checked-out stack, so a baseline is the same command with `PYTHONPATH=<worktree>
 | `DECEL_OVERSHOOT_RISE` | 10 mph/s | full gap in ~0.5 s, inside `REACT_TIMER` | n/a |
 | `DECEL_OVERSHOOT_RELEASE` | 3 mph/s | no pumping between ECU decel stages | route 126 |
 | `tap_rate_hz` (mazda) | 5 Hz | 0.93 steps/press at 5 Hz vs 0.47 at ~9 Hz | 674 segments |
-| `longpress_step` / first / period (mazda) | 5 mph / 0.6 s / 0.55 s | physical hold grid | 52 episodes |
 | servo walk rate (mazda) | 4 mph/s | 294/294 steps at 1 mph; 4.1 hold, 3.8 taps | route 126 |
 
 ## Tried and rejected
