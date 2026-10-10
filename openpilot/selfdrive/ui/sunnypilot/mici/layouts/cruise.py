@@ -172,9 +172,6 @@ class CruiseLayoutMici(NavScroller):
   def _update_custom_acc_state(self):
     if not gui_app.widget_in_stack(self._acc_view):
       return
-    self._custom_acc_toggle.refresh()
-    self._acc_short.refresh()
-    self._acc_long.refresh()
     self._custom_acc_toggle.set_enabled(ui_state.icbm_turn_on_allowed("CustomAccIncrementsEnabled", not self._custom_acc_toggle._checked))
     # Lambda: short/long respond same-frame when toggle is tapped (see button.py docstring)
     self._acc_short.set_enabled(lambda: self._custom_acc_btn.enabled and self._custom_acc_toggle._checked)
@@ -198,13 +195,9 @@ class CruiseLayoutMici(NavScroller):
 
     if not gui_app.widget_in_stack(self._sl_view):
       return
-    self._sl_mode.refresh()
-    self._sl_source.refresh()
-    self._sl_offset_type.refresh()
     self._sl_mode.set_enabled(True)
     # nothing reads these with the mode off
     sl_on = self._sl_mode.value != SL_MODE_LABELS[SL_MODE_OFF]
     self._sl_source.set_superseded(not sl_on)
     self._sl_offset_type.set_superseded(not sl_on)
     self._sl_offset_value.set_enabled(sl_on and offset_type != 0)  # 0 = off/none
-    self._sl_offset_value.refresh()
