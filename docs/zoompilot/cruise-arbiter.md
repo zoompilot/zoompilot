@@ -3,8 +3,9 @@
 Code: `openpilot/sunnypilot/selfdrive/car/cruise_arbiter.py` (session and press
 classification), `cruise_ext.py` (increment hooks and the dash reconciler),
 `card_ext.py` (call sites), `controls/lib/speed_limit/assist_mirror.py` (plannerd mirror),
-`controls/lib/speed_limit/speed_limit_assist.py` (the pcm-op-long machine, unchanged
-upstream design). Tests: `car/tests/test_cruise_arbiter*.py`, `car/tests/test_icbm_reconcile.py`,
+`controls/lib/speed_limit/speed_limit_assist_zp.py` (the pcm-op-long machine: sunnypilot's
+unchanged, with our decel publication and announcements). Tests:
+`car/tests/test_cruise_arbiter*.py`, `car/tests/test_icbm_reconcile.py`,
 `car/tests/test_icbm_sla_*.py`, `speed_limit/tests/`.
 
 ## Setpoint ownership
@@ -13,7 +14,7 @@ There are three kinds of car, and the setpoint has a different owner on each.
 
 | class | CarParams | who steps the set speed | SLA session runs in |
 |---|---|---|---|
-| pcm-op-long | `openpilotLongitudinalControl and pcmCruise` | openpilot (set speed held at the required max) | plannerd, `SpeedLimitAssist` |
+| pcm-op-long | `openpilotLongitudinalControl and pcmCruise` | openpilot (set speed held at the required max) | plannerd, `SpeedLimitAssistZP` |
 | ICBM (stock ACC buttons) | `pcmCruise and not pcmCruiseSpeed` | the stock ECU, on every wheel press | card, `CruiseArbiter`; mirrored by plannerd |
 | op-long without pcmCruise | `not pcmCruise` | openpilot's `v_cruise` | card, `CruiseArbiter`; mirrored by plannerd |
 
@@ -49,7 +50,7 @@ as a not-yet-received message). `announceCounter` is bumped on alert-worthy tran
 and never un-bumped, so the 20 Hz mirror cannot miss one. Alert-worthy means a confirm,
 or a change in the speed the car settles at, `min(target, setpoint)` (`helpers.settle_conv`):
 a limit above a setpoint the car already holds is silent. The alert names that speed
-("Adjusting to 45 mph"). The plannerd machine (`speed_limit_assist.py`, driver-only setpoints)
+("Adjusting to 45 mph"). The plannerd machine (`speed_limit_assist_zp.py`, driver-only setpoints)
 uses the same helper; its prompt already caps the plan at the limit, so a confirm that changes
 nothing is silent there.
 

@@ -26,7 +26,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot 
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.assist_mirror import SpeedLimitAssistMirror
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import pcm_machine_owns_sla
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist_zp import SpeedLimitAssistZP
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.models.helpers import get_active_bundle
@@ -61,7 +61,7 @@ class LongitudinalPlannerSP:
     # else it runs in card (the cruise arbiter, next to the buttons and the setpoint) and
     # gets mirrored (speed_limit.helpers.pcm_machine_owns_sla). On Mazda alpha long the owner
     # follows card's ICBM decision, which only moves between engagements.
-    self.sla_machine = SpeedLimitAssist(CP, CP_SP) if pcm_machine_owns_sla(CP, icbm_active=False) else None
+    self.sla_machine = SpeedLimitAssistZP(CP, CP_SP) if pcm_machine_owns_sla(CP, icbm_active=False) else None
     self.sla_mirror = SpeedLimitAssistMirror(CP, CP_SP)
     self.sla = self._sla_owner(not CP_SP.pcmCruiseSpeed)
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None

@@ -9,7 +9,6 @@ import numpy as np
 from openpilot.cereal import custom
 from opendbc.car.structs import car
 from opendbc.car import structs
-from opendbc.car.interfaces import V_CRUISE_MAX
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
@@ -18,7 +17,7 @@ from openpilot.sunnypilot.selfdrive.car.cruise_arbiter import CruiseArbiter
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import icbm_demanded
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import minimum_set_speed_ms
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import IcbmLatch
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES as SESSION_ACTIVE_STATES, V_CRUISE_UNSET
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES as SESSION_ACTIVE_STATES
 
 ButtonType = car.CarState.ButtonEvent.Type
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
@@ -29,7 +28,9 @@ CRUISE_BUTTON_TIMER = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0,
                        ButtonType.setCruise: 0, ButtonType.resumeCruise: 0,
                        ButtonType.cancel: 0, ButtonType.mainCruise: 0}
 
-V_CRUISE_MIN = 8  # kph; selfdrive.car.cruise's V_CRUISE_MIN is not importable from here (cycle)
+V_CRUISE_MIN = 8
+V_CRUISE_MAX = 145
+V_CRUISE_UNSET = 255
 
 # Setpoint reconciliation for non-pcmCruiseSpeed (ICBM) cars: the stock ECU keeps the real
 # set speed and steps it on wheel presses while openpilot integrates the same presses, so
