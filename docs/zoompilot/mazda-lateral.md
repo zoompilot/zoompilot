@@ -434,7 +434,8 @@ after the controller pressed the camera's button, and the EPS applied none of ou
 no block and no fault. openpilot now never writes CRZ_BTNS on bus 2 (the panda refuses it), and
 the setting is read into `invalidLkasSetting` (both intervention bits clear, or LANE_LINES 0).
 With MADS on that holds lateral only (`stockLkasOff`, paused until LKA is back: "The car's own
-lane keep switched off" above); with MADS off it stays upstream's whole-system no-entry. The design below is kept as history.
+lane keep switched off" above); with MADS off it stays upstream's whole-system no-entry. The design below is kept as history;
+its leftovers (`stock_tja`, `Buttons.TJA`, and their tests) went on 2026-10-10.
 
 **1. Camera press on bus 2** (`CarController.update_camera_tja`, opendbc b697d69be6, removed). Carstate
 reads `stock_tja` live off the parsed 0x440 (0 when the camera is stale, never latched: the
