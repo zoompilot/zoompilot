@@ -8,7 +8,8 @@ from types import SimpleNamespace
 
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.system.manager.process import PythonProcess
-from openpilot.system.manager.process_config import AudioProcess, RestartingPythonProcess, always_run, managed_processes
+from openpilot.system.manager.process_config import always_run, managed_processes
+from openpilot.sunnypilot.system.manager.processes import AudioProcess, RestartingPythonProcess
 
 
 class FakeClock:
