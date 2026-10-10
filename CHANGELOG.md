@@ -52,6 +52,9 @@ zoompilot vUNRELEASED
 * CX-9 and other Mazdas without Auto Hold: alpha long fixed, stops release and resume again.
 * No creeping at a red light after stopping.
 
+**Boot**
+* The startup spinner is now the zoompilot logo, lit by a travelling glow.
+
 zoompilot v2026.09.12-14
 ========================
 * adjustments to address LKAS errors.

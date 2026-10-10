@@ -21,11 +21,16 @@ else:
   TEXTURE_SIZE = 140
   WRAPPED_SPACING = 10
   CENTERED_SPACING = 20
-DEGREES_PER_SECOND = 360.0  # one full rotation per second
 MARGIN_H = 100
 FONT_SIZE = 96
 LINE_HEIGHT = 104
 DARKGRAY = (55, 55, 55, 255)
+# travelling glow over the zoompilot logo: 75-frame 9x9 atlas, 1/30 s per frame
+GLOW_ASSET = "../../sunnypilot/selfdrive/assets/images/spinner_zoompilot_glow.png"
+GLOW_FRAMES = 75
+GLOW_GRID = 9
+GLOW_CELL = 180
+GLOW_FPS = 30.0
 
 
 def clamp(value, min_value, max_value):
@@ -35,9 +40,7 @@ def clamp(value, min_value, max_value):
 class Spinner(Widget):
   def __init__(self):
     super().__init__()
-    self._comma_texture = gui_app.texture("../../sunnypilot/selfdrive/assets/images/spinner_sunnypilot.png", TEXTURE_SIZE, TEXTURE_SIZE)
-    self._spinner_texture = gui_app.texture("images/spinner_track.png", TEXTURE_SIZE, TEXTURE_SIZE, alpha_premultiply=True)
-    self._rotation = 0.0
+    self._glow_atlas = gui_app.texture(GLOW_ASSET)
     self._progress: int | None = None
     self._wrapped_lines: list[str] = []
 
@@ -63,16 +66,10 @@ class Spinner(Widget):
 
     center = rl.Vector2(rect.width / 2.0, center_y)
     spinner_origin = rl.Vector2(TEXTURE_SIZE / 2.0, TEXTURE_SIZE / 2.0)
-    comma_position = rl.Vector2(center.x - TEXTURE_SIZE / 2.0, center.y - TEXTURE_SIZE / 2.0)
-
-    delta_time = rl.get_frame_time()
-    self._rotation = (self._rotation + DEGREES_PER_SECOND * delta_time) % 360.0
-
-    # Draw rotating spinner and static comma logo
-    rl.draw_texture_pro(self._spinner_texture, rl.Rectangle(0, 0, TEXTURE_SIZE, TEXTURE_SIZE),
-                        rl.Rectangle(center.x, center.y, TEXTURE_SIZE, TEXTURE_SIZE),
-                        spinner_origin, self._rotation, rl.WHITE)
-    rl.draw_texture_v(self._comma_texture, comma_position, rl.WHITE)
+    frame = int(rl.get_time() * GLOW_FPS) % GLOW_FRAMES
+    src = rl.Rectangle((frame % GLOW_GRID) * GLOW_CELL, (frame // GLOW_GRID) * GLOW_CELL, GLOW_CELL, GLOW_CELL)
+    rl.draw_texture_pro(self._glow_atlas, src, rl.Rectangle(center.x, center.y, TEXTURE_SIZE, TEXTURE_SIZE),
+                        spinner_origin, 0.0, rl.WHITE)
 
     # Display the progress bar or text based on user input
     if self._progress is not None:
