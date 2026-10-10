@@ -14,7 +14,7 @@ from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icb
 
 class UIStateZP:
   """zoompilot's additions to UIStateSP: jetlink's snapshot and the USB port it holds, the
-  torque bar's rail scale and the ICBM start lock."""
+  torque bar's rail scale, the ICBM start lock and the brand the settings gate on."""
 
   def __init__(self):
     self.icbm_start_locked: bool = False
@@ -85,6 +85,16 @@ class UIStateZP:
     model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
     running_big = self.sm.alive["modelV2"] and self.sm["modelV2"].big
     return ChestnutState(view.icon(self.started, model_seen, running_big, self._accelerator_state_name))
+
+  def offroad_brand(self) -> str:
+    """Brand for settings gating: the manual platform selection while offroad, CarParams otherwise."""
+    brand = ""
+    if self.is_offroad():
+      bundle = self.params.get("CarPlatformBundle")
+      brand = bundle.get("brand", "") if isinstance(bundle, dict) else ""
+    if not brand and self.CP is not None:
+      brand = self.CP.brand
+    return brand
 
   def _enforce_usb_port(self) -> None:
     """ADB and Jetlink both need the comma's USB port: the link

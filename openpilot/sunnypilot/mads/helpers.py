@@ -15,17 +15,6 @@ from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlags
 MADS_NO_ACC_MAIN_BUTTON = ("rivian", "tesla")
 
 
-def offroad_brand(params: Params, CP, offroad: bool) -> str:
-  """Brand for settings gating: the manual platform selection while offroad, CarParams otherwise."""
-  brand = ""
-  if offroad:
-    bundle = params.get("CarPlatformBundle")
-    brand = bundle.get("brand", "") if isinstance(bundle, dict) else ""
-  if not brand and CP is not None:
-    brand = CP.brand
-  return brand
-
-
 class MadsSteeringModeOnBrake:
   REMAIN_ACTIVE = 0
   PAUSE = 1

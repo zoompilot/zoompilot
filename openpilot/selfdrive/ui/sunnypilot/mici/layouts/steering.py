@@ -16,7 +16,7 @@ from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import (
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, get_mads_limited_brands, offroad_brand
+from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, get_mads_limited_brands
 from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AUTO_LANE_CHANGE_TIMER, AutoLaneChangeMode
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import LEVEL_OFF, read_level
 from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import TUNE_PARAM_BY_SIZE, jerk_aware_has_effect, versions_by_label
@@ -292,7 +292,7 @@ class SteeringLayoutMici(NavScroller):
 
   @staticmethod
   def _is_mazda() -> bool:
-    return offroad_brand(ui_state.params, ui_state.CP, ui_state.is_offroad()) == "mazda"
+    return ui_state.offroad_brand() == "mazda"
 
   @staticmethod
   def _bsm_applies(alc_val: int) -> bool:

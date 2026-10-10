@@ -9,7 +9,7 @@ import pyray as rl
 
 from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlagsSP
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, offroad_brand
+from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.network import NavButton
@@ -72,7 +72,7 @@ class MadsSettingsLayout(Widget):
       param="MazdaTjaButton",
       enabled=ui_state.is_offroad,
     )
-    self._tja_button_toggle.set_visible(lambda: offroad_brand(ui_state.params, ui_state.CP, ui_state.is_offroad()) == "mazda")
+    self._tja_button_toggle.set_visible(lambda: ui_state.offroad_brand() == "mazda")
 
     self.items = [
       self._main_cruise_toggle,
@@ -97,7 +97,13 @@ class MadsSettingsLayout(Widget):
 
   @staticmethod
   def _mads_limited_settings() -> bool:
-    brand = offroad_brand(ui_state.params, ui_state.CP, ui_state.is_offroad())
+    brand = ""
+    if ui_state.is_offroad():
+      bundle = ui_state.params.get("CarPlatformBundle")
+      if bundle:
+        brand = bundle.get("brand", "")
+    if not brand:
+      brand = ui_state.CP.brand if ui_state.CP is not None else ""
 
     if brand == "rivian":
       return True
