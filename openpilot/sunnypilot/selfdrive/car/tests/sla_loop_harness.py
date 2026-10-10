@@ -274,7 +274,8 @@ class Loop:
         self.helper.cruise_arbiter.fill_msg(session_msg)
         self.events_sp.clear()
         v_ego_mph = self.v_ego_mph if self.v_ego_mph is not None else self.helper.v_cruise_kph / self.u_kph
-        self.mirror.update(session_msg.zoompilot.cruiseSession, v_ego_mph * self.u_ms, 0., 0., self.events_sp)
+        self.mirror.session = session_msg.zoompilot.cruiseSession
+        self.mirror.update(True, False, v_ego_mph * self.u_ms, 0., 0., 0., 0., False, 0., self.events_sp)
         self.sla_events.extend((self.tick_n, e) for e in self.events_sp.events)
 
       # selfdrived: servo against the real dash; the session state it sees is the one

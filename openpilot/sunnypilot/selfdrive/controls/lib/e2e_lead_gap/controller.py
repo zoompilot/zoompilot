@@ -113,6 +113,15 @@ class E2ELeadGapController:
     if self.frame % self.params_frames == 0:
       self.enabled = self.params.get_bool(PARAM)
 
+  def fill(self, msg) -> None:
+    """Report into LongitudinalPlanZP.e2eLeadGap."""
+    msg.authority = float(self.authority)
+    msg.gain = float(self.gain)
+    msg.weight = float(self.weight)
+    msg.gapExcess = float(self.gap_excess)
+    msg.boost = float(self.boost)
+    msg.inhibit = self.inhibit
+
   def _lead_trip(self, sm: messaging.SubMaster):
     rs, md = sm['radarState'], sm['modelV2']
     lead = rs.leadOne

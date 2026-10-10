@@ -18,6 +18,11 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 SpeedLimitAssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
 
+def _update(mirror, session, v_ego: float, distance: float, a_ego: float) -> None:
+  mirror.session = session
+  mirror.update(True, False, v_ego, a_ego, 0., 0., 0., False, distance, EventsSP())
+
+
 class TestAssistMirrorDefaultMessage:
   """plannerd ignores carStateSP in its health checks, so the mirror can be fed capnp's
   default CruiseSession (vCap=0.0) before the first card message arrives or in process
@@ -30,14 +35,14 @@ class TestAssistMirrorDefaultMessage:
   def test_default_session_yields_unset(self):
     session = custom.CarStateSP.new_message().zoompilot.cruiseSession
     mirror = self._mirror()
-    mirror.update(session, v_ego=25.0, distance=0.0, a_ego=0.0, events_sp=EventsSP())
+    _update(mirror, session, v_ego=25.0, distance=0.0, a_ego=0.0)
     assert mirror.output_v_target == V_CRUISE_UNSET
 
   def test_real_cap_passes_through(self):
     session = custom.CarStateSP.new_message().zoompilot.cruiseSession
     session.vCap = 22.5
     mirror = self._mirror()
-    mirror.update(session, v_ego=20.0, distance=0.0, a_ego=0.0, events_sp=EventsSP())
+    _update(mirror, session, v_ego=20.0, distance=0.0, a_ego=0.0)
     assert mirror.output_v_target == pytest.approx(22.5)
 
   def test_active_cap_below_v_ego_publishes_required_decel(self):
@@ -48,7 +53,7 @@ class TestAssistMirrorDefaultMessage:
     # 25 -> 20 m/s over 150 m needs (400 - 625) / 300 = -0.75; the publication ramp
     # walks there at 2 m/s3, so run it to convergence
     for _ in range(20):
-      mirror.update(session, v_ego=25.0, distance=150.0, a_ego=0.0, events_sp=EventsSP())
+      _update(mirror, session, v_ego=25.0, distance=150.0, a_ego=0.0)
     assert mirror.output_a_target == pytest.approx(-0.75)
 
   def test_cap_decel_is_clipped_to_the_budget(self):
@@ -59,8 +64,8 @@ class TestAssistMirrorDefaultMessage:
     # on stock ACC it sizes the servo's gap, and a limit is a prediction on either: budget at most
     stock, op_long = self._mirror(), self._mirror(op_long=True)
     for _ in range(60):
-      stock.update(session, v_ego=25.0, distance=100.0, a_ego=0.0, events_sp=EventsSP())
-      op_long.update(session, v_ego=25.0, distance=100.0, a_ego=0.0, events_sp=EventsSP())
+      _update(stock, session, v_ego=25.0, distance=100.0, a_ego=0.0)
+      _update(op_long, session, v_ego=25.0, distance=100.0, a_ego=0.0)
     assert stock.output_a_target == pytest.approx(-stock.limits.a_budget)
     assert op_long.output_a_target == pytest.approx(-op_long.limits.a_budget)
     assert op_long.limits.a_budget < 2.0
@@ -69,5 +74,5 @@ class TestAssistMirrorDefaultMessage:
     session = custom.CarStateSP.new_message().zoompilot.cruiseSession
     session.vCap = 20.0  # cap present but session not active
     mirror = self._mirror()
-    mirror.update(session, v_ego=25.0, distance=150.0, a_ego=-0.2, events_sp=EventsSP())
+    _update(mirror, session, v_ego=25.0, distance=150.0, a_ego=-0.2)
     assert mirror.output_a_target == pytest.approx(-0.2)

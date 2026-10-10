@@ -106,12 +106,10 @@ class LongitudinalPlannerSP:
     if sla is not self.sla:
       sla.reset()
       self.sla = sla
-    if self.sla.pcm_op_long:
-      has_speed_limit = self.resolver.speed_limit_valid or self.resolver.speed_limit_last_valid
-      self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
-                      self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
-    else:
-      self.sla.update(sm['carStateSP'].zoompilot.cruiseSession, v_ego, self.resolver.distance, a_ego, self.events_sp)
+    self.sla_mirror.session = sm['carStateSP'].zoompilot.cruiseSession
+    has_speed_limit = self.resolver.speed_limit_valid or self.resolver.speed_limit_last_valid
+    self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
+                    self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
 
     targets = {
       LongitudinalPlanSource.cruise: (v_cruise, a_ego),
@@ -228,33 +226,10 @@ class LongitudinalPlannerSP:
     e2eAlerts.greenLightAlert = self.e2e_alerts_helper.green_light_alert
     e2eAlerts.leadDepartAlert = self.e2e_alerts_helper.lead_depart_alert
 
-    # zoompilot: experimental mode's set-speed floor
-    e2eSetSpeed = longitudinalPlanSP.zoompilot.e2eSetSpeed
-    e2eSetSpeed.authority = float(self.e2e_set_speed.authority)
-    e2eSetSpeed.gain = float(self.e2e_set_speed.gain)
-    e2eSetSpeed.floor = float(self.e2e_set_speed.floor)
-    e2eSetSpeed.boost = float(self.e2e_set_speed.boost)
-    e2eSetSpeed.inhibit = self.e2e_set_speed.inhibit
-    e2eSetSpeed.bound = float(self.e2e_set_speed.bound) if math.isfinite(self.e2e_set_speed.bound) else 0.
-    e2eSetSpeed.added = float(self.e2e_set_speed.added)
-
-    # zoompilot: experimental mode's follow-distance assist
-    e2eLeadGap = longitudinalPlanSP.zoompilot.e2eLeadGap
-    e2eLeadGap.authority = float(self.e2e_lead_gap.authority)
-    e2eLeadGap.gain = float(self.e2e_lead_gap.gain)
-    e2eLeadGap.weight = float(self.e2e_lead_gap.weight)
-    e2eLeadGap.gapExcess = float(self.e2e_lead_gap.gap_excess)
-    e2eLeadGap.boost = float(self.e2e_lead_gap.boost)
-    e2eLeadGap.inhibit = self.e2e_lead_gap.inhibit
-
-    # zoompilot: the model's lead forecast in the MPC
-    leadForecast = longitudinalPlanSP.zoompilot.leadForecast
-    for report, weight, inhibit, lead_xv in zip((leadForecast.leadOne, leadForecast.leadTwo), self.lead_forecast.weights,
-                                                self.lead_forecast.inhibits, self.lead_forecast.lead_xv, strict=True):
-      report.weight = float(weight)
-      report.inhibit = inhibit
-      if lead_xv is not None:
-        report.x = lead_xv[:, 0].tolist()
-        report.v = lead_xv[:, 1].tolist()
+    # zoompilot: experimental mode's set-speed floor and follow-distance assist, the model's lead forecast
+    zoompilot = longitudinalPlanSP.zoompilot
+    self.e2e_set_speed.fill(zoompilot.e2eSetSpeed)
+    self.e2e_lead_gap.fill(zoompilot.e2eLeadGap)
+    self.lead_forecast.fill(zoompilot.leadForecast)
 
     pm.send('longitudinalPlanSP', plan_sp_send)

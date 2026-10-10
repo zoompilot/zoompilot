@@ -133,6 +133,15 @@ class LeadForecast:
         if self.weights[i] == 0.:
           self.v_knots[i] = None
 
+  def fill(self, msg) -> None:
+    """Report into LongitudinalPlanZP.leadForecast: what the MPC got for each lead."""
+    for report, weight, inhibit, lead_xv in zip((msg.leadOne, msg.leadTwo), self.weights, self.inhibits, self.lead_xv, strict=True):
+      report.weight = float(weight)
+      report.inhibit = inhibit
+      if lead_xv is not None:
+        report.x = lead_xv[:, 0].tolist()
+        report.v = lead_xv[:, 1].tolist()
+
   def process_lead(self, lead) -> np.ndarray:
     i = self._calls
     self._calls += 1

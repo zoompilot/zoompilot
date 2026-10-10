@@ -170,6 +170,16 @@ class E2ESetSpeedController:
     if a_out < min(a_e2e, self.a_model) - 0.01:
       self.added *= 1. - self.dt / CONVERGE_T
 
+  def fill(self, msg) -> None:
+    """Report into LongitudinalPlanZP.e2eSetSpeed."""
+    msg.authority = float(self.authority)
+    msg.gain = float(self.gain)
+    msg.floor = float(self.floor)
+    msg.boost = float(self.boost)
+    msg.inhibit = self.inhibit
+    msg.bound = float(self.bound) if math.isfinite(self.bound) else 0.
+    msg.added = float(self.added)
+
   @staticmethod
   def _hazard(sm: messaging.SubMaster, fcw: bool):
     CS, md, rs, cs = sm['carState'], sm['modelV2'], sm['radarState'], sm['controlsState']

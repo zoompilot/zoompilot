@@ -33,10 +33,9 @@ _T_ACTIVE = float(ModelConstants.T_IDXS[CONTROL_N])
 
 
 class SpeedLimitAssistMirror:
-  pcm_op_long = False
-
   def __init__(self, CP, CP_SP):
     self.limits = get_planning_limits(CP)
+    self.session = None  # carStateSP.zoompilot.cruiseSession, set by the planner before each update
     self.reset()
 
   def reset(self) -> None:
@@ -61,7 +60,11 @@ class SpeedLimitAssistMirror:
     # session this class mirrors, so there is nothing to do here
     pass
 
-  def update(self, session, v_ego: float, distance: float, a_ego: float, events_sp: EventsSP) -> None:
+  def update(self, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float, v_cruise_cluster: float, speed_limit: float,
+             speed_limit_final_last: float, has_speed_limit: bool, distance: float, events_sp: EventsSP) -> None:
+    # SpeedLimitAssist's signature, so the planner calls either owner the same way; the limit
+    # inputs go unused, card's arbiter already applied them to the session
+    session = self.session
     self.state = session.state
     # the arbiter publishes vCap as a target, a frozen hold, or V_CRUISE_UNSET, never 0; a 0
     # is capnp's default from a not-yet-received carStateSP and would win the plan min()
