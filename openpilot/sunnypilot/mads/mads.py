@@ -9,10 +9,10 @@ from openpilot.cereal import log, custom
 
 from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
+from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from openpilot.common.params import Params
 from openpilot.selfdrive.selfdrived.events import ET
-from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON, \
-  mads_button_owns_lateral
+from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON
 from openpilot.sunnypilot.mads.state import StateMachine, GEARS_ALLOW_PAUSED_SILENT
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -60,9 +60,10 @@ class ModularAssistiveDrivingSystem:
     if self.CP.brand in MADS_NO_ACC_MAIN_BUTTON:
       self.no_main_cruise = True
 
-    # A declared button is the only lateral switch: engage regardless of ACC main, and keep
-    # ACC main from enabling or disabling. Mirrors the panda-side safety param.
-    self.button_owns_lateral = mads_button_owns_lateral(self.CP, self.CP_SP)
+    # A declared button (Mazda's TJA) is the only lateral switch: engage regardless of ACC main,
+    # keep ACC main from enabling or disabling, and leave unified engagement uncoupled from it.
+    # Mirrors the panda-side safety param.
+    self.button_owns_lateral = self.CP.brand == "mazda" and bool(self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON)
     if self.button_owns_lateral:
       self.allow_always = True
       self.no_main_cruise = True
