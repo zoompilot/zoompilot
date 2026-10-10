@@ -477,9 +477,9 @@ class TestTheUsbPort(UITest):
     self.assertEqual(self.set(adb=True, link=None), (True, False))
 
   def test_both_developer_panels_grey_adb_out(self):
-    from openpilot.selfdrive.ui.layouts.settings.developer import DeveloperLayout
-    from openpilot.selfdrive.ui.mici.layouts.settings.developer import DeveloperLayoutMici
-    tici, mici = DeveloperLayout(), DeveloperLayoutMici()
+    from openpilot.selfdrive.ui.sunnypilot.layouts.settings.developer import DeveloperLayoutSP
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
+    tici, mici = DeveloperLayoutSP(), DeveloperLayoutMiciSP()
     with mock.patch.object(self.ui, 'is_offroad', return_value=True):
       for link, enabled in ((False, True), (True, False)):
         self.set(adb=False, link=link)

@@ -27,6 +27,8 @@ PREBUILT_PATH = os.path.join(Paths.comma_home(), "prebuilt") if PC else "/data/o
 class DeveloperLayoutSP(DeveloperLayout):
   def __init__(self):
     super().__init__()
+    # Jetlink holds the USB port that ADB needs
+    self._adb_toggle.action_item.set_enabled(lambda: ui_state.is_offroad() and not ui_state.adb_blocked)
     # zoompilot: the alpha switch lives in the Alpha Longitudinal panel
     self._scroller._items.remove(self._alpha_long_toggle)
     self.error_log_path = os.path.join(Paths.crash_log_root(), "error.log")

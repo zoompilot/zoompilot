@@ -108,9 +108,9 @@ class DeveloperLayoutMici(NavScroller):
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ShowDebugInfo", self._debug_mode_toggle),
     )
-    onroad_blocked_toggles = (self._adb_toggle, self._joystick_toggle, self._alpha_long_toggle)
+    onroad_blocked_toggles = (self._adb_toggle, self._joystick_toggle)
     release_blocked_toggles = (self._joystick_toggle, self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
-    engaged_blocked_toggles = (self._long_maneuver_toggle, self._lat_maneuver_toggle)
+    engaged_blocked_toggles = (self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
 
     # Hide non-release toggles on release builds
     for item in release_blocked_toggles:
@@ -119,8 +119,6 @@ class DeveloperLayoutMici(NavScroller):
     # Disable toggles that require offroad
     for item in onroad_blocked_toggles:
       item.set_enabled(lambda: ui_state.is_offroad())
-    # Jetlink holds the USB port that ADB needs
-    self._adb_toggle.set_enabled(lambda: ui_state.is_offroad() and not ui_state.adb_blocked)
 
     # Disable toggles that require not engaged
     for item in engaged_blocked_toggles:
@@ -191,9 +189,8 @@ class DeveloperLayoutMici(NavScroller):
 
   def _on_alpha_long_enabled(self, state: bool):
     def do_toggle(_state: bool):
-      # param only: card watches for the change and requests the onroad cycle
-      # itself, after any radar hand-back the brand needs
       ui_state.params.put_bool("AlphaLongitudinalEnabled", _state, block=True)
+      restart_needed_callback()
       self._update_toggles()
 
     if state:

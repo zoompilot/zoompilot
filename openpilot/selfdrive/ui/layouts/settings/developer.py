@@ -44,8 +44,7 @@ class DeveloperLayout(Widget):
       description=lambda: tr(DESCRIPTIONS["enable_adb"]),
       initial_state=self._params.get_bool("AdbEnabled"),
       callback=self._on_enable_adb,
-      # Jetlink holds the USB port that ADB needs
-      enabled=lambda: ui_state.is_offroad() and not ui_state.adb_blocked,
+      enabled=ui_state.is_offroad,
     )
 
     # SSH enable toggle + SSH key management
@@ -84,7 +83,7 @@ class DeveloperLayout(Widget):
       description=lambda: tr(DESCRIPTIONS["alpha_longitudinal"]),
       initial_state=self._params.get_bool("AlphaLongitudinalEnabled"),
       callback=self._on_alpha_long_enabled,
-      enabled=ui_state.is_offroad,
+      enabled=lambda: not ui_state.engaged,
     )
 
     self._ui_debug_toggle = toggle_item(
@@ -121,6 +120,7 @@ class DeveloperLayout(Widget):
     ui_state.update_params()
 
     # Hide non-release toggles on release builds
+    # TODO: we can do an onroad cycle, but alpha long toggle requires a deinit function to re-enable radar and not fault
     for item in (self._joystick_toggle, self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle):
       item.set_visible(not self._is_release)
 
@@ -192,9 +192,8 @@ class DeveloperLayout(Widget):
     if state:
       def confirm_callback(result: DialogResult):
         if result == DialogResult.CONFIRM:
-          # param only: card watches for the change and requests the onroad cycle
-          # itself, after any radar hand-back the brand needs
           self._params.put_bool("AlphaLongitudinalEnabled", True, block=True)
+          self._params.put_bool("OnroadCycleRequested", True, block=True)
           self._update_toggles()
         else:
           self._alpha_long_toggle.action_item.set_state(False)
@@ -208,4 +207,5 @@ class DeveloperLayout(Widget):
 
     else:
       self._params.put_bool("AlphaLongitudinalEnabled", False, block=True)
+      self._params.put_bool("OnroadCycleRequested", True, block=True)
       self._update_toggles()
