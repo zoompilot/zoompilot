@@ -58,7 +58,7 @@ class TraceTest(OpenpilotTestCase):
     sd.sm['modelV2'].big = big
     sd.sm['modelDataV2SP'].acceleratorState = state
     # carState reaches selfdrived on its own socket, not through the SubMaster
-    sd.update_events(SimpleNamespace(standstill=standstill))
+    sd.update_events(SimpleNamespace(standstill=standstill, canValid=False))
     return ([EVENT_NAME[n] for n in sd.events.names], [EVENT_NAME_SP[n] for n in sd.events_sp.names])
 
 
