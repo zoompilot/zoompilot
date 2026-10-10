@@ -109,7 +109,6 @@ class ControlsLateralZP:
                      float(np.interp(v_ego, bp, up)), float(np.interp(v_ego, bp, down)),
                      rail_scale, self.steer_limited_by_safety, ext.last_error, ext.integrator)
     self.steer_limited_by_safety = limit.limited
-    ext.set_actuator_state(applied, limit.at_rail)
     self._applied_torque_prev = applied
 
   def lane_change_curvature(self, sm: messaging.SubMaster, lat_active: bool, v_ego: float,

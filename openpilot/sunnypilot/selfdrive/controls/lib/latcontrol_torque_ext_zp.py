@@ -40,9 +40,6 @@ class LatControlTorqueExtZP:
     # this frame's command, for controls_lateral_zp: update() only runs on active frames, so the
     # per-frame update_override_torque_params call clears the mark and update() sets it
     self._commanded = False
-    # what the carcontroller reported back, pushed by controls_lateral_zp after its classifier
-    self._applied_torque = 0.0
-    self._at_rail = False
 
   def rail_scale_at(self, v_ego: float) -> float:
     if self.steer_rail_schedule is None:
@@ -64,10 +61,6 @@ class LatControlTorqueExtZP:
   @property
   def integrator(self) -> float:
     return float(self._pid.i)
-
-  def set_actuator_state(self, applied_torque: float, at_rail: bool) -> None:
-    self._applied_torque = applied_torque
-    self._at_rail = at_rail
 
   @staticmethod
   def _write_torque_params(torque_params, prev, lat_accel_factor: float, friction: float) -> bool:

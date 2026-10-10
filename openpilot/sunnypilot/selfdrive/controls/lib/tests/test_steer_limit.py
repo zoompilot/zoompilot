@@ -189,8 +189,7 @@ class TestControlsdWiring:
   def _stub(flag=True, lat_active=True, slew=CX5_SLEW, rail=([0.0], [0.6]), commanded=0.40, applied_prev=None,
             with_extension=True, error=0.2, integrator=0.3):
     ext = SimpleNamespace(commanded_torque=commanded, steer_rail_schedule=rail, last_error=error, integrator=integrator,
-                          rail_scale_at=lambda v: float(np.interp(v, rail[0], rail[1])) if rail else 1.0,
-                          set_actuator_state=MagicMock())
+                          rail_scale_at=lambda v: float(np.interp(v, rail[0], rail[1])) if rail else 1.0)
     lac = SimpleNamespace(extension=ext) if with_extension else SimpleNamespace()
     return SimpleNamespace(LaC=lac, _steer_slew_schedule=slew, _lat_active_last=lat_active,
                            _applied_torque_prev=applied_prev, steer_limited_by_safety=flag)
@@ -205,18 +204,16 @@ class TestControlsdWiring:
     ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is True
     assert stub._applied_torque_prev == 0.30
-    stub.LaC.extension.set_actuator_state.assert_called_once_with(0.30, False)
 
   def test_decaying_integrator_releases_the_flag(self):
     stub = self._stub(commanded=0.40, applied_prev=0.29, error=-0.2, integrator=0.3)
     ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is False
 
-  def test_rail_clears_the_flag_and_reaches_the_extension(self):
+  def test_rail_clears_the_flag(self):
     stub = self._stub(commanded=0.90, applied_prev=0.60, error=0.2, integrator=0.3)
     ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.60))
     assert stub.steer_limited_by_safety is False
-    stub.LaC.extension.set_actuator_state.assert_called_once_with(0.60, True)
 
   def test_first_active_frame_keeps_the_upstream_flag(self):
     for flag in (True, False):
@@ -229,7 +226,7 @@ class TestControlsdWiring:
     stub = self._stub(slew=None, commanded=0.40, applied_prev=0.29, error=-0.2, integrator=0.3)
     ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is True
-    stub.LaC.extension.set_actuator_state.assert_not_called()
+    assert stub._applied_torque_prev == 0.29
 
   def test_controller_without_extension_is_a_passthrough(self):
     # angle and PID controllers carry no torque extension
@@ -242,7 +239,6 @@ class TestControlsdWiring:
     ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is True
     assert stub._applied_torque_prev is None
-    stub.LaC.extension.set_actuator_state.assert_not_called()
 
   def test_angle_cars_get_no_slew_schedule(self, params):
     params.put('CarParamsSP', custom.CarParamsSP.new_message().to_bytes())
