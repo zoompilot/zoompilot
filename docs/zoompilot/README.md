@@ -3,7 +3,7 @@
 Findings behind the fork's constants and design choices, kept out of the code comments.
 Each file carries a Constants table (name, value, measurement, route) and a Tried and
 rejected section. Rlogs and the analysis scripts live in the private zoompilot-research
-repo.
+repo; a `tools/mazda_long/...` path in these notes is relative to that repo.
 
 - mazda-longitudinal.md: radar takeover and hand-back, CRZ_INFO checksum, stop-and-go,
   MRCC state semantics, alpha-long availability
