@@ -14,7 +14,7 @@ When your comma device asks for a custom software URL during setup, type:
 zoompilot/main
 ```
 
-`main` carries the releases, built ahead of time so the device doesn't have to compile on install. `develop` is where the day to day work lands if you want it earlier. Devices installed from my old personal fork move themselves to `main` on their next start.
+`main` carries the releases, built ahead of time so the device doesn't have to compile on install. `develop` is where the day to day work lands if you want it earlier.
 
 **This is experimental software.** You drive the car, you follow the law where you live, and you carry the risk. It ships with no warranty and no liability for any damage or injury.
 
@@ -62,10 +62,10 @@ Not just the CX-5.
 
 1. Factory-reset the device before you install. A clean device carries no stale settings from a previous fork.
 2. Pick a driving model. I run Firehose. DTRv6 is a favourite and MacroStiff is great at high speed.
-3. Under steering: turn on torque control, then self-tune, then speed-dependent self-tune.
+3. Under steering: turn on torque control, then self-tune. Speed-dependent tuning comes with self-tune.
 4. Leave custom tune and manual real-time off. Let the car teach the software. That's the point.
 
-Want to slow down for curves? Under cruise, turn on intelligent cruise button management, then turn on slow for curves: vision, map, or both. Maps need a region downloaded through SunnyLink first.
+Want to slow down for curves? Under cruise, turn on slow for curves: vision, map, or both. Maps need a region downloaded through SunnyLink first.
 
 You can manage almost all of it from the device screen. No laptop, no cloud editor. SunnyLink still works if you like it.
 
