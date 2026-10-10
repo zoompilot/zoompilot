@@ -134,6 +134,7 @@ def main() -> NoReturn:
   build_metadata = get_build_metadata()
   comma_remote = build_metadata.openpilot.comma_remote and "commaai" in build_metadata.openpilot.git_origin
   should_report = comma_remote and is_registered_device() and not PC
+  should_report = should_report or not PC  # zoompilot: keep native crash tombstones on every origin, as sentry did
 
   # Clear apport folder on start, otherwise duplicate crashes won't register
   clear_apport_folder()
