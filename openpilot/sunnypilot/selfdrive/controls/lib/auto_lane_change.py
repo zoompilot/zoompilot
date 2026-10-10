@@ -8,7 +8,7 @@ from openpilot.cereal import log
 
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
-from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import lane_change_time_extra, read_level
+from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import LEVEL_TIME_EXTRA, read_level
 
 
 class AutoLaneChangeMode:
@@ -65,7 +65,7 @@ class AutoLaneChangeController:
     self.lane_change_bsm_delay = self.params.get_bool("AutoLaneChangeBsmDelay")
     self.lane_change_set_timer = self.params.get("AutoLaneChangeTimer", return_default=True)
     # a smoothed (slower) lane change must not be aborted mid-maneuver by the stock cap
-    self.lane_change_time_extra = lane_change_time_extra(read_level(self.params))
+    self.lane_change_time_extra = LEVEL_TIME_EXTRA[read_level(self.params)]
 
   def update_params(self) -> None:
     if self.param_read_counter % 50 == 0:

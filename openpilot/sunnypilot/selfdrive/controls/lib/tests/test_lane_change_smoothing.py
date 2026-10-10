@@ -15,7 +15,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature, MAX_LATERAL_JERK
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import (
-  LaneChangeSmoothing, clip_curvature_rate, level_jerk_factor, lane_change_time_extra, read_level,
+  LaneChangeSmoothing, clip_curvature_rate, read_level, LEVEL_JERK_FACTOR, LEVEL_TIME_EXTRA,
   LEVELS, LEVEL_OFF, LEVEL_FAST, LEVEL_MEDIUM, LEVEL_EXTRA_SLOW, UNWIND_JERK_MAX, SMOOTH_RELEASE_T,
 )
 
@@ -48,14 +48,14 @@ class TestLevelMapping:
   def test_every_level_is_slower_than_stock(self):
     # the model's own lane change asks for 2-3 m/s^3 (0.4-0.65 of ISO); a cap above that
     # would not bind and the level would be stock in disguise
-    assert level_jerk_factor(LEVEL_OFF) == 1.0
-    factors = [level_jerk_factor(lv) for lv in LEVELS[1:]]
+    assert LEVEL_JERK_FACTOR[LEVEL_OFF] == 1.0
+    factors = [LEVEL_JERK_FACTOR[lv] for lv in LEVELS[1:]]
     assert all(0.0 < f <= 0.4 for f in factors)
     assert factors == sorted(factors, reverse=True)  # fast -> extra slow tightens
-    assert level_jerk_factor(LEVEL_FAST) < UNWIND_JERK_MAX
+    assert LEVEL_JERK_FACTOR[LEVEL_FAST] < UNWIND_JERK_MAX
 
   def test_time_extra_grows_with_gentleness(self):
-    extras = [lane_change_time_extra(lv) for lv in LEVELS]
+    extras = [LEVEL_TIME_EXTRA[lv] for lv in LEVELS]
     assert extras == sorted(extras)
     assert extras[0] == 0.0
 
@@ -139,7 +139,7 @@ class TestLaneChangeSmoothing(OpenpilotTestCase):
     # clip_curvature must pass the pre-clipped value through: the result is exactly a jerk clip
     # at the factor followed by the accel and max-curvature clamps, which alone set limited
     rng = np.random.default_rng(0)
-    for jf in (*[level_jerk_factor(lv) for lv in LEVELS[1:]], UNWIND_JERK_MAX, 0.999):
+    for jf in (*[LEVEL_JERK_FACTOR[lv] for lv in LEVELS[1:]], UNWIND_JERK_MAX, 0.999):
       for _ in range(200):
         v, roll = rng.uniform(0.0, 40.0), rng.normal(0.0, 0.05)
         prev = rng.normal(0.0, 0.02)

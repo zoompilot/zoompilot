@@ -80,14 +80,6 @@ def read_level(params) -> int:
   return min(max(int(params.get("LaneChangeSmoothing", return_default=True)), LEVELS[0]), LEVELS[-1])
 
 
-def level_jerk_factor(level: int) -> float:
-  return LEVEL_JERK_FACTOR[level]
-
-
-def lane_change_time_extra(level: int) -> float:
-  return LEVEL_TIME_EXTRA[level]
-
-
 def clip_curvature_rate(v_ego: float, prev_curvature: float, new_curvature: float, jerk_factor: float) -> float:
   """clip_curvature's lateral jerk clip at jerk_factor of the ISO limit, applied before it.
   jerk_factor never exceeds 1, so this window lies inside clip_curvature's own, which then
@@ -116,7 +108,7 @@ class LaneChangeSmoothing:
   def get_params(self) -> None:
     level = read_level(self.params)
     self.enabled = level != LEVEL_OFF
-    self.set_jerk = level_jerk_factor(level)
+    self.set_jerk = LEVEL_JERK_FACTOR[level]
 
   def reset(self) -> None:
     self.release_timer = 0.0
