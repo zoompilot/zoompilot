@@ -10,23 +10,19 @@ See the LICENSE.md file in the root directory for more details.
 # classifier's driver_limited, and the integrator-level consequence run through the real v0
 # controller against a simulated slew-limited actuator.
 
-import math
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
-from opendbc.car.mazda.values import MazdaFlags
 from opendbc.car.structs import car
 from opendbc.sunnypilot.car.lateral_tune import get_steer_slew_schedule
 from openpilot.cereal import custom
-from openpilot.common.params import Params
-from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.sunnypilot.selfdrive.controls.controls_lateral_zp import ControlsLateralZP
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 from openpilot.sunnypilot.selfdrive.controls.lib.steer_limit import CLEAN, SteerLimit, classify
+from openpilot.sunnypilot.selfdrive.controls.lib.tests.torque_harness import DT, LAT_DELAY, LP, VM, make_cp, make_cs, make_lac
 
 # 12 counts/frame with the CX-5 2022's EPS ceiling at 14.2 m/s, over its 1200-count STEER_MAX and
 # over an 800-count one, where a step is wider than controlsd's 0.01 mismatch threshold
@@ -34,52 +30,7 @@ STEP_1200 = {'slew_up': 12.0 / 1200.0, 'slew_down': 12.0 / 1200.0, 'rail_scale':
 STEP_800 = {'slew_up': 12.0 / 800.0, 'slew_down': 12.0 / 800.0, 'rail_scale': 648.0 / 800.0}
 SIDES = [pytest.param(STEP_1200, id='scale_1200'), pytest.param(STEP_800, id='scale_800')]
 
-DT = 0.01
-LAT_DELAY = 0.3
-LAF = 2.5
-CURV_PER_DEG = 2e-4  # toy geometry: curvature = -steeringAngleDeg * CURV_PER_DEG
-
-VM = SimpleNamespace(calc_curvature=lambda angle_rad, v_ego, roll: math.degrees(angle_rad) * CURV_PER_DEG)
-LP = SimpleNamespace(angleOffsetDeg=0.0, roll=0.0)
-
-
-def make_cp(mazda=True):
-  CP = car.CarParams.new_message(steerControlType="torque", steerLimitTimer=0.4)
-  if mazda:
-    # the real CX-5 2022 platform, so the slew and rail schedules resolve from opendbc
-    CP.brand = 'mazda'
-    CP.carFingerprint = 'MAZDA_CX5_2022'
-    CP.minSteerSpeed = 0.0
-    CP.flags = MazdaFlags.STEER_TO_ZERO_EPS.value
-  CP.lateralTuning.init('torque')
-  CP.lateralTuning.torque.latAccelFactor = LAF
-  CP.lateralTuning.torque.friction = 0.0
-  return CP.as_reader()
-
-
-def make_ci():
-  CI = MagicMock()
-  CI.torque_from_lateral_accel.return_value = lambda lataccel, tp: lataccel / tp.latAccelFactor
-  CI.lateral_accel_from_torque.return_value = lambda torque, tp: torque * tp.latAccelFactor
-  return CI
-
-
-def make_lac(mazda=True):
-  return LatControlTorqueV0(make_cp(mazda), custom.CarParamsSP.new_message().as_reader(), make_ci(), DT)
-
-
-CX5_SLEW = get_steer_slew_schedule(make_cp())
-
-
-def make_cs(v_ego=15.0, lat_accel=0.0, pressed=False):
-  angle = -lat_accel / (CURV_PER_DEG * v_ego ** 2)
-  return SimpleNamespace(vEgo=v_ego, aEgo=0.0, steeringAngleDeg=angle, steeringRateDeg=0.0, steeringPressed=pressed)
-
-
-@pytest.fixture
-def params():
-  with OpenpilotPrefix():
-    yield Params()
+CX5_SLEW = get_steer_slew_schedule(make_cp(mazda=True))
 
 
 DEEPENING = {'error_prev': 0.2, 'integrator': 0.3}   # same sign: integrating would grow |i|
@@ -245,13 +196,13 @@ class TestControlsdWiring:
     CP = car.CarParams.new_message(steerControlType='angle', brand='tesla', carFingerprint='TESLA_MODEL_3')
     ext = ControlsExt(CP.as_reader(), params)
     assert ext._steer_slew_schedule is None
-    ext = ControlsExt(make_cp(), params)
+    ext = ControlsExt(make_cp(mazda=True), params)
     assert ext._steer_slew_schedule == CX5_SLEW
 
 
 class TestCommandedTorque:
   def test_tracks_the_published_actuator_sign_and_inactive_frames(self, params):
-    lac = make_lac()
+    lac = make_lac(LatControlTorqueV0, mazda=True)
     v_ego = 15.0
     cs = make_cs(v_ego, 0.0)
     steer = None
@@ -286,7 +237,7 @@ class TestIntegratorUnderTheNewFlag:
     return phase if phase <= 2 * self.AMPLITUDE else 4 * self.AMPLITUDE - phase  # triangle in [0, 2A]
 
   def _run(self, use_classifier):
-    lac = make_lac()
+    lac = make_lac(LatControlTorqueV0, mazda=True)
     bp, up, down = CX5_SLEW
     step_up, step_down = float(np.interp(self.V_EGO, bp, up)), float(np.interp(self.V_EGO, bp, down))
     rail = lac.extension.rail_scale_at(self.V_EGO)
