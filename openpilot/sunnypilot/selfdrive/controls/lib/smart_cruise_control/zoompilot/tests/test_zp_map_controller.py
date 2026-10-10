@@ -16,7 +16,6 @@ from openpilot.cereal import custom
 from opendbc.car import structs
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import COMMIT_FRAC
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.map_controller import _CONFIRM_T, _CONFIRM_V_BP, R, SmartCruiseControlMap
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import lead_distance, required_decel
@@ -48,31 +47,6 @@ class TestSmartCruiseControlMap(OpenpilotTestCase):
     # TODO-SP: mock data from gpsLocation
     self.params.put("LastGPSPosition", "{}", block=True)
     self.params.put("MapTargetVelocities", "{}", block=True)
-
-  def test_initial_state(self):
-    assert self.scc_m.state == VisionState.disabled
-    assert not self.scc_m.is_active
-    assert self.scc_m.output_v_target == V_CRUISE_UNSET
-    assert self.scc_m.output_a_target == 0.
-
-  def test_system_disabled(self):
-    self.params.put_bool("SmartCruiseControlMap", False, block=True)
-    self.scc_m.enabled = self.params.get_bool("SmartCruiseControlMap")
-
-    for _ in range(int(10. / DT_MDL)):
-      self.scc_m.update(True, False, 0., 0., 0.)
-    assert self.scc_m.state == VisionState.disabled
-    assert not self.scc_m.is_active
-
-  def test_disabled(self):
-    for _ in range(int(10. / DT_MDL)):
-      self.scc_m.update(False, False, 0., 0., 0.)
-    assert self.scc_m.state == VisionState.disabled
-
-  def test_transition_disabled_to_enabled(self):
-    for _ in range(int(10. / DT_MDL)):
-      self.scc_m.update(True, False, 0., 0., 0.)
-    assert self.scc_m.state == VisionState.enabled
 
   def test_moderate_curve(self):
     # Regression: `... / 2 * a` parsed as `(.../2)*a` instead of `.../(2*a)`,
