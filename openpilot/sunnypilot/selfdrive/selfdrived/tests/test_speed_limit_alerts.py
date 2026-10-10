@@ -12,7 +12,7 @@ import pytest
 from openpilot.cereal import custom, messaging
 from opendbc.car import structs
 from openpilot.common.constants import CV
-from openpilot.sunnypilot.selfdrive.selfdrived import events as events_sp_module
+from openpilot.sunnypilot.selfdrive.selfdrived import events_zp
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EVENTS_SP
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import ET, AlertSize
 
@@ -40,7 +40,7 @@ def _alert(event, target: float, set_speed: float, metric: bool = False, pcm_lon
 
 @pytest.fixture
 def mici(monkeypatch):
-  monkeypatch.setattr(events_sp_module, 'IS_MICI', True)
+  monkeypatch.setattr(events_zp, 'IS_MICI', True)
 
 
 class TestPreActivePrompt:
