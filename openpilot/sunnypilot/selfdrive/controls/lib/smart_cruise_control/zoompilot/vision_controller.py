@@ -7,27 +7,24 @@ See the LICENSE.md file in the root directory for more details.
 Vision-based curve speed planning over the model path.
 
 Geometry-derived curvature remains independent of planned speed. A backward pass applies
-the platform deceleration budget to produce the speed profile. See
+the platform deceleration budget to produce the speed profile. The update loop and params
+refresh are sunnypilot's; the solver and state machine are ours. See
 docs/zoompilot/scc-curve-planning.md for tuning data and design details.
 """
 import numpy as np
 
 import openpilot.cereal.messaging as messaging
-from openpilot.cereal import custom
-from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
-from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN_V
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import (
   A_PUB_MIN, COMMIT_FRAC, get_planning_limits, publish_ramp)
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import (
   allowed_speed, backward_pass, lead_distance, min_profile_speed, required_decel)
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.vision_controller import (
+  ACTIVE_STATES, ENABLED_STATES, VisionState, SmartCruiseControlVision as UpstreamVision)
 
-VisionState = custom.LongitudinalPlanSP.SmartCruiseControl.VisionState
-
-ACTIVE_STATES = (VisionState.entering, VisionState.turning, VisionState.leaving)
-ENABLED_STATES = (VisionState.enabled, VisionState.overriding, *ACTIVE_STATES)
+__all__ = ['ACTIVE_STATES', 'ENABLED_STATES', 'SmartCruiseControlVision', 'VisionState']
 
 # Curves are taken at or below this lateral acceleration, m/s2. Keyed on the set speed, like the
 # escalation ceiling, so the ceiling does not rise as the car slows. Back roads (set 40 mph or
@@ -85,27 +82,12 @@ _LEAVING_LAT_ACC_TH = 1.3  # turning displays as leaving below this
 _FINISH_LAT_ACC_TH = 1.1  # leaving ends below this
 
 
-class SmartCruiseControlVision:
+class SmartCruiseControlVision(UpstreamVision):
   def __init__(self, CP):
-    self.params = Params()
+    super().__init__()
     self.limits = get_planning_limits(CP)
-    self.frame = -1
-    self.long_enabled = False
-    self.long_override = False
-    self.is_enabled = False
-    self.is_active = False
-    self.enabled = self.params.get_bool("SmartCruiseControlVision")
-    self.v_cruise_setpoint = 0.
-
-    self.state = VisionState.disabled
-    self.v_ego = 0.
-    self.a_ego = 0.
     self._reset_solver()
-
-    self.output_v_target = V_CRUISE_UNSET
-    self.output_a_target = 0.
     self.a_out = 0.
-    self.current_lat_acc = 0.
 
   def _reset_solver(self) -> None:
     self.solver_valid = False
@@ -119,10 +101,6 @@ class SmartCruiseControlVision:
     self.d_held = 0.  # and its remaining distance
     self.seen_frames = 0  # consecutive frames a bend has bound
     self.max_pred_lat_acc = 0.
-
-  def _update_params(self) -> None:
-    if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
-      self.enabled = self.params.get_bool("SmartCruiseControlVision")
 
   def _update_calculations(self, sm: messaging.SubMaster) -> None:
     if not self.long_enabled or not self.enabled:
@@ -309,20 +287,6 @@ class SmartCruiseControlVision:
         v = min(v, v_lead)
     return max(v, MIN_V)
 
-  def update(self, sm: messaging.SubMaster, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float,
-             v_cruise_setpoint: float) -> None:
-    self.long_enabled = long_enabled
-    self.long_override = long_override
-    self.v_ego = v_ego
-    self.a_ego = a_ego
-    self.v_cruise_setpoint = v_cruise_setpoint
-
-    self._update_params()
-    self._update_calculations(sm)
-
-    self.is_enabled, self.is_active = self._update_state_machine()
-
-    self.output_a_target = self.get_a_target_from_control()
-    self.output_v_target = self.get_v_target_from_control()
-
-    self.frame += 1
+  def _update_solution(self) -> float:
+    # the decel comes from the speed profile (get_a_target_from_control), not the state
+    return 0.
