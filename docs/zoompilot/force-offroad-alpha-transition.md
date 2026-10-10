@@ -67,6 +67,10 @@ detailed reasons (camera settle, CAN, which UDS reply) stay in carlog.
 
 ### Moving takeover (Mazda)
 
+Removed 2026-10-10 before any on-car validation (the flag, the `MazdaMovingTakeover` param and the
+session manager's moving attempt); this section and the drive plan below describe the removed
+design, kept for whoever revives it from history.
+
 `RadarSessionManager(moving_takeover=...)`: the first takeover of a session may run while moving
 when `MazdaFlags.MOVING_TAKEOVER` is set. The flag comes from the developer's
 `MazdaMovingTakeover` param, read at fingerprint next to `MazdaTjaButton`
@@ -249,7 +253,7 @@ resets an ECU or presses a button on the driver's behalf.
 
 ## Supported configurations
 
-- Moving takeover: only with `MazdaMovingTakeover` set by the developer (validation pending).
+- Moving takeover: none (removed 2026-10-10, never validated).
 - Moving hand-back (Force Offroad entry, cycle, reboot at speed): every alpha-long Mazda;
   on record at 117 km/h on the validation vehicle.
 - Every other Mazda alpha-long configuration: parked takeover at the next stop, with the

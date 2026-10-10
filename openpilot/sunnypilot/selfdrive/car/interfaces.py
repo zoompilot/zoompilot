@@ -112,7 +112,6 @@ def initialize_params(params) -> list[dict[str, Any]]:
   # mazda
   keys.extend([
     "MazdaTjaButton",
-    "MazdaMovingTakeover",
   ])
 
   # subaru

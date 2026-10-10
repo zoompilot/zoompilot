@@ -25,12 +25,12 @@ The radar does not implement COMMUNICATION_CONTROL (0x28 replies NRC 0x11), so u
 session (`02 10 02`) stops all of its periodic frames. The radar stays silent as long as tester
 present (`02 3e 80`) keeps arriving at 2 Hz and falls back to the default session on its S3
 timeout (about 5 s) otherwise. The programming session disables AEB while it is in effect. The
-port starts a silencing episode pre-motion unless the developer has set `MazdaMovingTakeover`
-(off by default, on-car validation pending), where a fresh session started with the car
-rolling (forced offroad exit, process restart) may request it at speed; see
-`force-offroad-alpha-transition.md`. Comma's own `disable_ecu()` runs at `CI.init()` at whatever
-speed the car is at, so the moving request itself has upstream precedent; what does not is this
-radar's answer to it, which is the on-car question.
+port starts a silencing episode pre-motion only; a fresh session started with the car rolling
+(forced offroad exit, process restart) waits for the next stop. A moving request behind a
+developer param (`MazdaMovingTakeover`) was removed on 2026-10-10 before it was ever validated on
+car; recover it from history if a radar's moving handover is ever recorded. Comma's own
+`disable_ecu()` runs at `CI.init()` at whatever speed the car is at, so a moving request has
+upstream precedent; what does not is this radar's answer to it.
 
 The radar answers every session request within about 10 ms. Route 000000fe t+15.0: request
 `02 10 02`, positive response `06 50 02` carrying P2* = 5.0 s. P2* is the diagnostic response
@@ -100,10 +100,8 @@ full guard window (`STOCK_RADAR_GUARD_T`), not the 50 ms alive window; see the g
 The manager reports where ownership stands through the stock ECU transition contract
 (`opendbc/sunnypilot/car/stock_ecu.py`, one state: starting, parkToTakeOver, stockCruiseOn,
 ready, restoring, restored, failed), which card publishes on `carStateSP.zoompilot.stockEcu`
-for the engage-press alert (`stockEcuNotReady`). A moving request that the radar refuses
-or never answers, or a radar heard again under our frames, closes moving attempts for the
-session and leaves the parked attempt open (`moving_open`); a parked refusal is definitive
-for the drive. Undoing our own unanswered request (motion on a parked-only radar, a refusal)
+for the engage-press alert (`stockEcuNotReady`). A refusal is definitive for the drive.
+Undoing our own unanswered request (the car pulling away, a refusal)
 latches nothing; only the lifecycle's ordered hand-back keeps the radar stock, and only while
 the request stands. Route 0000020d, the
 forced-offroad exit at 113 km/h on 2026-09-10, is the case the contract was built on: the
