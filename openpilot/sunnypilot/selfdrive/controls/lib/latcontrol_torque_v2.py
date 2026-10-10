@@ -127,16 +127,13 @@ class LatControlTorque(LatControlTorqueV0):
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
       # Suppress derivative response to driver steering.
       error_rate = 0.0 if CS.steeringPressed else -measurement_rate
-      if self.extension.overrides_output:
-        # Prevent a future output override from stepping the shared PID twice.
-        output_torque = 0.0
-      else:
-        output_lataccel = self.pid.update(pid_log.error,
-                                          error_rate,
-                                          feedforward=ff,
-                                          speed=CS.vEgo,
-                                          freeze_integrator=freeze_integrator)
-        output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
+      # the output overrides are off for good (disable_output_overrides), so the shared PID is v2's alone
+      output_lataccel = self.pid.update(pid_log.error,
+                                        error_rate,
+                                        feedforward=ff,
+                                        speed=CS.vEgo,
+                                        freeze_integrator=freeze_integrator)
+      output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
       # The extension may replace pid_log.error and output_torque. Bind by keyword because the
       # signature is shared across controller versions.
