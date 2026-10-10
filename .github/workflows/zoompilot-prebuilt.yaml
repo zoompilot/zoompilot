@@ -10,12 +10,6 @@ name: zoompilot prebuilt
 # when set. Use bench power for release builds.
 
 env:
-  # The runner is a comma four, but the release installs on the 3X too. Compile the model, dm
-  # warp and jetlink warp jits for both driver cameras: the kernels are portable between them
-  # (both Adreno 630) but the jits are keyed by camera resolution, so a 3X installing a
-  # mici-only prebuilt has no warp: it loses dmonitoringmodeld and modeld at startup, and
-  # jetlink's big model for good.
-  PREBUILT_ALL_CAMERAS: "1"
   BUILD_DIR: "/data/openpilot"
   OUTPUT_DIR: ${{ github.workspace }}/output
   CI_DIR: ${{ github.workspace }}/release/ci
@@ -110,12 +104,17 @@ jobs:
           ln -sfn rednose_repo/rednose rednose
           ln -sfn teleoprtc_repo/teleoprtc teleoprtc
           ln -sfn tinygrad_repo/tinygrad tinygrad
-          sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
           # sunnypilot/modeld_v2 lost its SConscript upstream (chestnut refactor moved SP model
           # compilation out of scons), so it is no longer a warm-up target here
           scons -j2 cache_dir=${{ env.SCONS_CACHE_DIR }} --minimal openpilot/sunnypilot/selfdrive/locationd
           scons -j1 cache_dir=${{ env.SCONS_CACHE_DIR }} --minimal openpilot/selfdrive/locationd
+          # tinygrad's compiles outgrow the tmpfs /tmp; kept inside BUILD_DIR, left out of the output
+          sudo rm -rf /tmp/* || true
+          mkdir -p "$BUILD_DIR/tmp"
+          export TMPDIR="$BUILD_DIR/tmp"
           scons -j$(nproc) cache_dir=${{ env.SCONS_CACHE_DIR }} --minimal
+          # GitHub rejects files over 100 MB; modeld opens chunked pkls through file_chunker
+          find openpilot/selfdrive/modeld/models -name '*.pkl' -size +95M -exec ./openpilot/common/file_chunker.py {} \;
           touch ${BUILD_DIR}/prebuilt
 
       - name: Prepare output
@@ -124,6 +123,7 @@ jobs:
           mkdir -p ${OUTPUT_DIR}
           rsync -am${RUNNER_DEBUG:+v} \
             --exclude='.sconsign.dblite' \
+            --exclude='/tmp/' \
             --exclude='*.a' \
             --exclude='*.o' \
             --exclude='*.os' \
