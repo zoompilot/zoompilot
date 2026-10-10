@@ -1,0 +1,6 @@
+#!/bin/sh
+# git-lfs post-checkout, for core.hooksPath=.githooks. op setup installs git-lfs into the venv.
+[ -x .venv/bin/git-lfs ] && exec .venv/bin/git-lfs post-checkout "$@"
+command -v git-lfs >/dev/null 2>&1 && exec git lfs post-checkout "$@"
+echo >&2 "git-lfs not found: run tools/op.sh setup or install git-lfs"
+exit 2

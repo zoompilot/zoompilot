@@ -208,10 +208,6 @@ EOF
   et="$(date +%s)"
   echo -e " ↳ [${GREEN}✔${NC}] Submodules installed successfully in $((et - st)) seconds."
 
-  # zoompilot commit-msg hook: rejects attribution trailers, em dashes and long subjects
-  git config core.hooksPath .githooks
-  git -C opendbc_repo config core.hooksPath .githooks 2>/dev/null || true
-
   echo "Installing dependencies..."
   st="$(date +%s)"
   SETUP_SCRIPT="tools/setup_dependencies.sh"
@@ -232,6 +228,10 @@ EOF
   fi
   et="$(date +%s)"
   echo -e " ↳ [${GREEN}✔${NC}] Files pulled successfully in $((et - st)) seconds."
+
+  # zoompilot hooks (commit-msg, git-lfs), set after the LFS step so it writes the default dir
+  git config core.hooksPath .githooks
+  git -C opendbc_repo config core.hooksPath .githooks 2>/dev/null || true
 
   op_check
 }
