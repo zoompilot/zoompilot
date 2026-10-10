@@ -5,5 +5,4 @@
 	locksverify = false
 	# Only a chestnut uses the big driving model. Keep its pointer but exclude the object from
 	# install fetches; a chestnut build fetches it (openpilot/sunnypilot/models/big_model_source.py).
-	# Both names: the onnx until the sunnypilot merge that replaces it with the pkl lands.
-	fetchexclude = openpilot/selfdrive/modeld/models/big_driving_supercombo.onnx,openpilot/selfdrive/modeld/models/big_driving_tinygrad.pkl
+	fetchexclude = openpilot/selfdrive/modeld/models/big_driving_tinygrad.pkl
