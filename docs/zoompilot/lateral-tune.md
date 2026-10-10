@@ -129,6 +129,30 @@ friction included; the KP schedule is v0's at every speed; the extension's outpu
 | budget clip | worse p99 |
 | command clamp to apply | a no-op in sim: apply's rate limiter makes its trajectory identical however far the command leads |
 
+## Tried and rejected
+
+Numbers from the toy plant the controller tests drive (`controls/lib/tests/torque_harness.py`:
+curvature proportional to steering angle, torque = lateral accel / latAccelFactor 2.5,
+friction 0.25, 0.3 s delay). The tests that pinned these alternatives were dropped on
+2026-10-10; the shipped behaviour each one argued for keeps its own test.
+
+- v0's lateral-accel request buffer in v2: braking from 20 to 10 m/s at 4 m/s^2 through a
+  constant 2e-3 1/m arc, it replays the old speed's lateral accel as a phantom jerk of
+  0.31 m/s^3. v0's setpoint is the live request, so there the phantom only reaches the jerk
+  log; behind v2's friction input the same buffer moves the friction term by 0.085 m/s^2.
+  The curvature buffer reads 0 jerk and 0.0002 m/s^2 of friction on the same run.
+- Engaging v2 without priming the buffer while inactive: into a held 1.0 m/s^2 at 9 m/s the
+  stale buffer reads the hold as jerk, and the friction term pushes against it, down to
+  -0.63 m/s^2 within the 0.3 s delay window. After 100 inactive frames the first active
+  frame has zero error, jerk, friction and D. v0 needs no priming for its command (error 0),
+  but its log shows the stale buffer as 3.3 m/s^3 of jerk on that frame.
+- Swapping the torque tune on the frame the model changes: on the 2026-09-29 drives a
+  big-to-small hand-back while steering stepped the commanded torque by 0.09 to 0.19 of full
+  scale in one tick. On the toy plant an idle v2 holding state from a -1.5 m/s^2 curve at
+  20 m/s, taking over a steady 0.8 m/s^2 curve at 10 m/s, steps it by 1.31 against 6e-6 for
+  the largest steady tick before the swap. The tune that was steering now keeps the new model
+  until lateral has been inactive for `TUNE_SWAP_INACTIVE_FRAMES` (0.5 s).
+
 ## Shared layer
 
 ### Steer-limit classifier (`steer_limit.py`)

@@ -50,29 +50,11 @@ def drive(ctl, hand_back: bool, inactive_at: int | None = None, frames: int = 30
   return out
 
 
-def largest_tick(out: list[float], start: int, end: int) -> float:
-  return max(abs(b - a) for a, b in zip(out[start:end], out[start + 1:end], strict=False))
-
-
 class TestSwapWhileSteering:
   def test_a_hand_back_while_steering_leaves_the_torque_as_it_was(self, params):
     steady = drive(controls(), hand_back=False)
     handed_back = drive(controls(), hand_back=True)
     assert handed_back == pytest.approx(steady, abs=1e-9)
-
-  def test_swapping_at_once_would_have_stepped_it(self, params):
-    # what the switch did before: the idle v2 takes over on the hand-back frame
-    ctl = controls()
-    steady = drive(controls(), hand_back=False)
-    out = []
-    for i in range(HAND_BACK + 20):
-      if i == HAND_BACK:
-        ctl.LaC = ctl._lac_by_size[False]
-        ctl.LaC.reset()
-      torque, _, _ = ctl.LaC.update(True, make_cs(V_EGO, LAT_ACCEL), *DRIVE_ARGS)
-      out.append(torque)
-    assert abs(out[HAND_BACK] - out[HAND_BACK - 1]) > 0.05
-    assert abs(out[HAND_BACK] - out[HAND_BACK - 1]) > 10 * largest_tick(steady, HAND_BACK - 50, HAND_BACK)
 
   def test_a_short_drop_keeps_the_tune_and_the_torque(self, params):
     # a steer fault flicker, and a 0.3 s gap: neither swaps, so the resume is the same

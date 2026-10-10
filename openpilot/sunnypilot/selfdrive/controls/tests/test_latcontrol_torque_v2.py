@@ -47,20 +47,6 @@ def make_v0_equivalent(monkeypatch, friction=0.0):
   return v2
 
 
-class LatAccelBuffer:
-  """v0 buffer semantics behind v2's curvature-buffer interface (store lat accel at append
-  time, undo the reader's live v^2 scaling). The owner's _v_now is set per frame by the test."""
-  def __init__(self, owner, n):
-    self.owner = owner
-    self.buf = deque([0.0] * n, maxlen=n)
-
-  def append(self, k):
-    self.buf.append(k * self.owner._v_now ** 2)
-
-  def __getitem__(self, idx):
-    return self.buf[idx] / self.owner._v_now ** 2
-
-
 class TestV0Parity:
   def test_v2_is_v0_with_the_deltas_off(self, params, monkeypatch):
     """The setpoint is v0's, so with KD, the deadzone and the jerk filter neutralized the two
@@ -308,87 +294,47 @@ class TestReleaseErrorRamp:
 
 
 class TestInactivePriming:
-  """Re-engaging with a wound wheel. v0's setpoint is the live request whatever the buffer
-  holds, so its stale buffer only shows in the logged jerk; in v2 the friction input reads
-  the shaped jerk and the D term reads the measurement rate, so a stale buffer or a stale
-  previous_measurement would command against the held wheel. Priming while inactive is
-  what keeps the first active frame clean."""
+  """Re-engaging with a wound wheel: in v2 the friction input reads the shaped jerk and the D
+  term reads the measurement rate, so a stale request buffer or previous_measurement would
+  command against the held wheel. Priming while inactive keeps the first active frame clean
+  (docs/zoompilot/lateral-tune.md, Tried and rejected)."""
 
   V_EGO = 9.0  # inside the KD band, so the rate state matters too
   HOLD = 1.0  # m/s^2
 
-  def _engage_after(self, lac, inactive_frames):
-    desired = self.HOLD / self.V_EGO ** 2
-    lac._v_now = self.V_EGO
-    for _ in range(inactive_frames):
-      step(lac, make_cs(self.V_EGO, self.HOLD), desired, active=False)
-    return step(lac, make_cs(self.V_EGO, self.HOLD), desired, active=True), desired
-
   def test_primed_v2_engages_without_a_command(self, params):
     v2 = make_lac(LatControlTorqueV2, friction=FRICTION)
     v2.pid.i = 0.3
-    log, desired = self._engage_after(v2, 100)
+    desired = self.HOLD / self.V_EGO ** 2
+    for _ in range(100):
+      step(v2, make_cs(self.V_EGO, self.HOLD), desired, active=False)
+    log = step(v2, make_cs(self.V_EGO, self.HOLD), desired)
     assert log.error == pytest.approx(0.0, abs=1e-6)
     assert log.desiredLateralJerk == pytest.approx(0.0, abs=1e-6)
     assert friction_term(log, self.V_EGO, desired) == pytest.approx(0.0, abs=1e-6)
     assert log.d == pytest.approx(0.0, abs=1e-6)
     assert v2.pid.i == pytest.approx(0.3)  # deliberately not cleared while inactive
 
-  def test_v0_shows_the_stale_buffer(self, params):
-    v0 = make_lac(LatControlTorqueV0, friction=FRICTION)
-    log, _ = self._engage_after(v0, 100)
-    assert log.error == pytest.approx(0.0, abs=1e-6)  # setpoint == request regardless
-    assert abs(log.desiredLateralJerk) > 1.0  # the buffered hold appears as jerk
-
-  def test_unprimed_v2_would_push_against_the_held_wheel(self, params):
-    """The counterfactual: without the inactive frames the stale buffer makes the shaped jerk
-    ramp toward the clip and the friction term opposes the hold until the buffer refills."""
-    v2 = make_lac(LatControlTorqueV2, friction=FRICTION)
-    desired = self.HOLD / self.V_EGO ** 2
-    worst = 0.0
-    for _ in range(DELAY_FRAMES):
-      log = step(v2, make_cs(self.V_EGO, self.HOLD), desired, active=True)
-      worst = min(worst, friction_term(log, self.V_EGO, desired))
-    assert worst < -0.1  # against a +1.0 hold
-
 
 class TestCurvatureBuffer:
   """The buffer stores curvature and is rescaled by the live v^2 on read: braking through a
-  constant-curvature arc produces no phantom jerk, so nothing reaches the friction input.
-  v0's lat-accel buffer replays the old speed's values (visible in its jerk log only, since
-  its setpoint collapses to the request), and a lat-accel buffer behind v2's friction input
-  would put that phantom into the command."""
+  constant-curvature arc produces no phantom jerk, so nothing reaches the friction input
+  (docs/zoompilot/lateral-tune.md, Tried and rejected)."""
 
-  def _brake_through_arc(self, lac, lataccel_buffer=False):
+  def test_v2_sees_no_phantom(self, params):
+    lac = make_lac(LatControlTorqueV2, friction=FRICTION)
     desired = 2e-3
     v_ego = 20.0
-    lac._v_now = v_ego
-    if lataccel_buffer:
-      lac.curvature_request_buffer = LatAccelBuffer(lac, lac.lat_accel_request_buffer_len)
     for _ in range(150):  # settle in the curve at constant speed first
       step(lac, make_cs(v_ego, desired * v_ego ** 2), desired)
     jerks, frictions = [], []
     for _ in range(250):
       v_ego = max(v_ego - 0.04, 10.0)  # -4 m/s^2, 20 -> 10 m/s
-      lac._v_now = v_ego
       log = step(lac, make_cs(v_ego, desired * v_ego ** 2), desired)
       jerks.append(abs(log.desiredLateralJerk))
       frictions.append(abs(friction_term(log, v_ego, desired)))
-    return max(jerks), max(frictions)
-
-  def test_v2_sees_no_phantom(self, params):
-    jerk, friction = self._brake_through_arc(make_lac(LatControlTorqueV2, friction=FRICTION))
-    assert jerk < 1e-3
-    assert friction < 0.05
-
-  def test_v0_buffer_reads_a_phantom_jerk(self, params):
-    jerk, _ = self._brake_through_arc(make_lac(LatControlTorqueV0, friction=FRICTION))
-    assert jerk > 0.2
-
-  def test_lat_accel_buffer_would_reach_the_friction_term(self, params):
-    jerk, friction = self._brake_through_arc(make_lac(LatControlTorqueV2, friction=FRICTION), lataccel_buffer=True)
-    assert jerk > 0.2
-    assert friction > 0.05
+    assert max(jerks) < 1e-3
+    assert max(frictions) < 0.05
 
 
 class TestIntegratorFreeze:
