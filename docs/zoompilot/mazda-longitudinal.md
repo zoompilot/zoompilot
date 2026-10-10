@@ -90,6 +90,11 @@ programming-session requests carry the `06 50 02` response on the main bus. At t
 Mazda and 234 main-repo tests passed with the golden TX fixture unchanged; a replay of recorded
 startup CAN checks the software's decisions only, not the ECU's answer to a changed request.
 
+The controller runs the session (it sends the UDS and the synthetic frames). carstate reads its
+outcome, `control_active`, `handback_active` and `handback_failed`, on its next update through the
+same object, which CarInterface hands it at construction. Until 2026-10 the controller wrote those
+three back into CarState attributes instead.
+
 Setup waits for the settle gate and never pulls the radar out from under an active stock MRCC
 engagement (a driver who pressed SET before the gate passed on a warm boot); the driver has to
 disengage first. The gate reads the raw PEDALS engagement, not the public flag held blocked
@@ -204,8 +209,8 @@ handover, 10 to 15 s), not a fault. Holding `enabled` blocked keeps engagement o
 gets the stockEcuNotReady alert. Raising accFaulted here showed a permanent "Cruise Fault: Restart
 the Car" on every start for a condition that clears by itself. After the radar has been silenced
 once, hearing it again is a real two-master conflict (dropped tester present, S3 recovery) and
-is a real accFaulted. The ordered hand-back is masked out of it (`radar_handback_active`), and a
-hand-back that timed out raises it on its own (`radar_restore_failed`).
+is a real accFaulted. The ordered hand-back is masked out of it (the session's `handback_active`),
+and a hand-back that timed out raises it on its own (`handback_failed`).
 
 Ownership is established by the silence guard and then held on the controller's claim: the bus
 witnesses (PEDALS 200 ms, ENGINE_DATA 100 ms, the CANParser's own ten-period validity) decide
