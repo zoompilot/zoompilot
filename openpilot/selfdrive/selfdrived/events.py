@@ -229,9 +229,8 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
                                        "Ensure road ahead is clear"),
   },
 
-  # also modeld's first load on every boot (sunnypilot model_startup.py)
   EventName.bigModelLoading: {
-    ET.NO_ENTRY: NoEntryAlert("Driving Model Loading"),
+    ET.NO_ENTRY: NoEntryAlert("Big Model Loading"),
   },
 
   EventName.bigModelFailed: {

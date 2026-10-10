@@ -19,11 +19,15 @@ is too.
 """
 from openpilot.cereal import messaging
 from openpilot.common.realtime import DT_CTRL
+from openpilot.selfdrive.selfdrived.events import ET, EVENTS, EventName, NoEntryAlert
 
 # after the first frame, for the services downstream of the model to follow it
 SETTLE_S = 5.
 # from selfdrived's start; the slowest boot in the drive logs had its first frame at 24 s
 TIMEOUT_S = 30.
+
+# the no-entry also holds off modeld's first load on every boot, so it names the driving model
+EVENTS[EventName.bigModelLoading][ET.NO_ENTRY] = NoEntryAlert("Driving Model Loading")
 
 
 class ModelStartup:
