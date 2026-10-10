@@ -71,7 +71,7 @@ class TestSettling(AcceleratorEventsTest):
     # the gate reads the property, not the switching chime's own counter
     from openpilot.selfdrive.selfdrived import selfdrived
     import inspect
-    self.assertIn('self.accelerator_events.settling', inspect.getsource(selfdrived.SelfdriveD.update_events))
+    self.assertIn('self.model_events.settling', inspect.getsource(selfdrived.SelfdriveD.update_events))
 
 
 class TestHandBack(AcceleratorEventsTest):
@@ -223,7 +223,7 @@ class TestSwitching(AcceleratorEventsTest):
     with no brake held. Returns (main, MADS) engaged at every tick."""
     main = StateMachine()
     selfdrive = SimpleNamespace(state_machine=main, events=self.events, events_sp=self.events_sp, enabled=False,
-                                model_startup=SimpleNamespace(starting=False), big_model_loading=False)
+                                model_events=SimpleNamespace(startup=SimpleNamespace(starting=False)), big_model_loading=False)
     madsm = MadsStateMachine(SimpleNamespace(selfdrive=selfdrive, button_owns_lateral=False))
     self.step(state='ready')
     engaged = []

@@ -60,7 +60,7 @@ class StateMachine:
     return bool(self._events.contains(event_type) or self._events_sp.contains(event_type))
 
   def check_contains_in_list(self) -> bool:
-    model_starting = self.selfdrive.model_startup.starting and not self.selfdrive.big_model_loading
+    model_starting = self.selfdrive.model_events.startup.starting and not self.selfdrive.big_model_loading
     gears = GEARS_ALLOW_PAUSED_STARTING if model_starting else GEARS_ALLOW_PAUSED
     return bool(self._events.contains_in_list(gears) or self._events_sp.contains_in_list(GEARS_ALLOW_PAUSED_SILENT))
 

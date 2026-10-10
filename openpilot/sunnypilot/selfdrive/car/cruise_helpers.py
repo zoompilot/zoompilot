@@ -5,18 +5,22 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-from openpilot.cereal import custom
+from openpilot.cereal import custom, log
 from opendbc.car.structs import car
 from opendbc.car import structs
 from openpilot.common.params import Params
 
 ButtonType = car.CarState.ButtonEvent.Type
+EventName = log.OnroadEvent.EventName
 EventNameSP = custom.OnroadEventSP.EventName
 
 DISTANCE_LONG_PRESS = 50
 
 
 class CruiseHelper:
+  # selfdrived's SubMaster, as its base; a helper built on its own has none
+  sm = None
+
   def __init__(self, CP: structs.CarParams):
     self.CP = CP
     self.params = Params()
@@ -33,6 +37,21 @@ class CruiseHelper:
 
         # toggle experimental mode once on distance button hold
         self.update_experimental_mode(events, experimental_mode)
+
+    if self.sm is not None:
+      self.update_selfdrived(CS, self.sm['carStateSP'])
+
+  def update_selfdrived(self, CS, CS_SP) -> None:
+    """zoompilot, run by selfdrived just before its personality step. The wheel's "farther" distance
+    button steps the personality up, unless upstream's gapAdjustCruise release steps it down this
+    frame, and ICBM follows card's activation."""
+    gap_released = any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents)
+    if self.CP.openpilotLongitudinalControl and not gap_released and self.distance_farther_released(CS_SP):
+      self.personality = (self.personality + 1) % 3
+      self.params.put('LongitudinalPersonality', self.personality)
+      self.events.add(EventName.personalityChanged)
+
+    self.icbm.update_activation(CS_SP)
 
   def distance_farther_released(self, CS_SP) -> bool:
     """The release edge of the wheel's "farther" distance button (carStateSP.zoompilot), the

@@ -45,7 +45,7 @@ class MockMADS:
     self.selfdrive.state_machine = mocker.MagicMock()
     self.selfdrive.events = Events()
     self.selfdrive.events_sp = EventsSP()
-    self.selfdrive.model_startup.starting = False
+    self.selfdrive.model_events.startup.starting = False
     self.selfdrive.big_model_loading = False
     self.button_owns_lateral = False
 
@@ -137,7 +137,7 @@ class TestMADSStateMachine(OpenpilotTestCase):
     # as the commIssue it stands in for was
     for starting, chestnut_loading, expected in ((False, False, State.paused), (True, False, State.disabled),
                                                  (True, True, State.paused)):
-      self.mads.selfdrive.model_startup.starting = starting
+      self.mads.selfdrive.model_events.startup.starting = starting
       self.mads.selfdrive.big_model_loading = chestnut_loading
       self.state_machine.state = State.disabled
       self.events.add(EventName.bigModelLoading)

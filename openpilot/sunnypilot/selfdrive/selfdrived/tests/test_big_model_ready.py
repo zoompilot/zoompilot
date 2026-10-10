@@ -1,3 +1,9 @@
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+"""
 from types import SimpleNamespace
 
 from openpilot.cereal import custom
@@ -10,7 +16,7 @@ EventNameSP = custom.OnroadEventSP.EventName
 
 class TestBigModelReady(OpenpilotTestCase):
   """The chime's edge cases; a load that works and one that fails are traced
-  in sunnypilot/selfdrive/selfdrived/tests/test_selfdrived_traces.py."""
+  in test_selfdrived_traces.py."""
 
   def setUp(self):
     super().setUp()

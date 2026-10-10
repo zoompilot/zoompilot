@@ -10,7 +10,7 @@ from unittest.mock import Mock
 from openpilot.cereal import messaging
 from openpilot.selfdrive.selfdrived.events import Events
 from openpilot.selfdrive.selfdrived.selfdrived import SelfdriveD
-from openpilot.sunnypilot.selfdrive.selfdrived.accelerator_events import AcceleratorEvents
+from openpilot.sunnypilot.selfdrive.selfdrived.model_events import ModelEventsSP
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 SERVICES = ['modelV2', 'modelDataV2SP', 'controlsState', 'deviceState', 'lateralManeuverPlan', 'alertDebug']
@@ -38,11 +38,11 @@ def make_selfdrived(chestnut_present: bool = False, enabled: bool = False, mads_
   sd.sm['deviceState'].chestnutPresent = chestnut_present
   sd.events = Events()
   sd.events_sp = EventsSP()
-  sd.accelerator_events = AcceleratorEvents()
+  sd.model_events = ModelEventsSP()
   sd.params = Mock()
   sd.params.get_bool.return_value = False
   sd.params.get.return_value = None
-  sd.big_model_loading = sd.big_model_active = sd.big_model_failed = sd.big_model_running = False
+  sd.big_model_loading = sd.big_model_active = sd.big_model_failed = False
   sd.big_model_ready_t = 0.
   sd.enabled = enabled
   sd.mads = SimpleNamespace(enabled=mads_enabled)
