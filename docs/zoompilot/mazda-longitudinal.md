@@ -239,7 +239,9 @@ The radar teardown silences the radar-owned CRZ_CTRL frame, so cruise state come
 Main follows arming and falls once both bits have been low for `MAIN_OFF_DEBOUNCE_SAMPLES` (10
 samples of the 100 Hz PEDALS frame, 0.1 s), brake or no brake. Carstate counts PEDALS samples rather
 than its own frames, so it and the panda rx hook (`MAZDA_MAIN_OFF_DEBOUNCE`) drop main on the same
-sample. A main that falls on one side only is what produced "Controls Mismatch: Lateral" on
+sample. The wheel's main button sets MODE_X, MODE_Y or both: MODE_Y alone is a main-on on both the
+KE and the 2022 CX-5 (59 of 59 logged), MODE_X alone the KE's main-off (route_ke_0b). A main that
+falls on one side only is what produced "Controls Mismatch: Lateral" on
 route 000001c9--0b2a64a214 seg 0: main toggled at a red light with the brake held, the software
 dropped lateral, the panda kept it, and the next main press found `acc_main_on` already high.
 
@@ -629,6 +631,15 @@ RESUME_UNLATCHING (`tools/mazda_long/scan_stock_release.py`). Toyota, Honda and 
 their resume button off `openpilotLongitudinalControl` the same way. Pressing it under op-long
 would also put a second writer on CRZ_BTNS at the release, which ICBM owns.
 
+## High-beam relay
+
+The camera's high-beam request is CAM_LANEINFO (0x440) BIT2: it rises when the camera wants the
+lamps high, the stock lamps follow within 0.2 s, and the stock radar relays it to CRZ_CTRL bit 13
+(`NEW_SIGNAL_3` in the DBC), on which the body raises the lamps and lights the cluster's green
+HBC light. With the radar silenced the controller relays the bit itself from
+carstate's `hbc_request`, read only from a fresh CAM_LANEINFO frame. BIT2 is also the auto
+high-beam arming bit, which is why it is not a settle input (above).
+
 ## Advertised lead
 
 The lead we tell the camera about lives in three places: CRZ_CTRL.RADAR_HAS_LEAD,
@@ -691,6 +702,13 @@ The 2016-20 CX-9 is the one Mazda whose radar does not put the 0x361 to 0x366 tr
 so its platform config claims no radar bus; claiming one would leave radard waiting on a parser
 that never goes valid.
 
+The G46L (`G46L_RADAR_FW`), the 2016.5-era radar an EPS-swapped older body can keep, is the other
+radar with no tracks on bus 0, whatever its platform claims, so a detected G46L runs vision-only
+(`MazdaFlags.G46L_RADAR`). Its one frame, 0x499, is fully static: no counter, no checksum. Alpha
+long is offered on it because its own capture exists, and the controller sends that frame alone
+in place of the 2022 family's static and track frames. The firmware string is stored unpadded
+and matched with nulls stripped, so UDS padding cannot break the match.
+
 ## Alpha-long availability rule
 
 Alpha long follows the EPS, not the model: it needs an EPS that can hold the wheel through a
@@ -722,6 +740,13 @@ frames and the body ECU drops the cancel intent. CAN_OFF has to raise a cancel b
 the same reason, or ICBM's readiness gate never learns the driver is cancelling. On the CX-5 2022
 the wheel "+" button toggles SET_P, not RES; RES is the resume button (route
 0000019c--84a5408a38 seg 2/3: holding "+" emits SET_P = 1 and the body ECU increments CRZ_SPEED).
+
+CRZ_EVENTS.CRZ_SPEED is the held speed, and the dash shows it exactly on every cluster measured
+(North American imperial, metric CX-9, metric export CX-5). An Oceania cluster shows it over-read,
+displayed = held / 0.98 + 1 km/h (ADR speedometer calibration, indicated never below true;
+a New Zealand CX-9 2021, four samples, zero residual, zoompilot/opendbc#7). The dash number is
+what the buttons step and ICBM reads, so on a JM0 VIN (`MazdaFlagsSP.OCEANIA_CLUSTER`) carstate
+publishes it as `cruiseState.speedCluster`.
 
 ## Camera alert passthrough
 
