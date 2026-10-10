@@ -18,7 +18,7 @@ import pytest
 from openpilot.common.params import Params
 from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque as LatControlTorqueV1
-from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import TUNE_SWAP_INACTIVE_FRAMES, ControlsExt
+from openpilot.sunnypilot.selfdrive.controls.controls_lateral_zp import TUNE_SWAP_INACTIVE_FRAMES, ControlsLateralZP
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v2 import LatControlTorque as LatControlTorqueV2
 from openpilot.sunnypilot.selfdrive.controls.tests.test_latcontrol_torque_v2 import FRICTION, make_cs, make_lac, step
 
@@ -51,9 +51,9 @@ def drive(ctl, hand_back: bool, inactive_at: int | None = None, frames: int = 30
   for i in range(frames):
     active = (inactive_at is None or i < inactive_at) and i not in (inactive or ())
     torque, _, _ = ctl.LaC.update(active, make_cs(V_EGO, LAT_ACCEL), *DRIVE_ARGS)
-    ControlsExt.note_lat_active(ctl, active)
+    ControlsLateralZP.note_lat_active(ctl, active)
     out.append(torque)
-    ControlsExt.select_lateral_control(ctl, {'modelV2': SimpleNamespace(big=not (hand_back and i >= HAND_BACK))})
+    ControlsLateralZP.select_lateral_control(ctl, {'modelV2': SimpleNamespace(big=not (hand_back and i >= HAND_BACK))})
   return out
 
 

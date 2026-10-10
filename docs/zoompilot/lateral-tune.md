@@ -8,7 +8,7 @@ plan for the next on-car pass is in `lateral-tune-roadmap.md`.
 Files: `openpilot/sunnypilot/selfdrive/controls/lib/latcontrol_torque_v2.py` (the tune),
 `latcontrol_torque_ext.py` and `latcontrol_torque_ext_override.py` (the shared extension:
 EPS rail, speed-dependent torque), `steer_limit.py` (the classifier),
-`controlsd_ext.py` (wiring), `openpilot/sunnypilot/selfdrive/locationd/speed_bin_learner.py` (the
+`controls_lateral_zp.py` (wiring), `openpilot/sunnypilot/selfdrive/locationd/speed_bin_learner.py` (the
 speed-bin learner and its cache), `openpilot/sunnypilot/selfdrive/car/interfaces.py` (the
 Mazda seed).
 
@@ -23,7 +23,7 @@ Mazda seed).
 `TorqueControlTune` is the small-model tune, declared default v0 (v2 on the seeded Mazdas).
 `TorqueControlTuneBig` picks the tune for a big model (chestnut or jetlink), declared default
 v1 for every brand (2026-09-11: v1 drove the big models better, v2 the small ones); with
-Enforce Torque Control off both run v0. `controlsd_ext.initialize_lateral_control` builds one
+Enforce Torque Control off both run v0. `ControlsLateralZP.initialize_lateral_control` builds one
 controller per size at startup and `select_lateral_control` swaps `self.LaC` at the end of
 any frame whose `modelV2.big` differs from the running controller's, resetting the incoming
 one. That is safe by construction: a promotion only happens disengaged, where controlsd resets

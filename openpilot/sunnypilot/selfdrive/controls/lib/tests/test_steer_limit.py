@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 # The steer-limit classifier (lib/steer_limit.py): the unit table at two slew steps (the CX-5
-# 2022's 12 counts over its 1200 and over upstream's 800), the controlsd_ext wiring that replaces controlsd's flag with the
+# 2022's 12 counts over its 1200 and over upstream's 800), the controls_lateral_zp wiring that replaces controlsd's flag with the
 # classifier's driver_limited, and the integrator-level consequence run through the real v0
 # controller against a simulated slew-limited actuator.
 
@@ -23,6 +23,7 @@ from opendbc.sunnypilot.car.interfaces import get_steer_slew_schedule
 from openpilot.cereal import custom
 from openpilot.common.params import Params
 from openpilot.common.prefix import OpenpilotPrefix
+from openpilot.sunnypilot.selfdrive.controls.controls_lateral_zp import ControlsLateralZP
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 from openpilot.sunnypilot.selfdrive.controls.lib.steer_limit import CLEAN, SteerLimit, classify
@@ -182,7 +183,7 @@ class TestClassifyTable:
 
 
 class TestControlsdWiring:
-  """ControlsExt.reclassify_steer_limit runs after publish() computed the upstream flag."""
+  """ControlsLateralZP.reclassify_steer_limit runs after publish() computed the upstream flag."""
 
   @staticmethod
   def _stub(flag=True, lat_active=True, slew=CX5_SLEW, rail=([0.0], [0.6]), commanded=0.40, applied_prev=None,
@@ -201,44 +202,44 @@ class TestControlsdWiring:
 
   def test_deepening_mismatch_keeps_the_flag(self):
     stub = self._stub(commanded=0.40, applied_prev=0.29, error=0.2, integrator=0.3)
-    ControlsExt.reclassify_steer_limit(stub, self._sm(applied=0.30))
+    ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is True
     assert stub._applied_torque_prev == 0.30
     stub.LaC.extension.set_actuator_state.assert_called_once_with(0.30, False)
 
   def test_decaying_integrator_releases_the_flag(self):
     stub = self._stub(commanded=0.40, applied_prev=0.29, error=-0.2, integrator=0.3)
-    ControlsExt.reclassify_steer_limit(stub, self._sm(applied=0.30))
+    ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is False
 
   def test_rail_clears_the_flag_and_reaches_the_extension(self):
     stub = self._stub(commanded=0.90, applied_prev=0.60, error=0.2, integrator=0.3)
-    ControlsExt.reclassify_steer_limit(stub, self._sm(applied=0.60))
+    ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.60))
     assert stub.steer_limited_by_safety is False
     stub.LaC.extension.set_actuator_state.assert_called_once_with(0.60, True)
 
   def test_first_active_frame_keeps_the_upstream_flag(self):
     for flag in (True, False):
       stub = self._stub(flag=flag, commanded=0.40, applied_prev=None, error=-0.2, integrator=0.3)
-      ControlsExt.reclassify_steer_limit(stub, self._sm(applied=0.30))
+      ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
       assert stub.steer_limited_by_safety is flag
       assert stub._applied_torque_prev == 0.30
 
   def test_brand_without_slew_schedule_is_a_passthrough(self):
     stub = self._stub(slew=None, commanded=0.40, applied_prev=0.29, error=-0.2, integrator=0.3)
-    ControlsExt.reclassify_steer_limit(stub, self._sm(applied=0.30))
+    ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is True
     stub.LaC.extension.set_actuator_state.assert_not_called()
 
   def test_controller_without_extension_is_a_passthrough(self):
     # angle and PID controllers carry no torque extension
     stub = self._stub(with_extension=False, commanded=0.40, applied_prev=0.29, error=-0.2, integrator=0.3)
-    ControlsExt.reclassify_steer_limit(stub, self._sm(applied=0.30))
+    ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is True
 
   def test_inactive_lateral_leaves_the_flag_and_drops_history(self):
     stub = self._stub(lat_active=False, applied_prev=0.29, error=-0.2, integrator=0.3)
-    ControlsExt.reclassify_steer_limit(stub, self._sm(applied=0.30))
+    ControlsLateralZP.reclassify_steer_limit(stub, self._sm(applied=0.30))
     assert stub.steer_limited_by_safety is True
     assert stub._applied_torque_prev is None
     stub.LaC.extension.set_actuator_state.assert_not_called()
