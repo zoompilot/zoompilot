@@ -10,7 +10,7 @@ from jetlink.openpilot import Status
 
 from openpilot.cereal import custom
 from openpilot.common.test import OpenpilotTestCase
-from openpilot.selfdrive.ui.sunnypilot import model_info
+from openpilot.selfdrive.ui.sunnypilot import accelerator_link, model_info
 from openpilot.selfdrive.ui.ui_state import ChestnutState
 from openpilot.sunnypilot.models.helpers import REQUIRED_JSON_VERSION
 from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL, DEFAULT_MODEL
@@ -138,13 +138,14 @@ class TestAChestnutArrivingMidRender(OpenpilotTestCase):
       self.reads += 1
       return snapshot if self.reads == 1 else None
     type(self.ui_state).jetlink = mock.PropertyMock(side_effect=read)
-    patcher = mock.patch.object(model_info, "ui_state", self.ui_state)
-    patcher.start()
-    self.addCleanup(patcher.stop)
+    for module in (model_info, accelerator_link):
+      patcher = mock.patch.object(module, "ui_state", self.ui_state)
+      patcher.start()
+      self.addCleanup(patcher.stop)
 
   def test_each_reader_answers_from_the_snapshot_it_read(self):
     for call, expected in ((lambda: model_info.default_model("chestnut"), "jetlink's"),
-                           (model_info.big_model_progress, ("build", 0.5, "building")),
+                           (accelerator_link.big_model_progress, ("build", 0.5, "building")),
                            (model_info.carrying_model, ("accelerator", "big", "big"))):
       self.reads = 0
       assert call() == expected

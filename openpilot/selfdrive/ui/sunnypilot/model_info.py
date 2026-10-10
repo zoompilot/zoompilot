@@ -10,11 +10,9 @@ import time
 
 from openpilot.common.hardware.hw import Paths
 from openpilot.selfdrive.ui.ui_state import ui_state, ChestnutState
-from openpilot.sunnypilot import jetlink_adapter
 from openpilot.sunnypilot.models.fetcher import get_cached_bundles
 from openpilot.sunnypilot.models.helpers import get_active_source, get_selected_bundle, resolve_bundle_by_ref
 from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL, DEFAULT_MODEL
-from openpilot.system.ui.lib.multilang import tr
 
 
 def model_cache_size_mb() -> float:
@@ -65,39 +63,6 @@ def big_model_state() -> str | None:
           ChestnutState.WAITING: 'ready'}.get(ui_state.chestnut_state)
 
 
-def big_model_progress() -> tuple[str, float, str] | None:
-  """(stage, 0..1, message) while jetlink is working, else None. The message
-  is carried because a stage like "waiting for jetlink" has no meaningful fraction,
-  and it names the cable once jetlink counts enough link drops to blame it"""
-  jetlink = ui_state.jetlink
-  progress = jetlink.progress if jetlink is not None else None
-  if not progress:
-    return None
-  stage = str(progress.get('stage', ''))
-  if stage in ('', 'ready'):
-    return None
-  msg = tr(str(progress.get('msg', '')))
-  if drops := progress.get('drops'):
-    # on iOS the phone app is the other suspect
-    hint = tr("check cable or app") if jetlink.mode == 'ios' else tr("check cable")
-    msg = tr("{}, {} ({} drops)").format(msg, hint, drops)
-  return stage, float(progress.get('frac', 0.0)), msg
-
-
-def standin_model() -> str | None:
-  """The big model jetlink drives while the pick is still being downloaded or
-  built: the last one the Jetson built. None with a chestnut fitted."""
-  return None if ui_state.chestnut_present else getattr(ui_state.jetlink, 'standin', None)
-
-
-def big_model_note(ref: str) -> str | None:
-  """What jetlink says of one big model for the picker's list: built on the
-  Jetson, or downloaded to the comma. None with a chestnut fitted."""
-  if ui_state.chestnut_present or ui_state.jetlink is None:
-    return None
-  return {'ready': tr("ready on Jetson"), 'downloaded': tr("downloaded")}.get(jetlink_adapter.model_state(ref))
-
-
 def carrying_model() -> tuple[str | None, str | None, str | None]:
   """(source, internal name, display name) of what actually drives. Runner-matched:
   when a Default big cannot carry, stock modeld runs the Default small, never the
@@ -137,10 +102,6 @@ def queued_name(current_ref) -> str | None:
   return None
 
 
-def slot_bundle(source: str):
-  return get_selected_bundle(ui_state.params, source)
-
-
 def model_info() -> tuple[str, str, str]:
   """returns (active source, active model name, other model name)
 
@@ -149,8 +110,8 @@ def model_info() -> tuple[str, str, str]:
   would flash the wrong model."""
   source = active_source()
   other = "qcom" if source == "chestnut" else "chestnut"
-  active_bundle = slot_bundle(source)
-  other_bundle = slot_bundle(other)
+  active_bundle = get_selected_bundle(ui_state.params, source)
+  other_bundle = get_selected_bundle(ui_state.params, other)
 
   active_name = active_bundle.displayName if active_bundle else default_model_name(source)
   other_name = other_bundle.displayName if other_bundle else default_model_name(other)

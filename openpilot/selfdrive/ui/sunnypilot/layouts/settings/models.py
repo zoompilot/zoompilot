@@ -12,11 +12,11 @@ from openpilot.cereal import custom
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_selected_bundle, resolve_bundle_by_ref
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.ui_state import device, ui_state
-from openpilot.selfdrive.ui.sunnypilot.accelerator_link import LINK_MODES, LINK_MODE_TITLES, LINK_PARAM, link_mode, \
-  link_status, link_toggle_meaningful
-from openpilot.selfdrive.ui.sunnypilot.model_info import (big_model_note, big_model_state, bundles_for_source, carrying_model,
-                                                           default_model_name, model_cache_size_mb, queued_name, refresh_in_progress,
-                                                           refresh_model_list, standin_model)
+from openpilot.selfdrive.ui.sunnypilot.accelerator_link import LINK_MODE_TITLES, big_model_note, link_mode, link_status, \
+  link_toggle_meaningful, standin_model
+from openpilot.selfdrive.ui.sunnypilot.model_info import (big_model_state, bundles_for_source, carrying_model, default_model_name,
+                                                           model_cache_size_mb, queued_name, refresh_in_progress, refresh_model_list)
+from openpilot.sunnypilot.jetlink_adapter import KEYS, MODES
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import DialogResult, Widget
@@ -76,8 +76,8 @@ class ModelsLayout(Widget):
     self.accelerator_link_item = multiple_button_item_sp(
       tr("Jetlink"),
       self._link_description(""),
-      buttons=[lambda m=m: tr(LINK_MODE_TITLES[m]) for m in LINK_MODES],
-      param=LINK_PARAM, button_width=300, inline=False)
+      buttons=[lambda m=m: tr(LINK_MODE_TITLES[m]) for m in MODES],
+      param=KEYS.link, button_width=300, inline=False)
 
     self.download_item = download_status_item(lambda: tr("Download") if self._downloading else tr("Model Status"))
 
@@ -132,7 +132,7 @@ class ModelsLayout(Widget):
   def _refresh_accelerator_items(self):
     # the setting is a param read, so this rides the half-second tick
     self.accelerator_link_item.set_visible(link_toggle_meaningful())
-    self.accelerator_link_item.action_item.set_selected_button(LINK_MODES.index(link_mode()))
+    self.accelerator_link_item.action_item.set_selected_button(MODES.index(link_mode()))
     self.accelerator_link_item.action_item.set_enabled(ui_state.is_offroad())
     status = link_status()
     if status != self._link_status:
