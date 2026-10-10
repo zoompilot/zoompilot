@@ -5,11 +5,8 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
 Shared builders for the speed-dependent torque controller tests: the real torque-tuning
-builder the override writes into, a torqued message, a Params stand-in for the override,
-and a stub for the extension object update_speed_dep_torque runs against.
+builder the override writes into, a torqued message and a Params stand-in for the override.
 """
-from unittest.mock import MagicMock
-
 import openpilot.cereal.messaging as messaging
 from opendbc.car.structs import car
 from openpilot.sunnypilot.selfdrive.locationd.speed_bin_learner import LIVE_TORQUE_PARAMETERS_SP_SERVICE
@@ -69,19 +66,6 @@ def make_torqued_msg(speed_bp, lafs, frictions, valid, global_laf=2.0, global_fr
   tp_sp.speedBinFrictions = list(frictions)
   tp_sp.speedBinValid = list(valid)
   return tp, tp_sp
-
-
-def make_ext_stub(fingerprint='TEST_CAR'):
-  """A stand-in for the LatControlTorqueExt instance update_speed_dep_torque and
-  disable_speed_dep_torque are called on, with a real CarParams and the speed-dep state
-  the override initializes. lac_torque stays a MagicMock so update_limits calls are countable."""
-  stub = MagicMock()
-  stub.CP = make_cp(fingerprint)
-  stub._speed_dep_active = False
-  stub._speed_dep_speed_bp = []
-  stub._speed_dep_lat_accel_factor_bp = []
-  stub._speed_dep_friction_bp = []
-  return stub
 
 
 def activate_speed_dep(ovr, speed_bp=None, lat_accel_factor_bp=None, friction_bp=None):

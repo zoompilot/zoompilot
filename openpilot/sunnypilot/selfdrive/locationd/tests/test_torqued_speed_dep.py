@@ -189,6 +189,18 @@ class TestUnconfiguredCarSelfTuneOn:
 
 
 @needs_speed_dep_car
+class TestSanityBounds:
+  def test_bins_learn_without_the_relaxed_toggle(self, fake_params):
+    """With LiveTorqueParamsRelaxedToggle off every bin still clips to a band around its seed,
+    not (seed, seed): a fit 10% above the seed passes."""
+    est = TorqueEstimator(make_cp(lat_accel_factor=2.0, friction=0.15))
+    for (lo, hi), filters in zip(est.speed_bin_lat_accel_factor_bounds, est.speed_bin_filtered, strict=True):
+      assert lo < 1.1 * filters['latAccelFactor'].x < hi
+    for lo, hi in est.speed_bin_friction_bounds:
+      assert hi > lo
+
+
+@needs_speed_dep_car
 class TestNaNHandling:
   """Bin behavior when the SVD fails. The bucket is a MagicMock here on purpose: it forces
   the failure path without needing thousands of points."""
