@@ -2,7 +2,7 @@
 
 Code: `openpilot/sunnypilot/selfdrive/controls/lib/smart_cruise_control/`: the shared
 `limits.py` and `speed_profile.py`, zoompilot's planners in `zoompilot/`
-(`vision_controller.py`, `map_controller.py`, `smart_cruise_control.py`), sunnypilot's own
+(`vision_controller.py`, `map_controller.py`), sunnypilot's own
 planners beside them, and the two SLA publishers in `controls/lib/speed_limit/`
 (`speed_limit_assist_zp.py`, `assist_mirror.py`). Tests: `smart_cruise_control/tests/`,
 `smart_cruise_control/zoompilot/tests/`, `speed_limit/tests/`. Tools:

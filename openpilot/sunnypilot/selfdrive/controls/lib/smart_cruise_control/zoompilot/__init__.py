@@ -14,8 +14,11 @@ TUNED_BRANDS = ('mazda',)
 
 
 def make_smart_cruise_control(CP):
-  if CP.brand in TUNED_BRANDS:
-    from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.smart_cruise_control import SmartCruiseControl
-    return SmartCruiseControl(CP)
   from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
-  return SmartCruiseControl()
+  scc = SmartCruiseControl()
+  if CP.brand in TUNED_BRANDS:
+    from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.map_controller import SmartCruiseControlMap
+    from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.vision_controller import SmartCruiseControlVision
+    scc.vision = SmartCruiseControlVision(CP)
+    scc.map = SmartCruiseControlMap(CP)
+  return scc
