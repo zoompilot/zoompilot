@@ -98,7 +98,7 @@ class SettingsLayoutSP(OP.SettingsLayout):
     for i, btn in enumerate(sp_buttons):
       items.insert(1 + i, btn)
     # sunnylink sits right after software (base order: toggles, network, device,
-    # software, pair, firehose, developer, shifted by the sp panels above)
+    # software, firehose, developer, shifted by the sp panels above)
     items.insert(len(sp_buttons) + 4, sunnylink_btn)
 
     # front slots (only one ever visible at a time): exit-always-offroad, then enable-onroad

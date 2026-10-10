@@ -93,11 +93,11 @@ def badge_area(button: BigButton, btn_y: float) -> rl.Rectangle:
 class BigButtonSP(BigButton):
   """BigButton with badges, disabled state, active tinting, and sub-panel linking."""
 
-  def __init__(self, text: str, value: str = "", icon=None, scroll: bool = False):
+  def __init__(self, text: str, value: str = "", icon=None, scroll: bool = False, **kwargs):
     # BigButton.__init__ calls _update_label_layout before it returns.
     self._badge_labels: list[str] | None = None
     self._disabled: bool = False
-    BigButton.__init__(self, text, value, icon, scroll)
+    BigButton.__init__(self, text, value, icon, scroll, **kwargs)
 
   def set_subtitle_font_size(self, size: int):
     self._sub_label.set_font_size(size)
@@ -284,8 +284,8 @@ class BigParamOption(BigButton):
                value_change_step: int = 1, label_callback: Callable | None = None,
                value_map: dict[int, int] | None = None, float_param: bool = False,
                picker_label_callback: Callable | None = None,
-               picker_unit: str | Callable[[], str] = "", picker_item_width: int = 0):
-    super().__init__(text, "")
+               picker_unit: str | Callable[[], str] = "", picker_item_width: int = 0, **kwargs):
+    super().__init__(text, "", **kwargs)
     self._param = param
     self._min_value = min_value
     self._max_value = max_value
