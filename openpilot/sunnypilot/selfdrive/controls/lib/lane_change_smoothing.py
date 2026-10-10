@@ -124,7 +124,8 @@ class LaneChangeSmoothing:
     meta = model_v2.meta
     if meta.laneChangeState in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing):
       self.release_timer = SMOOTH_RELEASE_T
-      self.entry_sign = ENTRY_SIGN.get(meta.laneChangeDirection, self.entry_sign)
+      # .raw: a capnp enum compares equal to its int but does not hash like it
+      self.entry_sign = ENTRY_SIGN.get(meta.laneChangeDirection.raw, self.entry_sign)
     else:
       self.release_timer = max(self.release_timer - DT_CTRL, 0.0)
 

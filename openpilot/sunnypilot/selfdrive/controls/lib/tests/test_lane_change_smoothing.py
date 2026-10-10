@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from openpilot.cereal import log
+from openpilot.cereal import log, messaging
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from openpilot.common.test import OpenpilotTestCase
@@ -30,7 +30,11 @@ def make_cs(v_ego):
 
 
 def make_model(state=LaneChangeState.off, direction=LaneChangeDirection.none):
-  return SimpleNamespace(meta=SimpleNamespace(laneChangeState=state, laneChangeDirection=direction))
+  # a real modelV2, as controlsd gets it: its enums compare equal to ints but do not hash like them
+  msg = messaging.new_message('modelV2')
+  msg.modelV2.meta.laneChangeState = state
+  msg.modelV2.meta.laneChangeDirection = direction
+  return msg.modelV2
 
 
 LEFT_STARTING = make_model(LaneChangeState.laneChangeStarting, LaneChangeDirection.left)
