@@ -193,8 +193,8 @@ slowly while the limiter is live (aTarget flaps between the ECU's coast, downshi
 brake stages) and at the build rate once the plan is back on cruise, where a residual
 only holds the dash down and stalls the restore.
 
-Decel overshoot has no user toggle. It runs on every brand with an entry in
-`DECEL_OVERSHOOT_PARAMS` (a measured plant; Mazda today) and on no other, since the only
+Decel overshoot has no user toggle. It runs on every brand whose actuation profile has a
+`decel_overshoot` table (a measured plant; Mazda today) and on no other, since the only
 alternative is walking the dash to the whole dip, which brakes as hard as the dip is deep.
 The former `SmartCruiseDecelOvershoot` param and its one-time Mazda seed are gone; a stale
 key on an updated device is ignored.
@@ -254,12 +254,12 @@ and 0.75 at 45 mph, kept at 10 although the refit puts it at 8.9 (interval 8.4-9
 45 mph a budget request brakes nearer -0.82 than -0.75. The 0.90 and 1.05 columns are
 unconstrained (their intervals run to 29 mph) and stay on the previous fit's extrapolation.
 
-Planners budget 0.75 m/s^2 (`limits._STOCK_A_BUDGET`, 10 / 7.75 mph of gap), so an on-time
-manoeuvre never asks for more. The columns past it are the ECU's remaining range, reached
+Planners budget 0.75 m/s^2 (the profile's `stock_a_budget`, 10 / 7.75 mph of gap), so an
+on-time manoeuvre never asks for more. The columns past it are the ECU's remaining range, reached
 only when the vision planner's measured near field says the car is late, and less of it
 from a 50 mph set speed, none from 60 (`scc-curve-planning.md`, what the planner asks for).
 The planners size the stock actuation lead from the same gap:
-`limits._SERVO_TRACK_GAP['mazda'] = 8 mph` is all of a dip the servo walks before the ECU
+the Mazda profile's `track_gap = 8` mph is all of a dip the servo walks before the ECU
 brakes at budget, and the rest is tracked down rather than waited out.
 
 ## Restore quiet window

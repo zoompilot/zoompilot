@@ -45,9 +45,9 @@ actuation lead are picked once.
   planner, which cannot be imported (it imports the SP overlay); `test_limits.py` reads
   the upstream source and pins the mirror.
 - **stock ACC**: budget is the decel the overshoot lever holds the ECU to (mazda 0.75,
-  the budget column of `DECEL_OVERSHOOT_PARAMS`; unmeasured brands 0.5, where being wrong
-  only means braking earlier), response 1.0 s, plus the time to walk the dash down by
-  the tracking gap at the measured servo walk rate (mazda 8 mph at 4 mph/s). The ECU
+  the budget column of the actuation profile's `decel_overshoot`; unmeasured brands 0.5,
+  where being wrong only means braking earlier), response 1.0 s, plus the time to walk the
+  dash down by the tracking gap at the measured servo walk rate (mazda 8 mph at 4 mph/s). The ECU
   brakes on the gap as soon as it opens and the lever tracks `vEgo` down from there, so
   the rest of a deep dip is not dead time; leading by the whole dip committed a 30 mph
   drop 5 s early. The native 5 mph hold grid must not size the lead: synthesized holds
@@ -389,11 +389,11 @@ for every brand with a measured plant (`icbm.md`).
 | `_HOLD_V_MAX` / `_HOLD_SEEN_T` | 22.4 m/s / 2.0 s | far read flickers below 50 mph; latch sweep above | route sim, 149 curves, 228 straights |
 | `_CONFIRM_V_BP` / `_CONFIRM_T` (map) | 20.1 to 22.4 m/s -> 0 to 2.5 s | phantoms up to 2.1 s (one 6 s), real 5.0-12.6 s; drops 7 of 10 phantoms, tightest real slack 0.58 s | 6.2 h map on, 65 episodes |
 | `_OP_LONG_A_BUDGET` | 1.2 m/s^2 | `A_CRUISE_MIN` | upstream |
-| `_STOCK_A_BUDGET['mazda']` | 0.75 m/s^2 | the overshoot table's budget column (10 / 7.75 mph gap at 45 / 65) | 115,878 samples, 50 routes |
-| `_SERVO_TRACK_GAP['mazda']` | 8 mph | the overshoot gap at budget, 7.75 to 10 mph by speed | same |
-| `_STOCK_A_BUDGET_DEFAULT` | 0.5 m/s^2 | estimate, safe direction | n/a |
+| `stock_a_budget` (mazda profile) | 0.75 m/s^2 | the overshoot table's budget column (10 / 7.75 mph gap at 45 / 65) | 115,878 samples, 50 routes |
+| `track_gap` (mazda profile) | 8 mph | the overshoot gap at budget, 7.75 to 10 mph by speed | same |
+| `stock_a_budget` (default profile) | 0.5 m/s^2 | estimate, safe direction | n/a |
 | `_STOCK_RESPONSE_T` | 1.0 s | estimate, erring large | n/a |
-| `_SERVO_WALK_RATE['mazda']` | 4.0 mph/s | 4.1 hold frames, 3.8 taps | route 126 |
+| `walk_rate` (mazda profile) | 4.0 mph/s | 4.1 hold frames, 3.8 taps | route 126 |
 | `A_PUB_MIN` / `PUB_JERK` | -2.0 m/s^2 / 2.0 m/s^3 | stock publication depth for measured geometry, and ramp | n/a |
 | `D_FLOOR` | 0.5 m | division floor for a constraint at the bumper | n/a |
 | `_T_FALLBACK` (map) | 2.8 s | decel horizon for a degenerate distance | n/a |

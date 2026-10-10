@@ -41,20 +41,9 @@ REACT_TIMER = 0.3
 RESTORE_QUIET_TIME = 1.0
 RESTORE_QUIET_FRAMES = int(RESTORE_QUIET_TIME / DT_CTRL)
 
-# Stock ACC deceleration follows the gap between dash set speed and actual speed, in stages,
-# and keeps growing past 10 mph (harder still at highway speed). Hold the dash the gap that
-# yields the limiter's own requested decel below vEgo instead of walking it to the whole dip.
-DECEL_OVERSHOOT_PARAMS = {
-  'mazda': {
-    'speed_bp': [20.1, 29.1],  # m/s (45, 65 mph)
-    'decel_bp': [0.15, 0.30, 0.50, 0.60, 0.70, 0.75, 0.90, 1.05],  # requested decel magnitude, m/s^2
-    # gap below vEgo, mph, per speed_bp row. Planners budget 0.75 (limits._STOCK_A_BUDGET); a
-    # request past it means the car is late, and the columns beyond are the ECU's remaining range
-    'gap_v': [[2.5, 3.0, 3.75, 6.5, 8.5, 10.0, 16.25, 20.25],
-              [2.5, 3.0, 3.5, 6.5, 7.25, 7.75, 12.5, 17.25]],
-    'min_decel': 0.15,  # m/s^2; leave gentle coast-downs to the stock behavior
-  },
-}
+# Stock ACC deceleration follows the gap between dash set speed and actual speed. Hold the dash
+# the gap that yields the limiter's own requested decel below vEgo (the actuation profile's
+# decel_overshoot table) instead of walking it to the whole dip.
 # Apply quickly and release slowly across the ECU's discrete deceleration stages.
 DECEL_OVERSHOOT_RISE = 10.  # mph/s
 DECEL_OVERSHOOT_RELEASE = 3.  # mph/s
@@ -84,7 +73,7 @@ class IntelligentCruiseButtonManagement:
     self.CP_SP = CP_SP
     self.profile = get_actuation_profile(CP.brand)
     self.active = not CP_SP.pcmCruiseSpeed  # card's decision, kept current by update_activation
-    self.overshoot_params = DECEL_OVERSHOOT_PARAMS.get(CP.brand)  # brands with a measured plant
+    self.overshoot_params = self.profile.decel_overshoot  # brands with a measured plant
     self.fast_faulted = False  # disable the stream for this drive if the dash never moves
     self.reset()
 

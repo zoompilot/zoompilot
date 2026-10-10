@@ -13,10 +13,12 @@ import ast
 import pathlib
 
 
+from opendbc.sunnypilot.car.icbm_actuation_profile import ICBM_ACTUATION_PROFILES
 from openpilot.common.basedir import BASEDIR
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import limits
 
 UPSTREAM_PLANNER = pathlib.Path(BASEDIR) / "openpilot/selfdrive/controls/lib/longitudinal_planner.py"
+MEASURED = [p for p in ICBM_ACTUATION_PROFILES.values() if p.decel_overshoot is not None]
 
 
 def _module_constants(path: pathlib.Path) -> dict:
@@ -46,20 +48,18 @@ class TestOpLongMirror:
 
 class TestStockTrackingGap:
   """The planner's stock budget and actuation lead describe what decel overshoot actually does;
-  both live in the servo's table, which plannerd does not import."""
+  both must agree with the servo's overshoot table in the same actuation profile."""
 
   def test_budget_is_a_column_of_the_overshoot_table(self):
-    from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import DECEL_OVERSHOOT_PARAMS
-    for brand, budget in limits._STOCK_A_BUDGET.items():
-      assert budget in DECEL_OVERSHOOT_PARAMS[brand]['decel_bp']
+    for profile in MEASURED:
+      assert profile.stock_a_budget in profile.decel_overshoot['decel_bp']
 
   def test_track_gap_is_the_gap_at_budget(self):
-    from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import DECEL_OVERSHOOT_PARAMS
-    for brand, gap in limits._SERVO_TRACK_GAP.items():
-      p = DECEL_OVERSHOOT_PARAMS[brand]
-      col = p['decel_bp'].index(limits._STOCK_A_BUDGET[brand])
+    for profile in MEASURED:
+      p = profile.decel_overshoot
+      col = p['decel_bp'].index(profile.stock_a_budget)
       at_budget = [row[col] for row in p['gap_v']]
-      assert min(at_budget) <= gap <= max(at_budget)
+      assert min(at_budget) <= profile.track_gap <= max(at_budget)
 
   def test_lead_walks_only_the_tracking_gap(self):
     from opendbc.car import structs
