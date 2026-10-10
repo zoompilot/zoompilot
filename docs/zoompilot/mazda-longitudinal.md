@@ -395,6 +395,10 @@ LongControl already parks at `CP.stopAccel` while stopping, which for this car i
 value: stock MRCC holds raw -1024 at a stop, so `stopAccel = -1.024` and the plan's value is sent
 as-is. Nothing in the machine latches; `holding` is recomputed every frame.
 
+`AccelShaper` (also in `longitudinal.py`) turns the plan into the CRZ_INFO command: the release
+ramp and breakaway below, the slew, ceiling, build and lift limits, then the hold's own commands.
+The controller only feeds it and sends the result.
+
 ### Body hold and the relax
 
 Once STOPPING has held a stop for a few seconds, the body ECU takes the standstill hold over and
