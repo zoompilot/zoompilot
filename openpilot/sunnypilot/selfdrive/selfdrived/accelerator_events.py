@@ -60,7 +60,7 @@ class AcceleratorEvents:
 
   def update(self, sm: messaging.SubMaster, in_control: bool, events: Events, events_sp: EventsSP) -> None:
     """`in_control`: openpilot or MADS is engaged, MADS even while its lateral
-    is paused. The adapter's swap gate (jetlink_adapter.in_control) is shut
+    is paused. The adapter's swap gate (jetlink_adapter.Adapter.in_control) is shut
     exactly then, and also while its inputs are late or invalid."""
     status = sm['modelDataV2SP']
     big = sm['modelV2'].big

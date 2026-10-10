@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import jetlink.openpilot as jl
@@ -173,7 +174,12 @@ class TestModeld(OpenpilotTestCase):
     self.assertIs(face.get_action_from_model, modeld.get_action_from_model)
 
   def test_in_control_shuts_the_swap_window_on_anything_in_control_or_unknown(self):
-    sm = messaging.SubMaster(list(jetlink_adapter.IN_CONTROL))
+    op = Adapter()
+    self.assertIsNone(op._sm, 'a SubMaster only in the modeld that asks')
+    self.assertIs(op.in_control(), True, 'nothing heard yet')
+    sm = op._sm
+    self.assertEqual(sm.services, list(jetlink_adapter.IN_CONTROL))
+    sm.update = lambda timeout=0: None   # the messages are set by hand below
 
     def healthy():
       for service in sm.services:
@@ -183,21 +189,53 @@ class TestModeld(OpenpilotTestCase):
     for failed in sm.services:
       for check in (sm.alive, sm.valid):
         healthy()
-        self.assertFalse(jetlink_adapter.in_control(sm))
+        self.assertFalse(op.in_control())
         check[failed] = False
-        self.assertTrue(jetlink_adapter.in_control(sm), failed)
+        self.assertTrue(op.in_control(), failed)
     healthy()
     sm['carControl'].enabled = True
-    self.assertTrue(jetlink_adapter.in_control(sm))
+    self.assertTrue(op.in_control())
     sm['carControl'].enabled = False
     # MADS engaged with its lateral paused (a stop, a blinker, the brake):
     # nothing steers, but MADS does again on its own, so no swap
     sm['carControlSP'].mads.enabled = True
-    self.assertTrue(jetlink_adapter.in_control(sm))
+    self.assertTrue(op.in_control())
     sm['carControlSP'].mads.enabled = False
-    self.assertFalse(jetlink_adapter.in_control(sm))
+    self.assertFalse(op.in_control())
     # a rule that fails on the frame thread holds the swap off, never modeld
-    self.assertIs(jetlink_adapter.in_control(None), True)
+    op._sm = None
+    with mock.patch.object(messaging, 'SubMaster', side_effect=RuntimeError('no msgq')):
+      self.assertIs(op.in_control(), True)
+
+  def test_a_chestnut_never_asks_jetlink(self):
+    with mock.patch.object(jetlink_adapter, '_hook', side_effect=AssertionError('asked')):
+      self.assertFalse(jetlink_adapter.prepare(True))
+
+  def test_attach_keeps_the_model_unless_the_link_joins(self):
+    joined = object()
+    with mock.patch.object(jetlink_adapter, '_hook', return_value=None):
+      self.assertEqual(jetlink_adapter.attach('model', 'small', 1928, 1208), 'model')
+    with mock.patch.object(jetlink_adapter, '_hook', return_value=joined) as hook:
+      self.assertIs(jetlink_adapter.attach('model', 'small', 1928, 1208), joined)
+    hook.assert_called_once_with('attach', 'small', 1928, 1208)
+
+  def test_a_handover_is_the_count_moving_across_a_run(self):
+    joining = SimpleNamespace(handovers=0)
+    with mock.patch.object(jetlink_adapter, '_handovers', 0):
+      self.assertFalse(jetlink_adapter.handed_over(object()), 'a plain ModelState never hands over')
+      self.assertFalse(jetlink_adapter.handed_over(joining))
+      joining.handovers = 1
+      self.assertTrue(jetlink_adapter.handed_over(joining))
+      self.assertFalse(jetlink_adapter.handed_over(joining))
+
+  def test_the_state_is_the_joining_models(self):
+    self.assertEqual(jetlink_adapter.state(object()), 'none')
+    self.assertEqual(jetlink_adapter.state(SimpleNamespace(big_model_state='ready')), 'ready')
+
+  def test_what_the_hooks_read_off_the_model_is_the_joining_models(self):
+    from jetlink.openpilot.joining import JoiningModelState
+    for name in ('handovers', 'big_model_state'):
+      self.assertIsInstance(getattr(JoiningModelState, name), property, name)
 
   def test_telemetry_is_a_cloudlog_event(self):
     op = Adapter()
@@ -388,8 +426,8 @@ class TestWithoutAUsableJetlink(OpenpilotTestCase):
       'should_run': jetlink_adapter.should_run(False, None, None),
       'status': jetlink_adapter.status(),
       'reason': jetlink_adapter.reason(),
-      'prepare': jetlink_adapter.prepare(),
-      'attach': jetlink_adapter.attach(object(), 1, 1),
+      'prepare': jetlink_adapter.prepare(False),
+      'attach': jetlink_adapter.attach('model', object(), 1, 1),
       'request_shutdown': jetlink_adapter.request_shutdown('test'),
       'shutdown_pending': jetlink_adapter.shutdown_pending(),
       'should_extend_catalog': jetlink_adapter.should_extend_catalog(),
@@ -397,7 +435,7 @@ class TestWithoutAUsableJetlink(OpenpilotTestCase):
       'model_state': jetlink_adapter.model_state('f' * 40),
     }
 
-  NULL = {'should_run': False, 'status': None, 'reason': None, 'prepare': False, 'attach': None,
+  NULL = {'should_run': False, 'status': None, 'reason': None, 'prepare': False, 'attach': 'model',
           'request_shutdown': False, 'shutdown_pending': False,
           'should_extend_catalog': False, 'extend_catalog': True, 'model_state': None}
 
@@ -412,7 +450,7 @@ Params().put("JetlinkLink", 1, block=True)
 c = {'bundles': []}
 assert not a.should_run(False, None, None)
 assert a.status() is None and a.reason() is None
-assert not a.prepare() and a.attach(object(), 1, 1) is None
+assert not a.prepare(False) and a.attach('model', object(), 1, 1) == 'model'
 assert not a.request_shutdown('test') and not a.shutdown_pending()
 assert not a.should_extend_catalog() and a.extend_catalog(c) is c
 assert a.model_state('f' * 40) is None
@@ -423,7 +461,7 @@ assert a.model_state('f' * 40) is None
 
   def test_another_api_turns_the_link_off_and_says_why(self):
     params = Params()
-    for api, name, why in ((1, 'API', "jetlink package API 1, this build expects 2"),
+    for api, name, why in ((2, 'API', "jetlink package API 2, this build expects 3"),
                            (None, 'openpilot', "jetlink package too old for this build")):
       if name == 'API':
         patch = mock.patch.object(jl, 'API', api)

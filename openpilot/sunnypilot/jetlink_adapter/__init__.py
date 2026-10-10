@@ -31,7 +31,7 @@ from pathlib import Path
 
 # the version of jetlink.openpilot's API this adapter is written to; any other
 # is treated as jetlink being absent, with the reason as the offroad alert
-API = 2
+API = 3
 
 # the gadget owner, as manager names the process and selfdrived lists it
 OWNER = 'jetlinkd'
@@ -53,6 +53,9 @@ KEYS = _Keys(link='JetlinkLink', offroad='IsOffroad', progress='AcceleratorProgr
 # USB-C port hosts one and is never held as a jetlink device beside it. The
 # hardware package is too heavy for the owner, so they are written out here
 CHESTNUT_IDS = frozenset({(0xADD1, 0x0001), (0x3801, 0x0001), (0x174C, 0x2464), (0x174C, 0x2463)})
+
+# what Adapter.in_control() reads
+IN_CONTROL = ('carState', 'carControl', 'carControlSP')
 
 OWNER_LOG = Path('/data/log/jetlink-owner.log')
 
@@ -109,6 +112,8 @@ class Adapter:
     # 110 us for the read, and the UI reads several five times a second. By
     # store, since a test or a bench runs under its own prefix
     self._stores: dict[Path, object] = {}
+    # in_control's, made on modeld's first frame
+    self._sm = None
 
   # -- params ---------------------------------------------------------------
 
@@ -183,6 +188,29 @@ class Adapter:
     return ModelFace(parser=Parser, frame_size=lambda w, h: get_nv12_info(w, h)[3], desire_len=ModelConstants.DESIRE_LEN,
                      constants=V2ModelConstants, lat_smooth_seconds=LAT_SMOOTH_SECONDS,
                      long_smooth_seconds=LONG_SMOOTH_SECONDS, get_action_from_model=get_action_from_model)
+
+  def in_control(self) -> bool:
+    """Is openpilot or MADS in control? The joining model asks before every
+    frame and swaps its large model in only while not. selfdrived's own
+    answer (enabled or mads.enabled, what accelerator_events is handed), as
+    controlsd republishes it, off a SubMaster of the adapter's. MADS counts
+    with its lateral paused (a stop, a blinker, the brake): it steers again on
+    its own. A service late or invalid counts as in control; without carState
+    a card that died would have the swap land on stale controls. A rule that
+    fails holds the swap off, never modeld."""
+    try:
+      if self._sm is None:
+        from openpilot.cereal import messaging
+        self._sm = messaging.SubMaster(list(IN_CONTROL))
+      sm = self._sm
+      sm.update(0)
+      result = not (sm.all_alive(IN_CONTROL) and sm.all_valid(IN_CONTROL)) or \
+        bool(sm['carControl'].enabled or sm['carControlSP'].mads.enabled)
+    except Exception as e:
+      _failed('in_control', e)
+      return True
+    _failed_hooks.pop('in_control', None)
+    return result
 
   def event(self, name: str, **fields) -> None:
     self.log.event(name, **fields)
@@ -311,39 +339,39 @@ def reason() -> str | None:
   return _hook('reason')
 
 
-def prepare() -> bool:
+def prepare(chestnut: bool) -> bool:
   """modeld, before config_realtime_process: will the link join this modeld?
-  The GPU's setup has to happen now, or its threads inherit the frame loop's
-  realtime priority and core."""
-  return _hook('prepare')
+  Never beside a chestnut, which runs the large model itself. The GPU's setup
+  has to happen now, or its threads inherit the frame loop's realtime
+  priority and core."""
+  return not chestnut and _hook('prepare')
 
 
-# what in_control() reads; both modelds subscribe to all three
-IN_CONTROL = ('carState', 'carControl', 'carControlSP')
+def attach(model, small, cam_w: int, cam_h: int):
+  """modeld, once the camera is up and `small` is built: the model to run.
+  The joining model, `small` driving until the link has joined, when
+  prepare() said yes; `model` otherwise."""
+  joined = _hook('attach', small, cam_w, cam_h)
+  return model if joined is None else joined
 
 
-def in_control(sm) -> bool:
-  """modeld, before every frame, onto the model: is openpilot or MADS in
-  control? jetlink's large model swaps in only while it is not. selfdrived's
-  own answer (enabled or mads.enabled, what accelerator_events is handed),
-  as controlsd republishes it, read off modeld's SubMaster. MADS counts with
-  its lateral paused (a stop, a blinker, the brake): it steers again on its
-  own. A service late or invalid counts as in control; without carState a
-  card that died would have the swap land on stale controls."""
-  try:
-    result = not (sm.all_alive(IN_CONTROL) and sm.all_valid(IN_CONTROL)) or \
-      bool(sm['carControl'].enabled or sm['carControlSP'].mads.enabled)
-  except Exception as e:
-    _failed('in_control', e)
-    return True
-  _failed_hooks.pop('in_control', None)
-  return result
+# the joining model's handovers as modeld last saw them
+_handovers = 0
 
 
-def attach(small, cam_w: int, cam_h: int):
-  """modeld, once the camera is up and `small` is built: the model to run,
-  `small` driving until the link has joined; None unless prepare() said yes."""
-  return _hook('attach', small, cam_w, cam_h)
+def handed_over(model) -> bool:
+  """modeld, after every run(): did it change which model drives? The joining
+  model counts its swaps and hand-backs; the stall of one is not lag, as for
+  a chestnut's fallback, and nor are the drops of the frame it happens on."""
+  global _handovers
+  handovers = getattr(model, 'handovers', 0)
+  changed, _handovers = handovers != _handovers, handovers
+  return changed
+
+
+def state(model) -> str:
+  """modelDataV2SP.acceleratorState: the joining model's, else none."""
+  return getattr(model, 'big_model_state', 'none')
 
 
 def request_shutdown(reason: str = '') -> bool:

@@ -58,7 +58,8 @@ class TestLinkStaysOff(OpenpilotTestCase):
       self.assertFalse(status.enabled or status.ready)
       self.assertIsNone(status.reason)
       self.assertIsNone(jetlink_adapter.reason())
-      self.assertFalse(jetlink_adapter.prepare())
+      # jetlink's own answer too, had modeld missed the chestnut
+      self.assertFalse(jetlink_adapter.prepare(False))
 
   def test_without_one_the_setting_decides(self):
     with self.fitted(False):
