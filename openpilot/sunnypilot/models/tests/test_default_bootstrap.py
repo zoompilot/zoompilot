@@ -5,8 +5,12 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-from openpilot.sunnypilot.models.default_bootstrap import (DEFAULT_MODEL_SHORT_NAME, find_default_bundle,
-                                                            maybe_apply_default_model)
+import pytest
+
+from openpilot.sunnypilot.models import default_bootstrap
+from openpilot.sunnypilot.models.default_bootstrap import (CARRY_OVER_KEY, DEFAULT_MODEL_SHORT_NAME, carry_over_picks,
+                                                            find_default_bundle, maybe_apply_default_model)
+from openpilot.sunnypilot.models.helpers import REQUIRED_JSON_VERSION
 
 FM_REF = "b74f5189a74446015c0cf78a4a9f0134a347ae3b"
 
@@ -35,6 +39,9 @@ class FakeParams:
 
   def put_bool(self, key, val):
     self._store[key] = bool(val)
+
+  def remove(self, key):
+    self._store.pop(key, None)
 
 
 def _available_with_fm():
@@ -93,3 +100,72 @@ class TestDefaultModelBootstrap:
     params = FakeParams({"DefaultModelApplied": True})
     maybe_apply_default_model(params, _available_with_fm())
     assert params.get("ModelManager_DownloadRef") is None
+
+
+OLD = REQUIRED_JSON_VERSION - 1
+QCOM, CHESTNUT = "ModelManager_ActiveBundle", "ModelManager_ActiveBundleChestnut"
+
+
+def stored(ref, name, version=OLD):
+  return {"ref": ref, "internalName": name, "minimumSelectorVersion": version}
+
+
+@pytest.fixture(autouse=True)
+def fresh_process():
+  default_bootstrap._carry_over_queued.clear()
+
+
+class TestCarryOverPicks:
+  """A selector bump must not drop a device back to the stock model (validation clears the old slot)."""
+
+  def test_a_stale_pick_is_requeued_by_its_ref(self):
+    params = FakeParams({QCOM: stored(FM_REF, "FM")})
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": []})
+    assert params.get("ModelManager_DownloadRef") == FM_REF
+    assert params.get(CARRY_OVER_KEY) == {"qcom": {"ref": FM_REF, "internalName": "FM"}}
+
+  def test_a_rebuilt_model_is_found_by_its_short_name(self):
+    params = FakeParams({QCOM: stored("old-ref", "FM")})
+    carry_over_picks(params, {"qcom": [FakeBundle(28, "FM", "new"), FakeBundle(61, "FM", "newer")], "chestnut": []})
+    assert params.get("ModelManager_DownloadRef") == "newer"
+
+  def test_offline_keeps_the_pick_until_the_catalog_arrives(self):
+    params = FakeParams({QCOM: stored(FM_REF, "FM")})
+    carry_over_picks(params, {"qcom": [], "chestnut": []})
+    params.remove(QCOM)  # what validation does to the stale slot
+    assert params.get("ModelManager_DownloadRef") is None
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": []})
+    assert params.get("ModelManager_DownloadRef") == FM_REF
+
+  def test_the_pick_is_dropped_once_the_slot_is_filled(self):
+    params = FakeParams({QCOM: stored(FM_REF, "FM")})
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": []})
+    params.put(QCOM, stored(FM_REF, "FM", REQUIRED_JSON_VERSION))
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": []})
+    assert params.get(CARRY_OVER_KEY) is None
+
+  def test_a_model_the_new_catalog_lacks_falls_back_to_the_default(self):
+    params = FakeParams({QCOM: stored("gone", "GONE")})
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": []})
+    assert params.get("ModelManager_DownloadRef") is None
+    assert params.get(CARRY_OVER_KEY) is None
+
+  def test_a_failed_download_is_not_requeued_in_the_same_process(self):
+    params = FakeParams({QCOM: stored(FM_REF, "FM")})
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": []})
+    params.remove("ModelManager_DownloadRef")
+    params.remove(QCOM)
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": []})
+    assert params.get("ModelManager_DownloadRef") is None
+    assert params.get(CARRY_OVER_KEY) is not None  # retried after a restart
+
+  def test_the_big_model_slot_is_carried_too(self):
+    params = FakeParams({CHESTNUT: stored("big", "CTV3M")})
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": [FakeBundle(3, "CTV3M", "big")]})
+    assert params.get("ModelManager_DownloadRef") == "big"
+
+  def test_a_current_pick_is_left_alone(self):
+    params = FakeParams({QCOM: stored(FM_REF, "FM", REQUIRED_JSON_VERSION)})
+    carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": []})
+    assert params.get("ModelManager_DownloadRef") is None
+    assert params.get(CARRY_OVER_KEY) is None

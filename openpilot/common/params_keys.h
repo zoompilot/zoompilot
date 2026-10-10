@@ -232,6 +232,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ModelManager_ModelsCache_Chestnut", {PERSISTENT | BACKUP, JSON}},
     // zoompilot: one-time marker so the Firehose Model is applied as the default exactly once (see models/default_bootstrap.py)
     {"DefaultModelApplied", {PERSISTENT | BACKUP, BOOL}},
+    // zoompilot: model picks waiting to be re-queued after a selector bump (models/default_bootstrap.py)
+    {"ModelManager_CarryOver", {PERSISTENT, JSON}},
 
     // Neural Network Lateral Control
     {"NeuralNetworkLateralControl", {PERSISTENT | BACKUP, BOOL, "0"}},
