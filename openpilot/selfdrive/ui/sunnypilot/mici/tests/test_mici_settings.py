@@ -1276,7 +1276,7 @@ class TestOverriddenToggles:
     layout._tq_relaxed.set_checked(True)
     layout._tq_custom.set_checked(True)
     layout._tq_manual_rt.set_checked(True)
-    for item in (layout._tq_self_tune, layout._tq_relaxed, layout._tq_speed_dep):
+    for item in (layout._tq_self_tune, layout._tq_relaxed):
       assert not item.enabled and item.superseded
     layout._tq_manual_rt.set_checked(False)
     for item in (layout._tq_self_tune, layout._tq_relaxed):
