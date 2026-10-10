@@ -195,7 +195,7 @@ class SunnylinkLayoutMici(NavScroller):
       elif (backup_status == custom.BackupManagerSP.Status.completed or
             (backup_status == custom.BackupManagerSP.Status.idle and backup_progress == 100.0)):
         self._backup_in_progress = False
-        gui_app.push_widget(BigDialog(tr("settings backed up"), ""))
+        gui_app.push_widget(BigDialog(title=tr("settings backed up"), description=""))
         self._backup_btn.set_enabled(not ui_state.is_onroad())
 
     elif self._restore_in_progress:
@@ -213,7 +213,7 @@ class SunnylinkLayoutMici(NavScroller):
         self._restore_btn.set_enabled(not ui_state.is_onroad())
         self._restore_btn.set_text(tr("restore"))
         self._restore_btn.set_value(tr("failed"))
-        gui_app.push_widget(BigDialog(tr("unable to restore"), "try again later."))
+        gui_app.push_widget(BigDialog(title=tr("unable to restore"), description="try again later."))
 
       elif (restore_status == custom.BackupManagerSP.Status.completed or
             (restore_status == custom.BackupManagerSP.Status.idle and restore_progress == 100.0)):
@@ -235,12 +235,15 @@ class SunnylinkLayoutMici(NavScroller):
 class SunnylinkPairBigButton(BigButton):
   def __init__(self, sponsor_pairing: bool = False):
     self.sponsor_pairing = sponsor_pairing
-    # the long-press dialog keeps the constructor's title; _update_state sets the shown one
+    # the long-press dialog keeps the constructor's title; the layout's _update_state sets the shown one
     if sponsor_pairing:
       super().__init__(tr("pair"), description=tr("Pair your GitHub account to give this device your sponsor benefits."))
     else:
       super().__init__(tr("sponsor"), description=tr("Shows a QR code to sponsor sunnypilot, the project behind sunnylink.\n" +
                                                      "Sponsors get early access to new sunnylink features."))
+
+  def _update_state(self):
+    super()._update_state()
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     super()._handle_mouse_release(mouse_pos)
@@ -255,7 +258,7 @@ class SunnylinkPairBigButton(BigButton):
       dlg = BigDialog(tr("sunnylink dongle id not found"), tr("please reboot & try again"))
     elif self.sponsor_pairing:
       dlg = SunnylinkPairingDialog(sponsor_pairing=True)
-    else:
+    elif not self.sponsor_pairing:
       dlg = SunnylinkPairingDialog(sponsor_pairing=False)
     if dlg:
       gui_app.push_widget(dlg)
