@@ -98,7 +98,6 @@ class IntelligentCruiseButtonManagement:
     self.state = State.inactive
     self.pre_active_timer = 0
     self.restore_quiet_timer = 0
-    self.v_target_prev = 0
     self.v_target_raw = 0
     self.v_target_raw_prev = 0
     self.react_deadband = REACT_DEADBAND
@@ -186,7 +185,6 @@ class IntelligentCruiseButtonManagement:
       v_command = max(CS.vEgo - overshoot_ms, v_plan - max(CS.vEgo - v_plan, 0.))
       v_target_ms = min(v_command, max(CS.cruiseState.speedCluster, v_plan))
 
-    self.v_target_prev = self.v_target
     self.v_target = round(v_target_ms * speed_conv)
     # Judge restore intent against the unmodified plan target.
     self.v_target_raw_prev = self.v_target_raw
