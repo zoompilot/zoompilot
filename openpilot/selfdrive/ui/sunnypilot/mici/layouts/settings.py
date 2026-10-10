@@ -29,6 +29,7 @@ from openpilot.system.ui.lib.multilang import tr
 # (a full params pass each) never register.
 OP.TogglesLayoutMici = TogglesLayoutMiciSP
 OP.DeveloperLayoutMici = DeveloperLayoutMiciSP
+OP.SoftwareLayoutMici = SoftwareLayoutSP
 
 SP_ICON = "../../sunnypilot/selfdrive/assets/offroad"
 BIG_ICON_SIZE = 110
@@ -50,9 +51,6 @@ class SettingsLayoutSP(OP.SettingsLayout):
 
     device_panel = DeviceLayoutMici()
     self._scroller._items[2].set_click_callback(lambda: gui_app.push_widget(device_panel))
-
-    # by label: an index mis-wires silently if the base list is ever reordered
-    self._replace_panel("software", SoftwareLayoutSP())
 
     self.icon_offroad_enable = gui_app.texture("../../sunnypilot/selfdrive/assets/icons_mici/always_offroad.png", BIG_ICON_SIZE,
                                                BIG_ICON_SIZE)
@@ -116,10 +114,6 @@ class SettingsLayoutSP(OP.SettingsLayout):
     self._scroller._items.clear()
     for item in items:
       self._scroller.add_widget(item)
-
-  def _replace_panel(self, label: str, panel) -> None:
-    btn = next(btn for btn in self._scroller.items if btn.get_text() == label)
-    btn.set_click_callback(lambda: gui_app.push_widget(panel))
 
   def _update_state(self):
     super()._update_state()
