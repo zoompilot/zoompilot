@@ -108,14 +108,3 @@ SKILL.md
 
 # Screenshot output stays untracked because PNG files use an LFS remote unavailable to installers.
 openpilot/sunnypilot/selfdrive/ui/tests/screenshots/
-notes/
-
-# local-only trees that live in their own repos (zoompilot-research, zoompilot-site,
-# smart-can-filter) or are stale pre-restructure build output
-/site/
-/hardware/
-/scratchpad/
-/.wrangler/
-/mise.toml
-/tools/replay/
-/tools/jotpluggler/
