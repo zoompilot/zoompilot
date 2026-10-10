@@ -19,8 +19,7 @@ and never un-bumps, so a 20 Hz reader cannot miss one.
 from openpilot.cereal import custom
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.selfdrive.modeld.constants import ModelConstants
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import get_planning_limits, publish_ramp
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import required_decel
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import get_planning_limits, publish_cap_decel
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES, ENABLED_STATES, V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
@@ -74,9 +73,7 @@ class SpeedLimitAssistMirror:
     # the decel actually required to arrive at the cap (it keys ICBM's overshoot gap on
     # stock ACC); computed here because the resolver's distance lives in plannerd
     if self.is_active and 0.0 < v_cap < v_ego:
-      d_eff = max(distance, v_ego * _T_ACTIVE)
-      a_des = -required_decel(v_ego, [v_cap], [d_eff])
-      self._a_out = publish_ramp(a_des, self._a_out, self.limits, v_ego)
+      self._a_out = publish_cap_decel(v_cap, distance, _T_ACTIVE, self._a_out, self.limits, v_ego)
     else:
       self._a_out = a_ego
     self.output_a_target = self._a_out

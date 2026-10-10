@@ -12,12 +12,13 @@ import numpy as np
 
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.navd.helpers import Coordinate, coordinate_from_param
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import COMMIT_FRAC, PlanningLimits, get_planning_limits, publish_ramp
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import COMMIT_FRAC, PlanningLimits, get_planning_limits, \
+  publish_cap_decel
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.map_controller import (
   ACTIVE_STATES, ENABLED_STATES, R, TO_RADIANS, MapState, SmartCruiseControlMap as UpstreamMap, distance_to_point, velocities_from_param)
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import lead_distance, required_decel
 
-__all__ = ['ACTIVE_STATES', 'ENABLED_STATES', 'MapState', 'R', 'SmartCruiseControlMap', 'target_binds', 'target_decel']
+__all__ = ['ACTIVE_STATES', 'ENABLED_STATES', 'MapState', 'R', 'SmartCruiseControlMap', 'target_binds']
 
 _T_FALLBACK = 2.8  # s; decel horizon when the target's distance is degenerate
 # a map target is a prediction that can flicker on over road that never curves (mapd matching
@@ -43,14 +44,6 @@ def target_binds(v_ego: float, tv, d, lim: PlanningLimits) -> np.ndarray:
   return (tv <= v_ego) & (a_req >= COMMIT_FRAC * lim.a_budget)
 
 
-def target_decel(v_ego: float, v_target: float, d: float, lim: PlanningLimits) -> float:
-  """Decel required to arrive at a bound target, m/s2, positive. A map target is a prediction:
-  it may ask for the budget but never past it, which only the vision planner's measured near
-  field may do (route 25c: targets of 19-49 mph flickered on for 1-2 s at 55 mph over road
-  that never curved)."""
-  return min(required_decel(v_ego, [v_target], [max(d, v_ego * _T_FALLBACK)]), lim.a_budget)
-
-
 class SmartCruiseControlMap(UpstreamMap):
   def __init__(self, CP):
     super().__init__()
@@ -64,8 +57,7 @@ class SmartCruiseControlMap(UpstreamMap):
   def get_a_target_from_control(self) -> float:
     # keys ICBM's overshoot gap on stock ACC; ramped since the plan aTarget seeds the MPC
     if self.is_active and 0. < self.v_target < self.v_ego:
-      a_des = -target_decel(self.v_ego, self.v_target, self.target_distance, self.limits)
-      self._a_out = publish_ramp(a_des, self._a_out, self.limits, self.v_ego)
+      self._a_out = publish_cap_decel(self.v_target, self.target_distance, _T_FALLBACK, self._a_out, self.limits, self.v_ego)
     else:
       self._a_out = self.a_ego
     return self._a_out

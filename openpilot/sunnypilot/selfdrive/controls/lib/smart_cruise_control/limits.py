@@ -18,6 +18,7 @@ import numpy as np
 from opendbc.car import structs
 from opendbc.sunnypilot.car.icbm_actuation_profile import get_actuation_profile
 from openpilot.common.realtime import DT_MDL
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import required_decel
 
 # openpilot long's cruise candidate: clip(v_cruise - v_ego, A_CRUISE_MIN, max) with a jerk
 # clip from J_CRUISE_VALS. Mirrored from selfdrive/controls/lib/longitudinal_planner.py, which
@@ -119,3 +120,11 @@ def publish_ramp(a_des: float, a_prev: float, lim: PlanningLimits, v_ego: float,
   a_des = max(a_des, floor)
   step = lim.pub_jerk(v_ego) * dt
   return float(min(max(a_des, a_prev - step), a_prev + step))
+
+
+def publish_cap_decel(v_cap: float, d: float, t_min: float, a_prev: float, lim: PlanningLimits, v_ego: float) -> float:
+  """publish_ramp toward the decel that brings v_ego down to a predicted cap v_cap in d metres, or
+  in t_min seconds when d is shorter (a cap past its sign, a degenerate distance). A prediction
+  asks for the budget at most: only the vision planner's measured near field may go past it."""
+  a_des = -required_decel(v_ego, [v_cap], [max(d, v_ego * t_min)])
+  return publish_ramp(a_des, a_prev, lim, v_ego)
