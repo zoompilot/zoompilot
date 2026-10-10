@@ -8,7 +8,7 @@ plan for the next on-car pass is in `lateral-tune-roadmap.md`.
 Files: `openpilot/sunnypilot/selfdrive/controls/lib/latcontrol_torque_v2.py` (the tune),
 `latcontrol_torque_ext.py` and `latcontrol_torque_ext_override.py` (the shared extension:
 EPS rail, speed-dependent torque), `steer_limit.py` (the classifier),
-`controlsd_ext.py` (wiring), `openpilot/sunnypilot/selfdrive/locationd/torqued_ext.py` (the
+`controlsd_ext.py` (wiring), `openpilot/sunnypilot/selfdrive/locationd/speed_bin_learner.py` (the
 speed-bin learner and its cache), `openpilot/sunnypilot/selfdrive/car/interfaces.py` (the
 Mazda seed).
 
@@ -233,7 +233,7 @@ EPS. Each substitutes the CX-5 2022 table under `requires_steer_to_zero`: the ta
 behind that EPS firmware. On its stock EPS the entry is withheld (a steering floor and the
 firmware's dead band) and the car learns default bins from its global seed.
 
-## Speed-bin learner and cache (`torqued_ext.py`)
+## Speed-bin learner and cache (`speed_bin_learner.py`)
 
 Each bin is a `TorqueBuckets` with per-bucket minimums = the global learner's / n_bins,
 fed by `_on_torque_point` after upstream's quality filters. `_estimate_params_speed_binned`
@@ -251,12 +251,12 @@ and the first of them keeps the lower edge the full table gives it (`min_speed`)
 reaching down over the floor and the dead band to 5 m/s.
 
 Wire. The per-bin values do not ride on `lateralTorqueParameters` (comma's struct, which an
-upstream sync would collide on). torqued_ext publishes its own `liveTorqueParametersSP`
+upstream sync would collide on). The learner publishes its own `liveTorqueParametersSP`
 message beside every upstream one, at the same 4 Hz cadence and validity: `version`,
 `speedBinCenters`, `speedBinLatAccelFactors`, `speedBinFrictions`, `speedBinValid`,
 `speedBinPoints` (empty on the wire). On the wire the service is `customReserved19`, the
 last of sunnypilot's reserved Event slots, so `log.capnp` stays byte-identical to upstream;
-`torqued_ext.LIVE_TORQUE_PARAMETERS_SP_SERVICE` names it and `LiveTorqueParametersSP`
+`speed_bin_learner.LIVE_TORQUE_PARAMETERS_SP_SERVICE` names it and `LiveTorqueParametersSP`
 aliases the struct (`custom.CustomReserved19`).
 
 Cache. torqued writes `LiveTorqueParameters` every 240 frames (60 s) with `with_points=True`;

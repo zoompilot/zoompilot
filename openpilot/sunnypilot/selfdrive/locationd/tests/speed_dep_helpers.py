@@ -14,8 +14,8 @@ import openpilot.cereal.messaging as messaging
 from opendbc.car.structs import car
 from opendbc.sunnypilot.car.interfaces import get_speed_dep_config
 from openpilot.selfdrive.locationd.torqued import VERSION, MIN_FILTER_DECAY
-from openpilot.sunnypilot.selfdrive.locationd.torqued_ext import (
-  DEFAULT_SPEED_BIN_BOUNDS, DEFAULT_SPEED_BIN_CENTERS, LIVE_TORQUE_PARAMETERS_SP_SERVICE, TorqueEstimatorExt,
+from openpilot.sunnypilot.selfdrive.locationd.speed_bin_learner import (
+  DEFAULT_SPEED_BIN_BOUNDS, DEFAULT_SPEED_BIN_CENTERS, LIVE_TORQUE_PARAMETERS_SP_SERVICE, SpeedBinLearner,
 )
 
 # configured cars; every test is driven by config, not hardcoded fingerprints
@@ -34,7 +34,7 @@ def get_car_bins(fingerprint):
   cfg = SPEED_DEP_CARS.get(fingerprint, {})
   if 'speed_bp' in cfg:
     centers = list(cfg['speed_bp'])
-    bounds = TorqueEstimatorExt._centers_to_bounds(centers)
+    bounds = SpeedBinLearner._centers_to_bounds(centers)
   else:
     centers = list(DEFAULT_SPEED_BIN_CENTERS)
     bounds = list(DEFAULT_SPEED_BIN_BOUNDS)

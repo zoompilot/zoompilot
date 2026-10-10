@@ -14,9 +14,9 @@ from unittest.mock import MagicMock, patch
 from opendbc.car.mazda.values import MazdaFlags
 from openpilot.selfdrive.locationd.torqued import TorqueEstimator, TorqueBuckets, VERSION, MIN_FILTER_DECAY, POINTS_PER_BUCKET, \
   STEER_BUCKET_BOUNDS
-from openpilot.sunnypilot.selfdrive.locationd.torqued_ext import (
+from openpilot.sunnypilot.selfdrive.locationd.speed_bin_learner import (
   DEFAULT_SPEED_BIN_BOUNDS as SPEED_BIN_BOUNDS, DEFAULT_SPEED_BIN_CENTERS as SPEED_BIN_CENTERS,
-  TorqueEstimatorExt,
+  SpeedBinLearner,
 )
 from openpilot.sunnypilot.selfdrive.locationd.tests.speed_dep_helpers import (
   SPEED_DEP_CARS, SPEED_DEP_FINGERPRINT, NON_SPEED_DEP_FINGERPRINT, FakePubMaster, get_car_bins, make_cp,
@@ -54,17 +54,17 @@ class TestSpeedDepConfig:
 
 class TestCentersToBounds:
   def test_midpoints_between_centers(self):
-    bounds = TorqueEstimatorExt._centers_to_bounds([10.0, 20.0, 30.0])
+    bounds = SpeedBinLearner._centers_to_bounds([10.0, 20.0, 30.0])
     assert bounds[0] == (5, 15.0)   # lo=DEFAULT[0][0], hi=midpoint(10,20)
     assert bounds[1] == (15.0, 25.0)
     assert bounds[2] == (25.0, 40)  # hi=DEFAULT[-1][1]
 
   def test_single_center(self):
-    bounds = TorqueEstimatorExt._centers_to_bounds([20.0])
+    bounds = SpeedBinLearner._centers_to_bounds([20.0])
     assert bounds == [(5, 40)]
 
   def test_edges_use_default_bounds(self):
-    bounds = TorqueEstimatorExt._centers_to_bounds([7.0, 35.0])
+    bounds = SpeedBinLearner._centers_to_bounds([7.0, 35.0])
     assert bounds[0][0] == 5    # DEFAULT_SPEED_BIN_BOUNDS[0][0]
     assert bounds[-1][1] == 40  # DEFAULT_SPEED_BIN_BOUNDS[-1][1]
     assert bounds[0][1] == pytest.approx((7.0 + 35.0) / 2)
@@ -73,7 +73,7 @@ class TestCentersToBounds:
   def test_contiguous_coverage(self):
     """Each bin's upper bound must equal the next bin's lower bound."""
     centers = [8.0, 15.0, 22.0, 30.0]
-    bounds = TorqueEstimatorExt._centers_to_bounds(centers)
+    bounds = SpeedBinLearner._centers_to_bounds(centers)
     for i in range(len(bounds) - 1):
       assert bounds[i][1] == pytest.approx(bounds[i + 1][0])
 
