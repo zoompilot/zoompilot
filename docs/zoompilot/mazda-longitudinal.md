@@ -39,7 +39,7 @@ the session manager consumes the response on the same control frame it arrives, 
 window is needed on RADAR_UDS_RESPONSE. NRC 0x78 (response pending) is the one negative response
 a UDS client waits through rather than fails on, and `radar_session_refused` excludes it. Any
 other negative response fails the silencing episode immediately; a radar that answers nothing at
-all is given `RADAR_SESSION_LIMIT_T` (10 s) and then the episode gives up for the drive, and stock
+all is given `RADAR_SESSION_LIMIT_FRAMES` (10 s) and then the episode gives up for the drive, and stock
 keeps the bus.
 
 The panda allows exactly two UDS transmissions to 0x764: tester present and session control for
@@ -127,7 +127,7 @@ control loop off `CC_SP.stockEcuHandBack`, and the process restart is requested 
 session manager (`radar_session.py`) has seen sustained stock traffic after its default-session
 request (`handback_completed`); a default-session acknowledgement alone does not prove the
 periodic frames are back. A hand-back the radar never answers is a failure
-(`handback_failed`) after `RADAR_SESSION_LIMIT_T`: diagnostics stop, the alpha-long toggle does
+(`handback_failed`) after `RADAR_SESSION_LIMIT_FRAMES`: diagnostics stop, the alpha-long toggle does
 not cycle on it, and a late recovery can still complete it. The toggle monitor reads the
 manager's result through card; it no longer infers "stock radar heard" from accFaulted.
 
@@ -429,7 +429,7 @@ release grammar scan of 2026-08-27):
 - a never-latched stop only blips 1 to 6 wire frames (mostly 2 to 3), starting about 3 wire
   frames after the stop bits drop, once the command has relax-jumped into its release band
 
-`RESUME_UNLATCH_LATCHED_T` is 0.18 s, 9 wire frames, the latched-family mode. The never-latched
+`RESUME_UNLATCH_LATCHED_FRAMES` is 0.18 s, 9 wire frames, the latched-family mode. The never-latched
 blip is not emitted: nothing is latched there, so it unlatches nothing. Dropping it was originally
 an SCBS workaround from when every pulse the port emitted latched the camera; that is fixed at the
 source (see the checksum section), so restoring stock's blip is a free choice now, gated on a drive
@@ -452,7 +452,7 @@ The body has answered every latched pulse the port has sent: GEAR.BRAKE_HOLD dro
 into all 10 (routes 103, 115, 118, 11d, 12c x3, 132, 139, fe). If it ever misses one, the command
 would sit pinned at the relaxed hold under a positive plan until the driver's pedal, because the
 carcontroller never lets a latched release climb while the body holds. So a latched release whose
-body is still holding `RESUME_REPULSE_T` (1.0 s, about 20x the slowest answer ever seen) after the
+body is still holding `RESUME_REPULSE_FRAMES` (1.0 s, about 20x the slowest answer ever seen) after the
 pulse gets exactly one more, the same tuple as the first (stop bits down, command at raw -1,
 unlatch set), the only shape stock has for a latched release. Stock itself never pulses twice, so
 a second retry has no attested shape behind it. The window restarts from zero whenever the body
@@ -462,7 +462,7 @@ lets go, so it counts only an unbroken run of the body ignoring us.
 
 The plan flapping across zero at a held standstill (a lead inches forward and stops) used to fire
 a fresh RESUME_UNLATCHING pulse per flap and re-assert the stop bits mid-pulse, a combination
-stock never emits. The plan must ask to move for `RELEASE_DEBOUNCE_T` (0.2 s) before the hold
+stock never emits. The plan must ask to move for `RELEASE_DEBOUNCE_FRAMES` (0.2 s) before the hold
 releases. Stock's own releases lag the lead's departure by at least this much: all 23 latched
 releases show the lead already opening at >= +0.31 m/s at the pulse, about 0.2 s into a typical
 drive-off. The driver's pedal is not debounced; it outranks the hold immediately.
@@ -535,7 +535,7 @@ release moved at -0.001, pure creep. The roughly 0.3 s actuator dead time carrie
 about 0.38 past the value that actually broke the car free before standstill clears, which is
 why the cap is what bounds the worst case.
 
-The climb gives up after `ACCEL_BREAKAWAY_T` (3.0 s), so a car held by something we cannot see
+The climb gives up after `BREAKAWAY_FRAMES` (3.0 s), so a car held by something we cannot see
 (a kerb, a steep grade, a foot on the brake) settles back onto the plan instead of being leaned
 on indefinitely.
 
@@ -641,7 +641,7 @@ track/ctrl disagreement the camera faults on.
 
 A marginal vision lead flickers `leadVisible` faster than any real radar ever would (route
 6bb2dc61c4 t+400: 6 toggles in 1.4 s on a 120 m lead), so visibility is adopted only once it has
-held steady for `LEAD_DEBOUNCE_T` (0.5 s), the way Hyundai debounces its lead bit for 50 frames.
+held steady for `LEAD_DEBOUNCE_FRAMES` (0.5 s), the way Hyundai debounces its lead bit for 50 frames.
 `leadOne` drops to zero the instant vision loses the lead, well before that debounce expires;
 advertising a fabricated stand-in over the gap put a stationary object 10.25 m dead ahead on the
 bus at 22 m/s, so the last real measurement is coasted across the gap (propagated by vRel each
@@ -736,21 +736,21 @@ the dash lane indicators, so those two stay zeroed.
 | `CAM_LANEINFO_FRESH_T` | 1.5 s | 2.7x the longest CAM_LANEINFO period, 0.563 s over 26+ segments, two cars | corpus |
 | `STOCK_RADAR_ALIVE_T` | 0.05 s | stock gap p99.99 31.0 ms | 7.25M frames, 166 routes |
 | `STOCK_RADAR_GUARD_T` | 1.27 s | about 12x the longest stock gap (105.7 ms); the value every engaged drive ran on | 0000002d seg 28 |
-| `RADAR_SESSION_LIMIT_T` | 10.0 s | per-episode UDS budget | design |
+| `RADAR_SESSION_LIMIT_FRAMES` | 10.0 s | per-episode UDS budget | design |
 | `MAZDA_ENGAGE_BTN_WINDOW` | 10 CRZ_BTNS frames | press 30 to 70 ms before ACC_ACTIVE, 104 engagements | corpus |
 | `MAIN_OFF_DEBOUNCE_T` | 0.1 s (10 PEDALS samples) | no self-recovering both-low run in 4026 segments; main-off lands 0.1 s late | corpus |
 | `CANCEL_SETTLE_T` | 0.2 s | the car answers its own cancels 60 to 90 ms after openpilot disengages on them; the request lasted 6 to 10 frames on all five wheel cancels | 00000260, 269, 26a, 26b |
 | `MAZDA_MAIN_OFF_DEBOUNCE` | 10 PEDALS samples | `MAIN_OFF_DEBOUNCE_T` on the 100 Hz PEDALS clock | derived |
-| `RESUME_UNLATCH_LATCHED_T` | 0.18 s (9 wire frames) | latched pulses 6 to 11 wire frames, mode 9 | 33-pulse census |
-| `RESUME_REPULSE_T` | 1.0 s | body answered all 10 pulses in 30 to 51 ms | 103, 115, 118, 11d, 12c, 132, 139, fe |
-| `RELEASE_DEBOUNCE_T` | 0.2 s | lead opening >= +0.31 m/s at all 23 stock latched pulses | corpus |
-| `LEAD_DEBOUNCE_T` | 0.5 s | 6 leadVisible toggles in 1.4 s on a 120 m lead | 6bb2dc61c4 |
+| `RESUME_UNLATCH_LATCHED_FRAMES` | 0.18 s (9 wire frames) | latched pulses 6 to 11 wire frames, mode 9 | 33-pulse census |
+| `RESUME_REPULSE_FRAMES` | 1.0 s | body answered all 10 pulses in 30 to 51 ms | 103, 115, 118, 11d, 12c, 132, 139, fe |
+| `RELEASE_DEBOUNCE_FRAMES` | 0.2 s | lead opening >= +0.31 m/s at all 23 stock latched pulses | corpus |
+| `LEAD_DEBOUNCE_FRAMES` | 0.5 s | 6 leadVisible toggles in 1.4 s on a 120 m lead | 6bb2dc61c4 |
 | `ACCEL_HOLD_LATCHED` | -0.001 m/s2 | stock relaxes 0 to 40 ms after HOLD_STATE goes HOLDING, 43 of 43 | 43 stock holds |
 | `ACCEL_RESUME_PULSE_MAX` | 0.25 m/s2 | stock latched pulse tail +0.24 to +0.25, +0.34 worst | corpus |
 | `ACCEL_RELEASE_BAND` | -0.26 m/s2 | stock never-latched relax target -0.27 to -0.18 | corpus |
 | `ACCEL_RELEASE_RAMP` | 1.25 m/s3 | +25 raw per 50 Hz frame | corpus |
 | `ACCEL_BREAKAWAY_MAX` | 1.45 m/s2 | stock last-still-frame command max +1.425 (n=31) | corpus |
-| `ACCEL_BREAKAWAY_T` | 3.0 s | give-up bound on an unseen holder | design |
+| `BREAKAWAY_FRAMES` | 3.0 s | give-up bound on an unseen holder | design |
 | `ACCEL_BREAKAWAY_OVERSHOOT` | 0.75 m/s2 | 132 case +0.67 above plan; stock p25 +0.744 | 132, 12c, 34 stock episodes |
 | `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3; brake region only | reporter's route |
 | `ACCEL_BUILD_V` | 1.25 to 0.8 m/s3 over 3 to 6 m/s | stock +12 raw per 50 Hz frame (0.6) in 99.3% of rising frames, taken a third quicker; 1.25 pulling away | 158 stock routes |
