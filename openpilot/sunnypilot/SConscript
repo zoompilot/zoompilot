@@ -1,3 +1,2 @@
-SConscript(['jetlink_adapter/SConscript'])
 SConscript(['common/transformations/SConscript'])
 SConscript(['selfdrive/locationd/SConscript'])

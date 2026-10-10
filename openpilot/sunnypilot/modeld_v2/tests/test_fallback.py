@@ -10,7 +10,7 @@ import io
 from openpilot.common.file_chunker import get_chunk_name, get_manifest_path
 from openpilot.common.hardware import hw
 from openpilot.common.test import OpenpilotTestCase
-from openpilot.selfdrive.modeld.helpers import dump_oob
+from openpilot.sunnypilot.modeld_v2.helpers import dump_oob
 import openpilot.sunnypilot.modeld_v2.modeld as modeld_module
 from openpilot.sunnypilot.modeld_v2.tests import helpers as tests_helpers
 from openpilot.sunnypilot.modeld_v2.tests.helpers import DummyModel, DummyBundle, CAM_W, CAM_H

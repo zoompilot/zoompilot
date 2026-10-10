@@ -14,19 +14,10 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import get_nn_model_path
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import set_speed_limit_assist_availability
 
-import openpilot.system.sentry as sentry
-
 from openpilot.sunnypilot.sunnylink.statsd import STATSLOGSP
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import icbm_demanded
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.migration import migrate_icbm_toggle
-
-
-def log_fingerprint(CP: structs.CarParams) -> None:
-  if CP.carFingerprint == "MOCK":
-    sentry.capture_fingerprint_mock()
-  else:
-    sentry.capture_fingerprint(CP.carFingerprint, CP.brand)
 
 
 MAZDA_STEER_TO_ZERO_TORQUE_TUNE = 2.0  # FLOAT param; the tune fitted to the 2022+ EPS (latcontrol_torque_v2.py)
