@@ -18,6 +18,7 @@ from openpilot.common.hardware.hw import Paths
 from openpilot.cereal import messaging, custom
 from openpilot.sunnypilot.models.default_bootstrap import carry_over_picks, maybe_apply_default_model
 from openpilot.sunnypilot.models.fetcher import ModelFetcher
+from openpilot.sunnypilot.models.fetcher_zp import ModelFetcherZP
 from openpilot.sunnypilot.models.helpers import (ACTIVE_BUNDLE_KEYS, _bundle_is_valid_locally, get_active_bundle, get_selected_bundle,
                                                   resolve_bundle_by_ref, validate_active_bundles, verify_file)
 
@@ -34,7 +35,7 @@ class ModelManagerSP:
 
   def __init__(self):
     self.params = Params()
-    self.model_fetcher = ModelFetcher(self.params)
+    self.model_fetcher = ModelFetcherZP(self.params)
     self.pm = messaging.PubMaster(["modelManagerSP"])
     self.sm = messaging.SubMaster(["deviceState"])
     self.chestnut_present = False
