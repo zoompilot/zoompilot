@@ -59,7 +59,8 @@ the gate is a timer on the camera's settle signal, not any fault bit.
 The settle signal is CAM_LANEINFO.NO_ERR_BIT, a pure boot marker that clears at 2.8 to 6.0 s
 after boot and is never set again while driving. A latched fault (ERR_BIT) also shows the boot
 marker clear, so ERR_BIT holds the timer at zero as well. Before the first CAM_LANEINFO frame
-the parser reads all-zero, which would count as settled, hence the `cam_laneinfo_seen` latch.
+the parser reads all-zero, which would count as settled, so freshness starts stale and only a
+received frame clears it.
 
 CAM_LANEINFO is a roughly 2 Hz message. The longest period measured across 26 or more segments on
 two cars is 0.563 s. A freshness window shorter than one period reads
