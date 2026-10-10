@@ -11,6 +11,7 @@ import requests
 from requests.exceptions import (SSLError, RequestException, HTTPError)
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
+from openpilot.common.file_chunker import get_chunk_name
 from openpilot.common.hardware.hw import Paths
 from openpilot.sunnypilot.models.helpers import is_bundle_version_compatible
 from openpilot.cereal import custom
@@ -42,38 +43,24 @@ class ModelParser:
     if "chunks" in artifact_data:
       artifact.chunks = [ModelParser._parse_chunk(chunk_data) for chunk_data in artifact_data["chunks"]]
 
-      ModelParser._repair_chunk_manifest(artifact)
+      try:
+        model_dir = Paths.model_root()
+        os.makedirs(model_dir, exist_ok=True)
+        manifest_path = os.path.join(model_dir, f"{artifact.fileName}.chunkmanifest")
+        num_chunks = str(len(artifact.chunks))
+        # qcom and chestnut list the same file with different counts: only the source whose first
+        # chunk is on disk writes, and a download writes its own manifest when it finishes
+        if not os.path.isfile(get_chunk_name(os.path.join(model_dir, artifact.fileName), 0, len(artifact.chunks))):
+          return artifact
+
+        if not os.path.exists(manifest_path) or open(manifest_path).read().strip() != num_chunks:
+          with open(manifest_path, "w") as f:
+            f.write(num_chunks)
+          cloudlog.info(f"Wrote chunk manifest for {artifact.fileName}: {num_chunks} chunks")
+      except Exception as e:
+        cloudlog.warning(f"Failed to write chunk manifest for {artifact.fileName}: {e}")
 
     return artifact
-
-  @staticmethod
-  def _repair_chunk_manifest(artifact: custom.ModelManagerSP.Artifact) -> None:
-    """Record the chunk count of an artifact already on disk. Every catalog parses each
-    tick and qcom and chestnut list the same file with different counts, so only the source
-    whose first chunk exists writes; a download writes its own manifest when it finishes."""
-    from openpilot.common.file_chunker import get_chunk_name, get_manifest_path
-
-    try:
-      model_dir = Paths.model_root()
-      os.makedirs(model_dir, exist_ok=True)
-      base_path = os.path.join(model_dir, artifact.fileName)
-      num_chunks = len(artifact.chunks)
-
-      if not os.path.isfile(get_chunk_name(base_path, 0, num_chunks)):
-        return
-
-      manifest_path = get_manifest_path(base_path)
-      expected = str(num_chunks)
-      if os.path.isfile(manifest_path):
-        with open(manifest_path) as f:
-          if f.read().strip() == expected:
-            return
-
-      with open(manifest_path, "w") as f:
-        f.write(expected)
-      cloudlog.info(f"Wrote chunk manifest for {artifact.fileName}: {expected} chunks")
-    except Exception as e:
-      cloudlog.warning(f"Failed to write chunk manifest for {artifact.fileName}: {e}")
 
   @staticmethod
   def _parse_model(model_data) -> custom.ModelManagerSP.Model:
