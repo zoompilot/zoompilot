@@ -52,6 +52,10 @@ zoompilot vUNRELEASED
 * CX-9 and other Mazdas without Auto Hold: alpha long fixed, stops release and resume again.
 * No creeping at a red light after stopping.
 
+**Boot**
+* Show your own startup image: put any .jpg, .jpeg or .png in /data/media/bootlogos. The first file in alphanumeric order is used.
+* An empty folder returns to the stock comma logo. The folder is created for you at startup.
+
 zoompilot v2026.09.12-14
 ========================
 * adjustments to address LKAS errors.

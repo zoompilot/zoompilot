@@ -63,6 +63,12 @@ def manager_init() -> None:
     if default_value is not None and params.get(k) is None:
       params.put(k, default_value, block=True)
 
+  try:
+    from openpilot.sunnypilot.common.boot_logo import apply_boot_logo
+    apply_boot_logo()
+  except Exception as error:
+    print(f"boot logo: apply failed: {error}")
+
   # Create folders needed for msgq
   try:
     os.mkdir(Paths.shm_path())
