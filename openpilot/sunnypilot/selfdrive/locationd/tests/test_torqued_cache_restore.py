@@ -298,10 +298,11 @@ class TestCacheRestore:
 
 class TestCacheRestoreGolden:
   """End to end through Params bytes: the restore must hand back exactly what a healthy
-  cache holds. Guards the test car's tune."""
+  cache holds, keyed on CarParamsPrevRoute as upstream's restore is. The guards themselves are
+  pinned through _restore_ext_cache above."""
 
   @staticmethod
-  def _healthy_cache(fake, CP, decay=173.25, **overrides):
+  def _healthy_cache(CP, decay=173.25):
     """The two blobs torqued itself would write for this CP: upstream's cache, and the fork
     cache with matching centers, finite values inside the per-bin sanity bounds and three
     points per bin. Returns (cache, cache_sp, seed_est)."""
@@ -309,24 +310,21 @@ class TestCacheRestoreGolden:
     n_bins = len(seed_est.speed_bin_bounds)
     lafs, frictions = in_bounds_values(seed_est)
     points = [[[0.11 + 0.01 * i, 0.3 + 0.02 * i]] * 3 for i in range(n_bins)]
-    seed_version = overrides.pop('seed_version', seed_est.speed_dep_seed_version)  # fork cache only
-    kwargs = {'decay': decay, 'global_laf': CP.lateralTuning.torque.latAccelFactor,
-              'global_friction': CP.lateralTuning.torque.friction, **overrides}
-    cache = make_cache(**kwargs).to_bytes()
+    cache = make_cache(decay=decay, global_laf=CP.lateralTuning.torque.latAccelFactor,
+                       global_friction=CP.lateralTuning.torque.friction).to_bytes()
     cache_sp = make_cache_sp(seed_est.speed_bin_centers, lafs, frictions, points=points,
-                             version=overrides.get('version', VERSION), seed_version=seed_version).to_bytes()
+                             seed_version=seed_est.speed_dep_seed_version).to_bytes()
     return cache, cache_sp, seed_est
 
   @staticmethod
-  def _restore_from(fake, CP, cache, cache_sp=None, prev_route=None):
-    fake.store = {"LiveTorqueParameters": cache, "CarParamsPrevRoute": (CP if prev_route is None else prev_route).to_bytes()}
-    if cache_sp is not None:
-      fake.store[LIVE_TORQUE_PARAMETERS_SP_KEY] = cache_sp
+  def _restore_from(fake, CP, cache, cache_sp, prev_route=None):
+    fake.store = {"LiveTorqueParameters": cache, "CarParamsPrevRoute": (CP if prev_route is None else prev_route).to_bytes(),
+                  LIVE_TORQUE_PARAMETERS_SP_KEY: cache_sp}
     return TorqueEstimator(CP)
 
   def test_valid_cache_restores_values_bit_identical(self, fake_params):
     CP = make_cp()
-    cache, cache_sp, _ = self._healthy_cache(fake_params, CP)
+    cache, cache_sp, _ = self._healthy_cache(CP)
     est = self._restore_from(fake_params, CP, cache, cache_sp)
 
     # expected values are what the wire carries (Float32), read back through the same reader
@@ -339,65 +337,24 @@ class TestCacheRestoreGolden:
       assert est.speed_bin_filtered[i]['frictionCoefficient'].x == exp_frictions[i]
       assert len(est.speed_bin_points[i]) == 3
       assert est.speed_bin_points[i].get_points()[:, [0, 2]].tolist() == exp_points[i]
-
-  def test_fork_cache_absent_restores_nothing(self, fake_params):
-    CP = make_cp()
-    cache, _, seed_est = self._healthy_cache(fake_params, CP)
-    est = self._restore_from(fake_params, CP, cache)
-    assert_untouched(est, seed_values(seed_est))
-
-  def test_decay_restored_matches_upstream(self, fake_params):
-    """No per-bin decay exists on the wire; the bins take the same cached decay upstream
-    restores into self.decay, not MIN_FILTER_DECAY."""
-    CP = make_cp()
-    cache, cache_sp, _ = self._healthy_cache(fake_params, CP, decay=173.25)
-    est = self._restore_from(fake_params, CP, cache, cache_sp)
+    # no per-bin decay exists on the wire: the bins take the decay upstream restored, not MIN
     assert est.decay == 173.25
-    assert est.speed_bin_decays == [est.decay] * len(est.speed_bin_bounds)
-
-  def test_wrong_version_rejected(self, fake_params):
-    CP = make_cp()
-    cache, cache_sp, seed_est = self._healthy_cache(fake_params, CP, version=VERSION + 1)
-    est = self._restore_from(fake_params, CP, cache, cache_sp)
-    assert_untouched(est, seed_values(seed_est))
-
-  def test_seed_version_bump_rejected(self, fake_params):
-    """A release that bumps seed_version in the TOML finds every device's cache one behind."""
-    CP = make_cp()
-    cache, cache_sp, seed_est = self._healthy_cache(fake_params, CP, seed_version=TorqueEstimator(CP).speed_dep_seed_version - 1)
-    est = self._restore_from(fake_params, CP, cache, cache_sp)
-    assert_untouched(est, seed_values(seed_est))
+    assert est.speed_bin_decays == [est.decay] * n_bins
 
   def test_prev_route_carparams_mismatch_rejected(self, fake_params):
     """CarParamsPrevRoute is part of upstream's key: a cache learned under other offline seeds
     or another fingerprint does not apply here, points included."""
     CP = make_cp()
-    cache, cache_sp, seed_est = self._healthy_cache(fake_params, CP)
+    cache, cache_sp, seed_est = self._healthy_cache(CP)
     for prev in (make_cp(friction=0.2), make_cp(fingerprint=NON_SPEED_DEP_FINGERPRINT)):
       est = self._restore_from(fake_params, CP, cache, cache_sp, prev_route=prev)
       assert_untouched(est, seed_values(seed_est))
 
   def test_missing_prev_route_carparams_rejected(self, fake_params):
     CP = make_cp()
-    cache, cache_sp, seed_est = self._healthy_cache(fake_params, CP)
+    cache, cache_sp, seed_est = self._healthy_cache(CP)
     fake_params.store = {"LiveTorqueParameters": cache, LIVE_TORQUE_PARAMETERS_SP_KEY: cache_sp}
     est = TorqueEstimator(CP)
-    assert_untouched(est, seed_values(seed_est))
-
-  def test_invalid_cache_keeps_seeds_restores_points_and_decay(self, fake_params):
-    CP = make_cp()
-    cache, cache_sp, seed_est = self._healthy_cache(fake_params, CP, valid=False, decay=173.25)
-    est = self._restore_from(fake_params, CP, cache, cache_sp)
-    assert_untouched(est, seed_values(seed_est), n_points=3, decay=173.25)
-
-  def test_nan_bin_rejects_whole_cache(self, fake_params):
-    CP = make_cp()
-    seed_est = TorqueEstimator(CP)
-    lafs, frictions = in_bounds_values(seed_est)
-    lafs[1] = float('nan')
-    cache = make_cache(decay=173.25).to_bytes()
-    cache_sp = make_cache_sp(seed_est.speed_bin_centers, lafs, frictions, points=_one_point_per_bin(seed_est)).to_bytes()
-    est = self._restore_from(fake_params, CP, cache, cache_sp)
     assert_untouched(est, seed_values(seed_est))
 
 
