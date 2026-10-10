@@ -17,21 +17,55 @@ CX-5 2022 unless stated.
 
 ICBM has no toggle. It runs on a car with the buttons (`helpers.icbm_applicable`: the opendbc
 `intelligentCruiseButtonManagementAvailable` flag, and a setpoint the ECU keeps) while a
-feature that acts through it is on (`demand.py`: SCC vision/map on stock ACC, SLA assist,
-custom increments). card owns the decision (`icbm_latch.IcbmLatch`) and publishes it as
+feature that acts through it is on. The features are one table, `demand.CONSUMERS`, which the
+boot decision, the latch, the migration and the settings locks all read: SCC vision and map
+need ICBM on stock ACC only (under alpha long the planner executes them), SLA assist and custom
+increments in both modes. A new feature is one entry. There is no escape hatch: the features
+are the switches.
+
+card owns the decision (`icbm_latch.IcbmLatch`) and publishes it as
 `carStateSP.zoompilot.icbmActivation`; controlsd, selfdrived, plannerd and the UI read that,
-never `CarParamsSP.pcmCruiseSpeed`, which only records the boot decision.
+never `CarParamsSP.pcmCruiseSpeed`, which only records the boot decision. The field is an enum
+with `unset` first, so logs from before it (old routes, process replay refs) fall back to the
+boot flag. Upstream-owned files change by one token on four lines: `cruise.py` x2 and
+`controlsd.py` x2 read `self.pcm_cruise_speed` (a property over the latch in `VCruiseHelperSP`,
+a read of `carStateSP` in `ControlsExt`) instead of `self.CP_SP.pcmCruiseSpeed`.
 
 The decision moves only while neither openpilot nor the stock cruise is engaged and no cruise
-button is down. There the
-two modes agree on everything (no `longActive`, the dash's setpoint, an idle servo, no SLA
-session), so a feature switched on while driving starts at the next engage and one switched
-off keeps ICBM until the next disengage. Panda safety needs nothing: on every ICBM brand the
-+/- frames pass only while `controls_allowed`, with no ICBM flag.
+button is down or changing. There the two modes agree on everything (no `longActive`, the
+dash's setpoint, an idle servo, no SLA session), so a feature switched on while driving starts
+at the next engage and one switched off keeps ICBM until the next disengage. The latch reads
+demand on card's 10 Hz params thread and `engaged = CC.enabled or CS.cruiseState.enabled` in
+`VCruiseHelperSP.update_enabled_state`; card runs the button timers in both modes, so none
+carries across a change. On a change card clears the reconciler, recomputes the minimum set
+speed and moves the SLA owner (`pcm_machine_owns_sla(CP, icbm_active)`: the arbiter's
+`set_icbm_active`; plannerd keeps its machine and the mirror, picks per frame and resets on a
+handover), and selfdrived re-initialises the servo, keeping `fast_faulted`.
 
-`migration.py` ran once when the toggle went (2026-10): on a capable car whose toggle was
-off it turned off the features that toggle had left inert, so no install started pressing
-buttons. Plan and history: `icbm-auto-plan.md`.
+Panda safety needs nothing: on every ICBM brand the +/- frames pass only while
+`controls_allowed`, with no ICBM flag. opendbc reads `pcmCruiseSpeed` only to default it, and
+`longActive` / `override` only on openpilot-long paths (Mazda, Chrysler, Honda Bosch, Hyundai
+audited). The audit found Chrysler CUSW (Jeep Cherokee 5th gen) claiming ICBM although
+`chrysler_cusw.h` passes only cancel/resume; fixed in opendbc 957a8279c5.
+
+### Settings and migration
+
+The toggle is gone from mici, TICI and sunnylink. The features are offered wherever
+`has_long or icbm_applicable`; `ui_state.has_icbm`, sunnylink's `has_icbm` and the SLA assist
+demotion (`set_speed_limit_assist_availability`) all key on the capability, or assist could never
+bring ICBM up. While engaged with ICBM off the device will not turn on a feature that needs it
+(`ui_state.icbm_start_locked`). sunnylink's validator cannot gate a toggle on its own value, so
+it locks those features both ways while engaged on an ICBM car. On an upstream sync, a
+sunnypilot change to the toggle UI takes ours.
+
+`migration.py` ran once when the toggle went (2026-10), in `setup_interfaces`, marked by
+`IcbmDemandMigrated` (`PERSISTENT | BACKUP`: restoring a pre-migration backup runs it again).
+On a capable car whose toggle was off it turned off the features that toggle had left inert,
+so no install started pressing buttons: SCC vision, SCC map and custom increments on stock ACC
+(SLA assist to warning), custom increments only under alpha long, where SLA assist stays on
+and now moves the dash to the limit by itself. It removes `IntelligentCruiseButtonManagement`;
+the key stays in `params_keys.h` (upstream owns it). Replay against danger-unstable
+(2026-10-08, four CX-5 drives, ICBM on and off) was identical; on-car pending.
 
 ## The servo
 
@@ -307,6 +341,9 @@ checked-out stack, so a baseline is the same command with `PYTHONPATH=<worktree>
 - Restoring on target stillness when a vision lookahead is available. Restored between
   bends and fed the next apex (route 126, 3 of 8 over-ceiling apexes).
 - An immediate walk-back after a genuine driver press. Reads as a fight (route 126 t=341).
+- Switching ICBM by mutating each process's `CP_SP.pcmCruiseSpeed` at runtime. `carParamsSP`
+  (logged, persisted) stops being constant and the init-time caches still need edits.
+- A separate "cruise buttons" setting for SLA assist: on stock ACC it has one valid value.
 
 ## Under openpilot longitudinal (Mazda alpha long)
 

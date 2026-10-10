@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 
 Whether ICBM drives the set speed. card decides it (IcbmLatch) and publishes it as
 carStateSP.zoompilot.icbmActivation; every other process reads that (icbm_active) instead of
-CarParamsSP.pcmCruiseSpeed. See docs/zoompilot/icbm-auto-plan.md.
+CarParamsSP.pcmCruiseSpeed. See docs/zoompilot/icbm.md, "Activation".
 """
 from openpilot.cereal import custom
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable

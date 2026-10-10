@@ -3,8 +3,9 @@
 Implementation record, 2026-09-10, for the developer workflow while moving: disengage assistance
 and stock cruise, enter Force Offroad, flip Alpha Longitudinal, exit Force Offroad, engage
 normally, with no stop and no ignition cycle. Companion to `mazda-longitudinal.md` (the radar
-protocol) and the handoff plan `force-offroad-alpha-transition-plan.md`. Route ids are the
-device's `00000xxx--<id>` names; times are seconds from the route's first logged message.
+protocol); the handoff plan is zoompilot-research notes/force-offroad-alpha-transition-plan.md.
+Route ids are the device's `00000xxx--<id>` names; times are seconds from the route's first
+logged message.
 
 Status in one line: every part of the workflow is implemented and unit-tested, the moving
 hand-back (Force Offroad entry at speed) is on record as working, and the moving takeover

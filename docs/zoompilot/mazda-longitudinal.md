@@ -33,7 +33,8 @@ speed the car is at, so the moving request itself has upstream precedent; what d
 radar's answer to it, which is the on-car question.
 
 The radar answers every session request within about 10 ms. Route 000000fe t+15.0: request
-`02 10 02`, positive response `06 50 02` carrying P2* = 5.0 s, which is the S3 timeout. Because
+`02 10 02`, positive response `06 50 02` carrying P2* = 5.0 s. P2* is the diagnostic response
+timeout, not the S3 inactivity timeout, which was observed separately. Because
 the session manager consumes the response on the same control frame it arrives, no freshness
 window is needed on RADAR_UDS_RESPONSE. NRC 0x78 (response pending) is the one negative response
 a UDS client waits through rather than fails on, and `radar_session_refused` excludes it. Any
@@ -80,10 +81,18 @@ for the entire drive with nothing to tell the driver why. BIT2 was removed from 
 `RadarSessionManager` has four states: STOCK (radar broadcasting, nothing transmitted),
 SILENCING (requesting the programming session), SILENCED (radar quiet, tester present plus
 synthetic frames) and HANDBACK (requesting the default session, synthetic frames continue).
+It was split out of the acceleration and standstill code (2026-09-09) because radar ownership
+had three independent representations: the controller's state machine, CarState's silence
+timer and the toggle monitor's reading of accFaulted. Stock-long configurations issue no session
+traffic. Of 371 Mazda startup captures (74 alpha long, 297 stock long), 59 of the 60 with
+programming-session requests carry the `06 50 02` response on the main bus. At the split 524
+Mazda and 234 main-repo tests passed with the golden TX fixture unchanged; a replay of recorded
+startup CAN checks the software's decisions only, not the ECU's answer to a changed request.
 
 Setup waits for the settle gate and never pulls the radar out from under an active stock MRCC
 engagement (a driver who pressed SET before the gate passed on a warm boot); the driver has to
-disengage first. Adopting a radar that is already quiet without having silenced it (a process
+disengage first. The gate reads the raw PEDALS engagement, not the public flag held blocked
+during startup. Adopting a radar that is already quiet without having silenced it (a process
 restart after a takeover) disables nothing and may proceed anywhere, but "quiet" there is the
 full guard window (`STOCK_RADAR_GUARD_T`), not the 50 ms alive window; see the gap census below.
 
@@ -115,7 +124,8 @@ The hand-back to stock has to complete while the openpilot processes are still r
 blocks TX within about 100 ms of an onroad cycle starting. So the hand-back is driven from the
 control loop off `CC_SP.stockEcuHandBack`, and the process restart is requested only once the
 session manager (`radar_session.py`) has seen sustained stock traffic after its default-session
-request (`handback_completed`). A hand-back the radar never answers is a failure
+request (`handback_completed`); a default-session acknowledgement alone does not prove the
+periodic frames are back. A hand-back the radar never answers is a failure
 (`handback_failed`) after `RADAR_SESSION_LIMIT_T`: diagnostics stop, the alpha-long toggle does
 not cycle on it, and a late recovery can still complete it. The toggle monitor reads the
 manager's result through card; it no longer infers "stock radar heard" from accFaulted.
@@ -138,9 +148,11 @@ Once a hand-back has run to completion the radar stays stock for the rest of the
 the latch is the backstop for one that does not, because a dropped assert would otherwise read as
 a withdrawal and, parked with the gate still passed, re-silence the radar right before shutdown.
 That is the unattended S3 recovery the hand-back exists to prevent. A hand-back withdrawn before
-the restart (toggle flipped back) returns to STOCK and re-runs the normal takeover.
+the restart (toggle flipped back) returns to STOCK once the in-flight default-session request
+completes, so a toggle reversal never alternates sessions, and re-runs the normal takeover.
 
 Synthetic radar frames keep flowing through the hand-back so the camera never sees a radar gap.
+They carry disengaged commands there, with the driver's main-switch state preserved.
 
 In `mazda.h` the replaced-radar addresses are deliberately `check_relay = false`. That mechanism
 exists for harness-blocked ECUs that are silent from ignition on, and any RX after 1 s latches a
@@ -197,9 +209,9 @@ is a real accFaulted. The ordered hand-back is masked out of it (`radar_handback
 hand-back that timed out raises it on its own (`radar_restore_failed`).
 
 Ownership is established by the silence guard and then held on the controller's claim: the bus
-witnesses (PEDALS, ENGINE_DATA at the CANParser's own ten-period validity) decide whether radar
-silence is evidence at all, a dead or blipping bus is never adopted as a silenced radar, and a
-blip while owned neither revokes availability nor re-runs the guard on recovery.
+witnesses (PEDALS 200 ms, ENGINE_DATA 100 ms, the CANParser's own ten-period validity) decide
+whether radar silence is evidence at all, a dead or blipping bus is never adopted as a silenced
+radar, and a blip while owned neither revokes availability nor re-runs the guard on recovery.
 
 ### Tried and rejected: gating availability alone
 

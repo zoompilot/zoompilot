@@ -324,27 +324,48 @@ on zero requests. The bit is decoded for the log and tooling; the driver-facing 
 camera's own.
 
 What raises it, on the eleven onsets captured: a break in the 0x243 stream of about 0.6 s (ten,
-counting three comma restarts), and twice a ramping request into a zero-delivery standby at a
-crawl from a stop, which 406 near-identical stretches in the corpus did not reproduce and which
-stays open. The breaks were all panda rejection bursts (routes 00000116/00000117: MADS armed
-before the panda's radar-silent guard; 00000139 and 00000148: the 25-versus-12 rate-down and
-driver-torque staleness; drive_02 and 00000013 in March and July: commands past the 800-count
+counting three comma restarts), and twice a ramping request into a zero-delivery standby at a crawl
+from a stop, which 406 near-identical stretches in the corpus did not reproduce (the
+first-activation hold below). The breaks were all panda rejection bursts (routes 00000116/00000117:
+MADS armed before the panda's radar-silent guard; 00000139 and 00000148: the 25-versus-12 rate-down
+and driver-torque staleness; drive_02 and 00000013 in March and July: commands past the 800-count
 limit of the time). Each cause was fixed in turn, but the mechanism behind all of them is the
 panda's own: a rejection resets its rate-limit reference to zero, so a controller that keeps
-ramping is rejected on every later frame. The panda reports the fact directly: every transmit
-its tx hook refuses goes back on the `can` stream with `src = bus + 0xC0` (192 for bus 0), and a
-third parser in `get_can_parsers` (`Bus.loopback`, `CAM_LKAS` at nan frequency so it never
-touches `canValid`) counts our refused torque requests each cycle as `lkas_rejected`. A nonzero
-count restarts the controller's ramp from zero, which is the one command the panda accepts after
-a reset; the report lands one or two card cycles behind the refusal. Refused zero-torque frames
-are not counted: the tx hook refuses every LKA frame while the panda is not controlling, and a
-zero the controller already sent carries nothing it needs. The closed-loop test in
+ramping is rejected on every later frame. The panda reports the fact directly: every transmit its
+tx hook refuses goes back on the `can` stream with `src = bus + 0xC0` (192 for bus 0), and a third
+parser in `get_can_parsers` (`Bus.loopback`, `CAM_LKAS` at nan frequency so it never touches
+`canValid`) counts our refused torque requests each cycle as `lkas_rejected`. A nonzero count
+restarts the controller's ramp from zero, which is the one command the panda accepts after a reset;
+the report lands one or two card cycles behind the refusal. Refused zero-torque frames are not
+counted: the tx hook refuses every LKA frame while the panda is not controlling, and a zero the
+controller already sent carries nothing it needs. The closed-loop test in
 `opendbc/safety/tests/test_mazda.py` runs the real controller through the compiled safety model
 with the report delayed one, two and three cycles and bounds the outage at the driver-sample
-staleness plus that delay (route 148's stale sample) and at exactly the delay for a lone
-reference reset, against the EPS's 60 frames; the same scenario starves the EPS for the rest of
-the run without the report. Measurements, the state table for byte 6 and the
-open items: [mazda-camera-fault-2026-09-06.md](mazda-camera-fault-2026-09-06.md).
+staleness plus that delay (route 148's stale sample) and at exactly the delay for a lone reference
+reset, against the EPS's 60 frames; the same scenario starves the EPS for the rest of the run
+without the report.
+
+Byte 6 of `STEER_RATE` takes five values: `00` free, `04` block (no lane lines, or nothing
+arriving), `08` hands-off, `14` block with `LKAS_TRACK_STATE` (standby from a stop, the 3 s
+hands-on timer), `24` block with `LKAS_FAULT`. The cluster warning became visible with opendbc
+`ebfefb47b6` (2026-08-26, `ERR_BIT` forwarded in the HUD frame; reverting it would hide the
+car's own detector) and more frequent with `80bb222e8b` (2026-08-29, `STEER_DELTA_DOWN` 25 to 12
+with the panda left at 25: routes 00000139, 00000148), matched panda-side on 2026-09-01. Not yet
+run: the EPS/FSC DTC read (`tools/scripts/car/read_dtc_status.py`, parked, before clearing).
+Full investigation: zoompilot-research notes/mazda-camera-fault-2026-09-06.md.
+
+### The first-activation hold
+
+The crawl onsets (0000001a, 000001bb seg 1, and 000001e8 seg 0 on 2026-09-08 at 0.41 m/s: no
+0x243 gap over 22 ms, no rejection) are each the EPS's first LKAS activation of the ignition
+cycle, in standby (`14`), delivering nothing, with the driver holding 9+ counts against the
+request; the bit follows 0.25 to 0.30 s after the first nonzero frame. No other of 106 cached
+first activations combines those, and the same combination later in a drive never faults. The
+0x243 status bytes are identical in faulting and clean windows. carstate (steer-to-zero EPS) holds
+`steer_first_engage_hold` until the first nonzero `LKAS_EFFECTIVE` of the cycle while BLOCK and
+TRACK are set below `STEER_UNDELIVERED_ALERT_ORIGIN_SPEED` (1.0 m/s), and the controller zeroes
+the command. Over 84 seg-0 logs it spans all three request-to-fault windows and no delivered
+frame. Full investigation: zoompilot-research notes/mazda-lkas-startup-2026-09-09.md.
 
 ## The camera's own TJA/CTS state
 
@@ -620,6 +641,9 @@ logs cannot record it, and the four mapped alerts were all under cruise.
 - A per-ignition cumulative non-delivery budget: falsified by route 00000031 (6705 frames, no
   fault) and route 148 (faulted on a third of 139's spend).
 - Alerting the moment the latch fires: every rolling manoeuvre becomes a chime.
+- Withholding requests at a crawl until LKAS_BLOCK clears: over 757 startup blocks it withheld
+  32,263 frames the EPS did deliver. Keying the first-activation hold on driver torque instead
+  covered only the last 50-60 ms of route 000001e8, whose opposition built inside the window.
 - The physical TJA button as the MADS lateral switch without owning the camera's state
   (`MazdaTjaButton`, first attempt, 2026-09-03 to 09-08): the same CRZ_BTNS frame reached the
   camera, so every press toggled our MADS and the camera's TJA together and their parity was
