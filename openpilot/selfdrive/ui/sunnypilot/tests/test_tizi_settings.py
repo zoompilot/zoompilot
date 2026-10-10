@@ -78,7 +78,7 @@ def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
 
 
 def test_experimental_mode_text_matches_upstream(params, monkeypatch):
-  # upstream writes this text inline in TogglesLayout._update_toggles; the panel keeps a copy
+  # upstream writes this text inline in TogglesLayout._update_toggles; the panel keeps a copy with our name
   from opendbc.car.structs import car
   from openpilot.selfdrive.ui.layouts.settings.toggles import TogglesLayout
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import EXPERIMENTAL_MODE_DESCRIPTION
@@ -89,7 +89,7 @@ def test_experimental_mode_text_matches_upstream(params, monkeypatch):
   monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
   toggles = TogglesLayout()
   toggles._update_toggles()
-  assert toggles._toggles["ExperimentalMode"].description == EXPERIMENTAL_MODE_DESCRIPTION
+  assert toggles._toggles["ExperimentalMode"].description.replace("sunnypilot", "zoompilot") == EXPERIMENTAL_MODE_DESCRIPTION
 
 
 def test_set_speed_greys_out_under_dec(params, monkeypatch):

@@ -16,12 +16,12 @@ from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp
 from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
 
-# upstream's Toggles text (layouts/settings/toggles.py), shown again in the confirm dialog
+# upstream's Toggles text (layouts/settings/toggles.py) with our name, shown again in the confirm dialog
 EXPERIMENTAL_MODE_DESCRIPTION = tr_noop(
-  "sunnypilot defaults to driving in chill mode. Experimental mode enables alpha-level features that aren't ready for chill mode. " +
+  "zoompilot defaults to driving in chill mode. Experimental mode enables alpha-level features that aren't ready for chill mode. " +
   "Experimental features are listed below:<br>" +
   "<h4>End-to-End Longitudinal Control</h4><br>" +
-  "Let the driving model control the gas and brakes. sunnypilot will drive as it thinks a human would, including stopping for red lights and stop signs. " +
+  "Let the driving model control the gas and brakes. zoompilot will drive as it thinks a human would, including stopping for red lights and stop signs. " +
   "Since the driving model decides the speed to drive, the set speed will only act as an upper bound. This is an alpha quality feature; " +
   "mistakes should be expected.<br>" +
   "<h4>New Driving Visualization</h4><br>" +
@@ -46,7 +46,8 @@ class AlphaLongitudinalToggles:
 
     self._dec_toggle = toggle_item_sp(
       title=lambda: tr("Dynamic Experimental Control"),
-      description=lambda: tr("Enable toggle to allow the model to determine when to use zoompilot ACC or zoompilot End to End Longitudinal."),
+      description=lambda: tr("Switches between chill and Experimental Mode on its own: " +
+                             "experimental for stops and slowdowns ahead, chill otherwise."),
       param="DynamicExperimentalControl")
 
     self._set_speed_toggle = toggle_item_sp(
