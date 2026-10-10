@@ -12,9 +12,10 @@ import pytest
 import openpilot.cereal.messaging as messaging
 from openpilot.common.realtime import DT_MDL as DT
 from openpilot.selfdrive.controls.lib import longitudinal_planner as upstream
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import controller as c
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController, Inhibit
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, MockParams, build_sm, plan_pos
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, build_sm, plan_pos
 
 V_EGO = 20.
 V_CRUISE = 23.  # floor (23 - 20) / 6 = 0.5
@@ -34,7 +35,7 @@ def run(ctl, n, sm, a_model=0., v_cruise=V_CRUISE, deliver=False, **kwargs):
 
 
 def new_controller(enabled=True):
-  return E2ESetSpeedController(params=MockParams(enabled), dt=DT)
+  return E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled), dt=DT)
 
 
 def settled(v_cruise=V_CRUISE, **kwargs):

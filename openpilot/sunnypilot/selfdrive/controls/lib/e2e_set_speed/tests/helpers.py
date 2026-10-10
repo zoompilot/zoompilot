@@ -14,14 +14,6 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import
 ENGAGED = {'is_e2e': True, 'reset_state': False, 'dec_active': False, 'allow_throttle': True, 'fcw': False, 'accel_coast': 0.}
 
 
-class MockParams:
-  def __init__(self, enabled: bool = True):
-    self.enabled = enabled
-
-  def get_bool(self, key: str) -> bool:
-    return self.enabled
-
-
 def plan_pos(vel: np.ndarray) -> np.ndarray:
   """Positions along a plan, integrated from its speeds."""
   return np.r_[0., np.cumsum(0.5 * (vel[1:] + vel[:-1]) * np.diff(T_IDXS))]

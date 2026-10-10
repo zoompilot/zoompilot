@@ -13,9 +13,10 @@ import pytest
 
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL as DT
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import controller as c
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, MockParams, build_sm
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, build_sm
 
 V_PREF = 20.  # m/s, the model's own pace
 V_CRUISE = V_PREF + 6 * CV.MPH_TO_MS  # set 6 mph above it, the median gap in the logs
@@ -24,7 +25,7 @@ ACTUATOR_TAU = 0.5  # s
 
 def simulate(enabled, seconds=60., tau=50., brake_at=None):
   """Rows of (t, v_ego, a_model, e2e candidate). brake_at: the model brakes at -0.5 from then on."""
-  ctl = E2ESetSpeedController(params=MockParams(enabled), dt=DT)
+  ctl = E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled), dt=DT)
   v, a_act = V_PREF, 0.
   log = []
   for i in range(int(seconds / DT)):

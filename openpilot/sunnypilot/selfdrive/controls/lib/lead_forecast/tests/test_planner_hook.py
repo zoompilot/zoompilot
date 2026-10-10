@@ -13,9 +13,9 @@ import pytest
 from openpilot.cereal import messaging
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS
 from openpilot.selfdrive.controls.radard import RADAR_TO_CAMERA
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.tests.test_dec_planner_gate import V_EGO, build_planner, build_sm
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap.controller import Inhibit as GapInhibit
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import MockParams
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.forecast import LEAD_T_IDXS, Inhibit, forecast_trajectory
 
 SLOWING = np.array([V_EGO - 2., V_EGO - 6., V_EGO - 10., V_EGO - 12., V_EGO - 13., V_EGO - 13.])
@@ -49,9 +49,9 @@ def lead_sm():
 
 def run(enabled: bool, frames: int = 20):
   planner = build_planner(dec_active=False, dec_mode='acc')
-  planner.lead_forecast.params = MockParams(enabled)
+  planner.lead_forecast.params = FakeParams(LeadForecast=enabled)
   planner.lead_forecast.frame = -1  # re-read the param on the next update
-  planner.e2e_lead_gap.params = MockParams(enabled)
+  planner.e2e_lead_gap.params = FakeParams(ExperimentalModeLeadGap=enabled)
   planner.e2e_lead_gap.frame = -1
   sm = lead_sm()
   for _ in range(frames):

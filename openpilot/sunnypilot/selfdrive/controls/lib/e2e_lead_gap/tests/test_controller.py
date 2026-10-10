@@ -9,9 +9,10 @@ import pytest
 
 from openpilot.cereal import log
 from openpilot.common.realtime import DT_MDL as DT
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap import controller as c
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap.controller import CAP, E2ELeadGapController, Inhibit
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap.tests.helpers import ENGAGED, MockParams, build_sm, desired_gap
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap.tests.helpers import ENGAGED, build_sm, desired_gap
 
 V = 20.
 STANDARD = log.LongitudinalPersonality.standard
@@ -21,7 +22,7 @@ SETTLED = int((c.nudge.HOLD_TIME + 1. / c.AUTHORITY_RISE + CAP[int(STANDARD)] / 
 
 
 def run(sm, frames=SETTLED, a_model=0., a_mpc=A_MPC, enabled=True, ctl=None, **overrides):
-  ctl = ctl or E2ELeadGapController(params=MockParams(enabled), dt=DT)
+  ctl = ctl or E2ELeadGapController(params=FakeParams(ExperimentalModeLeadGap=enabled), dt=DT)
   args = dict(ENGAGED, **overrides)
   out = None
   for _ in range(frames):
@@ -70,7 +71,7 @@ def test_lift_fades_as_the_model_pushes_back():
 
 
 def test_rise_is_rate_limited():
-  ctl = E2ELeadGapController(params=MockParams(True), dt=DT)
+  ctl = E2ELeadGapController(params=FakeParams(ExperimentalModeLeadGap=True), dt=DT)
   sm = build_sm(V, FAR)
   outs = [ctl.update(sm, 0., A_MPC, **ENGAGED) for _ in range(SETTLED)]
   assert np.max(np.diff(outs)) <= c.BOOST_RISE * DT + 1e-9
@@ -123,7 +124,7 @@ def test_new_lead_waits_out_the_hold():
 
 def test_tracked_lead_is_not_a_jump():
   # a lead closing at 2 m/s moves 0.1 m a frame; the expected position follows it
-  ctl = E2ELeadGapController(params=MockParams(True), dt=DT)
+  ctl = E2ELeadGapController(params=FakeParams(ExperimentalModeLeadGap=True), dt=DT)
   for i in range(SETTLED):
     ctl.update(build_sm(V, FAR + 40. - 2. * DT * i, v_lead=V - 2.), 0., A_MPC, **ENGAGED)
   assert ctl.inhibit == Inhibit.none

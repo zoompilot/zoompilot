@@ -13,9 +13,9 @@ from openpilot.cereal import messaging
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, LongitudinalPlanSource
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.tests.test_dec_planner_gate import build_planner, build_sm
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import FLOOR_MAX, E2ESetSpeedController, Inhibit
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import MockParams
 
 MODEL_ACCEL = 0.
 
@@ -43,7 +43,7 @@ def planner_sm():
 def run_planner(enabled: bool, frames: int = 200) -> LongitudinalPlanner:
   planner = build_planner(dec_active=False, dec_mode='acc')
   no_lead_mpc(planner.mpc)
-  planner.e2e_set_speed = E2ESetSpeedController(params=MockParams(enabled))
+  planner.e2e_set_speed = E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled))
   sm = planner_sm()
   for _ in range(frames):
     planner.update(sm)

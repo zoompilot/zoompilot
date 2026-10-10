@@ -19,9 +19,10 @@ from openpilot.common.realtime import DT_MDL as DT
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap import controller as c
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap.controller import E2ELeadGapController
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap.tests.helpers import ENGAGED, MockParams, build_sm, desired_gap
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap.tests.helpers import ENGAGED, build_sm, desired_gap
 
 V_LEAD = 20.
 STANDARD = log.LongitudinalPersonality.standard
@@ -38,7 +39,7 @@ def model_accel(gap, v):
 
 def simulate(enabled, seconds=90., lead_brake_at=None):
   """Rows of (t, gap excess, v, a_model, e2e, a_mpc)."""
-  ctl = E2ELeadGapController(params=MockParams(enabled), dt=DT)
+  ctl = E2ELeadGapController(params=FakeParams(ExperimentalModeLeadGap=enabled), dt=DT)
   mpc = LongitudinalMpc(dt=DT)
   v, a_act, out = V_LEAD, 0., 0.
   v_lead = V_LEAD

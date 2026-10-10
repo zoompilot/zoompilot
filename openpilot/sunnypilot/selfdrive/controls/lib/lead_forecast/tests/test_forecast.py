@@ -10,9 +10,9 @@ import pytest
 import openpilot.cereal.messaging as messaging
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, T_IDXS
 from openpilot.selfdrive.controls.radard import RADAR_TO_CAMERA, _LEAD_ACCEL_TAU
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.forecast import (BLEND_RATE, LEAD_T_IDXS, Inhibit, LeadForecast,
                                                                                 forecast_speed, forecast_trajectory)
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import MockParams
 
 V_EGO = 20.
 FULL_BLEND_FRAMES = int(np.ceil(1. / (BLEND_RATE * 0.05)))
@@ -45,7 +45,7 @@ def build_sm(d_rel=40., v_lead=15., model_v=None, radar=False, present=True, d_r
 def build(enabled=True):
   mpc = LongitudinalMpc()
   mpc.set_cur_state(V_EGO, 0.)
-  forecast = LeadForecast(params=MockParams(enabled))
+  forecast = LeadForecast(params=FakeParams(LeadForecast=enabled))
   upstream = mpc.process_lead
   forecast.install(mpc)
   return mpc, forecast, upstream

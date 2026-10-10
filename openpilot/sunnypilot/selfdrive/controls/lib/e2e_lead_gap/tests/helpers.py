@@ -9,9 +9,9 @@ import numpy as np
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import log
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_lead_gap.controller import LEAD_T_IDXS, desired_gap
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import MockParams, build_sm as build_nudge_sm
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import build_sm as build_nudge_sm
 
-__all__ = ['ENGAGED', 'MockParams', 'build_sm', 'desired_gap']
+__all__ = ['ENGAGED', 'build_sm', 'desired_gap']
 
 # update() arguments for an engaged e2e frame
 ENGAGED = {'is_e2e': True, 'reset_state': False, 'dec_active': False, 'allow_throttle': True, 'fcw': False}
