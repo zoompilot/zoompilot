@@ -19,113 +19,41 @@ from openpilot.sunnypilot.selfdrive.controls.tests.speed_dep_helpers import (
 )
 
 
-class TestLafInterpolatedBySpeed:
-  """torque_params.latAccelFactor must be speed-interpolated before torque_from_lateral_accel reads it."""
+class TestInterpolatedBySpeed:
+  """latAccelFactor and friction come from the tables at the previous frame's speed, clamped to
+  the end bins, before torque_from_lateral_accel and get_friction read them."""
 
-  def test_lat_accel_factor_set_to_interpolated_value(self, make_override):
+  @pytest.mark.parametrize("v_ego", [0.0, 6.5, 10.0, 21.0, 35.0, 37.5, 100.0])
+  def test_both_params_follow_the_tables(self, make_override, v_ego):
     ovr = make_override()
     activate_speed_dep(ovr)
-    tp = make_torque_params(latAccelFactor=999.0)  # sentinel
-
-    ovr._last_vego = 10.0
+    tp = make_torque_params(latAccelFactor=999.0, friction=999.0)  # sentinels
+    ovr._last_vego = v_ego
     ovr.update_override_torque_params(tp)
+    assert tp.latAccelFactor == pytest.approx(np.interp(v_ego, SAMPLE_SPEED_BP, SAMPLE_LAT_ACCEL_FACTOR_BP), abs=1e-4)
+    assert tp.friction == pytest.approx(np.interp(v_ego, SAMPLE_SPEED_BP, SAMPLE_FRICTION_BP), abs=1e-4)
 
-    expected = float(np.interp(10.0, SAMPLE_SPEED_BP, SAMPLE_LAT_ACCEL_FACTOR_BP))
-    assert tp.latAccelFactor == pytest.approx(expected, abs=1e-4), \
-      f"latAccelFactor should be {expected}, got {tp.latAccelFactor}"
 
-  def test_lat_accel_factor_differs_at_different_speeds(self, make_override):
+class TestInactivePassesThrough:
+  """Inactive (never activated, or deactivated when torqued sent empty bins) or active with
+  no tables, the controller keeps the global values it was handed."""
+
+  @pytest.mark.parametrize("state", ["fresh", "deactivated", "no_tables"])
+  def test_globals_pass_through(self, make_override, state):
     ovr = make_override()
-    activate_speed_dep(ovr)
-
-    tp = make_torque_params()
-    ovr._last_vego = 6.5
-    ovr.update_override_torque_params(tp)
-    factor_low = tp.latAccelFactor
-
-    tp = make_torque_params()
-    ovr._last_vego = 37.5
-    ovr.update_override_torque_params(tp)
-    factor_high = tp.latAccelFactor
-
-    assert factor_low != pytest.approx(factor_high, abs=0.01), \
-      "latAccelFactor must differ between 6.5 m/s and 37.5 m/s"
-
-  def test_lat_accel_factor_not_global_value(self, make_override):
-    """latAccelFactor should NOT be the global scalar."""
-    ovr = make_override()
-    activate_speed_dep(ovr)
-    global_factor = 2.0
-    tp = make_torque_params(latAccelFactor=global_factor)
-
-    ovr._last_vego = 6.5  # seed latAccelFactor at 6.5 is 2.39, not 2.0
-    ovr.update_override_torque_params(tp)
-
-    assert tp.latAccelFactor != pytest.approx(global_factor, abs=0.01), \
-      "latAccelFactor should be speed-interpolated, not the global value"
-
-
-class TestFrictionInterpolatedBySpeed:
-  """torque_params.friction must be speed-interpolated before get_friction reads it."""
-
-  def test_friction_set_to_interpolated_value(self, make_override):
-    ovr = make_override()
-    activate_speed_dep(ovr)
-    tp = make_torque_params(friction=999.0)
-
-    ovr._last_vego = 35.0
-    ovr.update_override_torque_params(tp)
-
-    expected = float(np.interp(35.0, SAMPLE_SPEED_BP, SAMPLE_FRICTION_BP))
-    assert tp.friction == pytest.approx(expected, abs=1e-4)
-
-  def test_friction_differs_at_different_speeds(self, make_override):
-    ovr = make_override()
-    activate_speed_dep(ovr)
-
-    tp = make_torque_params()
-    ovr._last_vego = 6.5
-    ovr.update_override_torque_params(tp)
-    fric_low = tp.friction
-
-    tp = make_torque_params()
-    ovr._last_vego = 37.5
-    ovr.update_override_torque_params(tp)
-    fric_high = tp.friction
-
-    assert fric_low != pytest.approx(fric_high, abs=0.01)
-
-
-class TestToggleOffClearsState:
-  """_speed_dep_active must be cleared when bins disappear."""
-
-  def test_inactive_by_default(self, make_override):
-    ovr = make_override()
-    assert not ovr._speed_dep_active
-
-  def test_deactivated_does_not_modify_params(self, make_override):
-    ovr = make_override()
-    activate_speed_dep(ovr)
-    ovr._speed_dep_active = False
-
-    tp = make_torque_params(latAccelFactor=99.0, friction=99.0)
+    if state != "fresh":
+      activate_speed_dep(ovr)
+    if state == "deactivated":
+      ovr._speed_dep_active = False
+    elif state == "no_tables":
+      ovr._speed_dep_speed_bp = []
+    # Float32-exact literals so the pass-through check can stay an exact equality
+    laf, fric = float(np.float32(2.35)), float(np.float32(0.12))
+    tp = make_torque_params(latAccelFactor=laf, friction=fric)
     ovr._last_vego = 15.0
     ovr.update_override_torque_params(tp)
-
-    assert tp.latAccelFactor == 99.0, "Should not modify params when inactive"
-    assert tp.friction == 99.0
-
-  def test_empty_speed_bp_does_not_modify_params(self, make_override):
-    ovr = make_override()
-    activate_speed_dep(ovr)
-    ovr._speed_dep_speed_bp = []  # empty
-
-    tp = make_torque_params(latAccelFactor=99.0, friction=99.0)
-    ovr._last_vego = 15.0
-    ovr.update_override_torque_params(tp)
-
-    assert tp.latAccelFactor == 99.0
-    assert tp.friction == 99.0
+    assert tp.latAccelFactor == laf
+    assert tp.friction == fric
 
 
 class TestManualOverridePriority:
@@ -237,72 +165,3 @@ class TestChangeDetection:
     assert tp.latAccelFactor == pytest.approx(float(np.interp(13.7, SAMPLE_SPEED_BP, SAMPLE_LAT_ACCEL_FACTOR_BP)), rel=1e-6)
     ovr._last_vego = 13.8
     assert ovr.update_override_torque_params(tp)
-
-
-class TestToggleOffFallback:
-  """When speed-dep is deactivated, the controller must not use stale tables."""
-
-  def test_deactivation_via_empty_bins(self, make_override):
-    """Simulates toggle-off: update_speed_dep_torque receives empty bins."""
-    ovr = make_override()
-    activate_speed_dep(ovr)
-    assert ovr._speed_dep_active
-
-    ovr._speed_dep_active = False  # torqued sent empty speedBinCenters
-
-    # Float32-exact literals so the pass-through check can stay an exact equality
-    laf, fric = float(np.float32(2.35)), float(np.float32(0.12))
-    tp = make_torque_params(latAccelFactor=laf, friction=fric)
-    ovr._last_vego = 15.0
-    ovr.update_override_torque_params(tp)
-
-    # global values pass through unmodified
-    assert tp.latAccelFactor == laf
-    assert tp.friction == fric
-
-  def test_reactivation_after_deactivation(self, make_override):
-    """Speed-dep can be re-enabled after being disabled."""
-    ovr = make_override()
-    ovr._speed_dep_active = False
-
-    activate_speed_dep(ovr)
-    assert ovr._speed_dep_active
-
-    tp = make_torque_params()
-    ovr._last_vego = 15.0
-    ovr.update_override_torque_params(tp)
-
-    expected_factor = float(np.interp(15.0, SAMPLE_SPEED_BP, SAMPLE_LAT_ACCEL_FACTOR_BP))
-    assert tp.latAccelFactor == pytest.approx(expected_factor, abs=1e-4)
-
-
-class TestExtrapolationAtBoundaries:
-  """np.interp clamps to edge values for speeds outside the bin range."""
-
-  def test_speed_below_first_bin_clamps(self, make_override):
-    ovr = make_override()
-    activate_speed_dep(ovr)
-    tp = make_torque_params()
-    ovr._last_vego = 0.0
-    ovr.update_override_torque_params(tp)
-    assert tp.latAccelFactor == pytest.approx(SAMPLE_LAT_ACCEL_FACTOR_BP[0], abs=1e-4)
-    assert tp.friction == pytest.approx(SAMPLE_FRICTION_BP[0], abs=1e-4)
-
-  def test_speed_above_last_bin_clamps(self, make_override):
-    ovr = make_override()
-    activate_speed_dep(ovr)
-    tp = make_torque_params()
-    ovr._last_vego = 100.0
-    ovr.update_override_torque_params(tp)
-    assert tp.latAccelFactor == pytest.approx(SAMPLE_LAT_ACCEL_FACTOR_BP[-1], abs=1e-4)
-    assert tp.friction == pytest.approx(SAMPLE_FRICTION_BP[-1], abs=1e-4)
-
-  def test_speed_at_exact_bin_center(self, make_override):
-    ovr = make_override()
-    activate_speed_dep(ovr)
-    for i, speed in enumerate(SAMPLE_SPEED_BP):
-      tp = make_torque_params()
-      ovr._last_vego = speed
-      ovr.update_override_torque_params(tp)
-      assert tp.latAccelFactor == pytest.approx(SAMPLE_LAT_ACCEL_FACTOR_BP[i], abs=1e-4)
-      assert tp.friction == pytest.approx(SAMPLE_FRICTION_BP[i], abs=1e-4)
