@@ -11,23 +11,8 @@ tests.
 """
 import os
 
-import pytest
-
 os.environ["BIG"] = "1"
 os.environ.setdefault("SCALE", "0.5")  # a full-size 2160x1080 hidden window aborts on macOS
-
-
-@pytest.fixture(scope="module")
-def gui():
-  import pyray as rl
-  from openpilot.common.prefix import OpenpilotPrefix
-
-  with OpenpilotPrefix():
-    rl.set_config_flags(rl.FLAG_WINDOW_HIDDEN)
-    from openpilot.system.ui.lib.application import gui_app
-    gui_app.init_window("test_tizi_settings", fps=30)
-    yield gui_app
-    gui_app.close()
 
 
 def test_alpha_toggle_is_offroad_only(params, monkeypatch):

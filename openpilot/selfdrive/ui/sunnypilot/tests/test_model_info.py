@@ -1,28 +1,20 @@
 """
-Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+Copyright (c) 2026-, Zeph Leggett.
 
-This file is part of sunnypilot and is licensed under the MIT License.
+This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from unittest import mock
 
-from jetlink.openpilot import Status
-
 from openpilot.cereal import custom
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.ui.sunnypilot import accelerator_link, model_info
+from openpilot.selfdrive.ui.sunnypilot.tests.helpers import jetlink_status
 from openpilot.selfdrive.ui.ui_state import ChestnutState
 from openpilot.sunnypilot.models.helpers import REQUIRED_JSON_VERSION
 from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL, DEFAULT_MODEL
 
 V3_REF = "bf3e3631b3f91d92a1020a5e0dd4298b93ff4244"
-
-
-def _jetlink(**fields) -> Status:
-  """jetlink's snapshot as the UI's params pass takes it."""
-  base = {'enabled': False, 'mode': 'off', 'transport': 'USB', 'present': False, 'port': None, 'ready': False,
-          'reason': None, 'progress': None, 'model': None, 'default_model': None}
-  return Status(**{**base, **fields})
 
 
 def _raw_bundle(ref: str) -> dict:
@@ -56,7 +48,7 @@ class TestCarryingModel(OpenpilotTestCase):
 
   def test_the_link_on_still_names_the_stored_bundle(self):
     for enabled in (True, False):
-      self.ui_state.jetlink = _jetlink(enabled=enabled, mode='usb' if enabled else 'off')
+      self.ui_state.jetlink = jetlink_status(enabled=enabled, mode='usb' if enabled else 'off')
       assert model_info.carrying_model() == ("qcom", "custom_small", "custom_small")
       source, active, _ = model_info.model_info()
       assert (source, active) == ("qcom", "custom_small")
@@ -67,15 +59,15 @@ class TestCarryingModel(OpenpilotTestCase):
 
   def test_link_active_names_the_accelerator_model(self):
     self.ui_state.chestnut_state = ChestnutState.ACTIVE
-    self.ui_state.jetlink = _jetlink(enabled=True, mode='usb', present=True, ready=True, model="big")
+    self.ui_state.jetlink = jetlink_status(enabled=True, mode='usb', present=True, ready=True, model="big")
     assert model_info.carrying_model() == ("accelerator", "big", "big")
 
-  def test_fitted_board_is_chestnut_not_jetlink(self):
+  def test_fitted_board_is_chestnut_notjetlink_status(self):
     # a real chestnut ACTIVE keeps comma's semantics whatever the accelerator says
     self.ui_state.chestnut_present = True
     self.ui_state.chestnut_state = ChestnutState.ACTIVE
     self.ui_state.params.get.side_effect = lambda key: {"ModelManager_ActiveBundleChestnut": _raw_bundle("big_custom")}.get(key)
-    self.ui_state.jetlink = _jetlink(enabled=True, mode='usb', present=True, ready=True, model="jetlink_big")
+    self.ui_state.jetlink = jetlink_status(enabled=True, mode='usb', present=True, ready=True, model="jetlink_big")
     assert model_info.carrying_model() == ("chestnut", "big_custom", "big_custom")
 
 
@@ -92,7 +84,7 @@ class TestDefaultBigModelName(OpenpilotTestCase):
 
   def test_a_fitted_chestnut_names_the_in_tree_model(self):
     self.ui_state.chestnut_present = True
-    self.ui_state.jetlink = _jetlink(default_model="a chestnut never names jetlink's default")
+    self.ui_state.jetlink = jetlink_status(default_model="a chestnut never names jetlink's default")
     assert model_info.default_model_name("chestnut") == f"{DEFAULT_BIG_MODEL} (Default)"
     assert model_info.default_model_name("qcom") == f"{DEFAULT_MODEL} (Default)"
 
@@ -114,7 +106,7 @@ class TestDefaultBigModelName(OpenpilotTestCase):
 
   def test_an_accelerator_with_no_catalog_falls_back_to_the_in_tree_name(self):
     self.ui_state.chestnut_present = False
-    for jetlink in (_jetlink(default_model=None), None):
+    for jetlink in (jetlink_status(default_model=None), None):
       self.ui_state.jetlink = jetlink
       assert model_info.default_model_name("chestnut") == f"{DEFAULT_BIG_MODEL} (Default)"
 
@@ -129,7 +121,7 @@ class TestAChestnutArrivingMidRender(OpenpilotTestCase):
     self.ui_state = mock.MagicMock()
     self.ui_state.chestnut_present = False
     self.ui_state.chestnut_state = ChestnutState.ACTIVE
-    snapshot = _jetlink(enabled=True, mode='usb', present=True, ready=True, model="big", default_model="jetlink's",
+    snapshot = jetlink_status(enabled=True, mode='usb', present=True, ready=True, model="big", default_model="jetlink's",
                         progress={'stage': 'build', 'frac': 0.5, 'msg': 'building'})
     self.reads = 0
 

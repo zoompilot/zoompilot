@@ -9,34 +9,19 @@ models panel's link toggle and status line. jetlink is one mock: the adapter's
 status(), which the params pass reads.
 """
 import os
-import unittest
 from contextlib import contextmanager
 from unittest import mock
+
+import pytest
 
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
-from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.common.test import OpenpilotTestCase
+from openpilot.selfdrive.ui.sunnypilot.tests.helpers import jetlink_status
 
-# the window's own params, for whatever it reads while it comes up; every test
-# then runs under its own prefix
-_window_prefix = OpenpilotPrefix()
-
-
-def setUpModule():
-  """A hidden raylib window, once for the module: widgets need textures."""
-  import pyray as rl
-  from openpilot.system.ui.lib.application import gui_app
-  _window_prefix.__enter__()
-  rl.set_config_flags(rl.FLAG_WINDOW_HIDDEN)
-  gui_app.init_window("test_accelerator_ui", fps=30)
-
-
-def tearDownModule():
-  from openpilot.system.ui.lib.application import gui_app
-  gui_app.close()
-  _window_prefix.__exit__(None, None, None)
+# conftest's window, once for the module; every test then runs under its own prefix
+pytestmark = pytest.mark.usefixtures("gui")
 
 
 class UITest(OpenpilotTestCase):
@@ -49,22 +34,12 @@ class UITest(OpenpilotTestCase):
     ui_state.update_params()
 
 
-def snapshot(**fields):
-  """jetlink's Status, nothing to show unless a field says so."""
-  from jetlink.openpilot import Status
-  base = {'enabled': False, 'mode': 'off', 'transport': 'USB', 'present': False, 'port': None, 'ready': False,
-          'reason': None, 'progress': None, 'model': None, 'default_model': None}
-  if fields.get('enabled'):
-    base['mode'] = 'usb'
-  return Status(**{**base, **fields})
-
-
 @contextmanager
 def jetlink(installed=True, **fields):
   """The adapter's status() while the block runs, and a params pass over it.
   Not installed is None: no jetlink on this device."""
   from openpilot.selfdrive.ui.ui_state import ui_state
-  status = snapshot(**fields) if installed else None
+  status = jetlink_status(**fields) if installed else None
   with mock.patch("openpilot.sunnypilot.jetlink_adapter.status", return_value=status) as reads:
     ui_state.update_params()
     yield reads
@@ -326,7 +301,7 @@ class TestTiciModelsPanel(UITest):
         note = layout._status_note()
         assert "chestnut" not in note
         assert "Cinque Terre will drive when Jetlink is ready." == note
-        ui_state.jetlink = snapshot(present=True, ready=True, enabled=True, model='Cinque Terre')
+        ui_state.jetlink = jetlink_status(present=True, ready=True, enabled=True, model='Cinque Terre')
         # no "until the next drive": the link rejoins all drive
         assert layout._status_note() == "Cinque Terre will drive."
     finally:
@@ -461,7 +436,7 @@ class TestTheUsbPort(UITest):
   def set(self, adb, link):
     """link is jetlink's snapshot: None (a chestnut, or no jetlink) or enabled or not."""
     self.params.put_bool("AdbEnabled", adb, block=True)
-    self.ui.jetlink = None if link is None else snapshot(enabled=link)
+    self.ui.jetlink = None if link is None else jetlink_status(enabled=link)
     self.ui._enforce_usb_port()
     return self.params.get_bool("AdbEnabled"), self.ui.adb_blocked
 
@@ -486,6 +461,3 @@ class TestTheUsbPort(UITest):
         self.assertEqual(tici._adb_toggle.action_item.enabled, enabled)
         self.assertEqual(mici._adb_toggle.enabled, enabled)
 
-
-if __name__ == '__main__':
-  unittest.main()

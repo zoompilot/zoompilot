@@ -15,33 +15,7 @@ from unittest import mock
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
-
-@pytest.fixture(scope="module")
-def gui():
-  """Hidden raylib window + isolated params dir. Widgets need textures, so a window is required."""
-  import pyray as rl
-  from openpilot.common.prefix import OpenpilotPrefix
-
-  with OpenpilotPrefix():
-    rl.set_config_flags(rl.FLAG_WINDOW_HIDDEN)
-    from openpilot.system.ui.lib.application import gui_app
-    gui_app.init_window("test_mici_settings", fps=30)
-    yield gui_app
-    gui_app.close()
-
-
-def jetlink_status(**fields):
-  """jetlink's snapshot as the UI's params pass takes it, nothing to show unless a field says so."""
-  from jetlink.openpilot import Status
-  base = {'enabled': False, 'mode': 'off', 'transport': 'USB', 'present': False, 'port': None, 'ready': False,
-          'reason': None, 'progress': None, 'model': None, 'default_model': None}
-  return Status(**{**base, **fields})
-
-
-def render(widget):
-  """Drive one frame through Widget.render, which calls _update_state."""
-  import pyray as rl
-  widget.render(rl.Rectangle(0, 0, 800, 600))
+from openpilot.selfdrive.ui.sunnypilot.tests.helpers import jetlink_status, render
 
 
 def wait_for_param(params, key, timeout=2.0):

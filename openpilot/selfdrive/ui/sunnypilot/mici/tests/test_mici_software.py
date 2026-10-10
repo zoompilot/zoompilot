@@ -15,18 +15,7 @@ import pytest
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
-
-@pytest.fixture(scope="module")
-def gui():
-  import pyray as rl
-  from openpilot.common.prefix import OpenpilotPrefix
-
-  with OpenpilotPrefix():
-    rl.set_config_flags(rl.FLAG_WINDOW_HIDDEN)
-    from openpilot.system.ui.lib.application import gui_app
-    gui_app.init_window("test_mici_software", fps=30)
-    yield gui_app
-    gui_app.close()
+from openpilot.selfdrive.ui.sunnypilot.tests import helpers
 
 
 @pytest.fixture
@@ -40,8 +29,7 @@ def updater_params(params):
 
 
 def render(widget):
-  import pyray as rl
-  widget.render(rl.Rectangle(0, 0, 536, 240))
+  helpers.render(widget, 536, 240)
 
 
 def test_the_panel_swaps_in_the_button_and_the_branch_button_follows(gui, updater_params):

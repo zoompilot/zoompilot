@@ -12,7 +12,7 @@ import os
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
-from openpilot.selfdrive.ui.sunnypilot.mici.tests.test_mici_settings import gui, render  # noqa: F401
+from openpilot.selfdrive.ui.sunnypilot.tests.helpers import render
 
 
 def _bundle(p, brand):
