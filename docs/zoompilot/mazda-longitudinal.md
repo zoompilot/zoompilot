@@ -62,7 +62,7 @@ marker clear, so ERR_BIT holds the timer at zero as well. Before the first CAM_L
 the parser reads all-zero, which would count as settled, hence the `cam_laneinfo_seen` latch.
 
 CAM_LANEINFO is a roughly 2 Hz message. The longest period measured across 26 or more segments on
-two cars is 0.563 s (`CAM_LANEINFO_PERIOD_T`). A freshness window shorter than one period reads
+two cars is 0.563 s. A freshness window shorter than one period reads
 every inter-frame gap as a dropout, zeroes the settle timer each time, and the teardown gate never
 opens. `CAM_LANEINFO_FRESH_T` is 1.5 s, 2.7x the longest observed period, and still catches a real
 camera dropout.
@@ -732,8 +732,7 @@ the dash lane indicators, so those two stay zeroed.
 | `RADAR_STEP` | 10 frames (10 Hz) | stock radar static and track rate | corpus |
 | `RADAR_UDS_STEP` | 50 frames (2 Hz) | tester present cadence, well inside S3 = 5 s | 000000fe |
 | `FSC_SETTLE_T` | 7.0 s | radar-presence check faulted at 1.9 s, passed from 5.8 s (10 s until 2026-10-05) | setup/teardown drives |
-| `CAM_LANEINFO_PERIOD_T` | 0.563 s | longest CAM_LANEINFO period, 26+ segments, two cars | corpus |
-| `CAM_LANEINFO_FRESH_T` | 1.5 s | 2.7x the longest period | derived |
+| `CAM_LANEINFO_FRESH_T` | 1.5 s | 2.7x the longest CAM_LANEINFO period, 0.563 s over 26+ segments, two cars | corpus |
 | `STOCK_RADAR_ALIVE_T` | 0.05 s | stock gap p99.99 31.0 ms | 7.25M frames, 166 routes |
 | `STOCK_RADAR_GUARD_T` | 1.27 s | about 12x the longest stock gap (105.7 ms); the value every engaged drive ran on | 0000002d seg 28 |
 | `RADAR_SESSION_LIMIT_T` | 10.0 s | per-episode UDS budget | design |
