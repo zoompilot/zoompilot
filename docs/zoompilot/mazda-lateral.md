@@ -22,9 +22,9 @@ hands-off lockout, so a car with that EPS swapped in loses the floor too.
 KBST-3210X-A-00 and KSD5-3210X-C-00, the CX-5 2022 EPS block in fingerprints.py) or from the
 CX-5 2022 platform itself, and it keys the whole 2022 EPS block together: the higher-authority
 `CarControllerParams` tune, carstate's fault handling, `minSteerSpeed = 0`, the alpha-long
-availability rule (see mazda-longitudinal.md) and the panda's torque envelope through
-`MazdaSafetyFlags.STEER_TO_ZERO_EPS`. Without the panda bit the panda enforces upstream's
-800/10/25; with it the 1200/12/12 the controller commands.
+availability rule (see mazda-longitudinal.md). The panda's torque envelope follows the hardware
+instead: the interface sets `MazdaSafetyFlags.EPS_HW` on every Mazda, and the panda enforces the
+1200/12/12 the controller commands. Without the bit it enforces upstream's 800/10/25.
 
 `steerActuatorDelay` follows the EPS as well, because command-to-torque lag is EPS firmware:
 0.14 s on the 2022 EPS, 0.1 s otherwise. lagd learns the rest (0.338 s total on a CX-5 2022;
