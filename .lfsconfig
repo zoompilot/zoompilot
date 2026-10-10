@@ -1,8 +1,9 @@
 [lfs]
-	url = https://gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git/info/lfs
-	pushurl = ssh://git@gitlab.com/sunnypilot/public/sunnypilot-new-lfs.git
+	url = https://huggingface.co/sunnypilot/sunnypilot-lfs.git/info/lfs
+	pushurl = https://huggingface.co/sunnypilot/sunnypilot-lfs.git/info/lfs
+
 	locksverify = false
 	# Only a chestnut uses the big driving model. Keep its pointer but exclude the object from
-	# install fetches, reducing the LFS payload from about 1974 MB to 174 MB; a chestnut build
-	# fetches it (openpilot/sunnypilot/models/big_model_source.py).
-	fetchexclude = openpilot/selfdrive/modeld/models/big_driving_supercombo.onnx
+	# install fetches; a chestnut build fetches it (openpilot/sunnypilot/models/big_model_source.py).
+	# Both names: the onnx until the sunnypilot merge that replaces it with the pkl lands.
+	fetchexclude = openpilot/selfdrive/modeld/models/big_driving_supercombo.onnx,openpilot/selfdrive/modeld/models/big_driving_tinygrad.pkl
