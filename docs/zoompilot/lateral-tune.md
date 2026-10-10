@@ -240,9 +240,12 @@ fed by `_on_torque_point` after upstream's quality filters. `_estimate_params_sp
 runs upstream's total-least-squares fit per bin, clips to +-sanity of the seed (upstream's
 FACTOR_SANITY 0.3 / FRICTION_SANITY 0.5; 1.0 / 1.0 with the relaxed toggle), advances the
 bin's filter decay from MIN_FILTER_DECAY 50 toward MAX 250 as upstream does, and resets a bin
-that goes NaN with valid data. Bins come from `speed_dependent.toml` or the defaults seeded
-with the global offline values. A bin refits whenever a point has been routed to it since its
-last fit. Until 2026-09-30 the test was the bucket length, which stops changing once all eight
+that goes NaN. As upstream gates its global filter, a bin is fit and filtered only once it is
+valid (every bucket at its minimum); until then it publishes its seed or the value restored
+from its cache, and the controller takes every bin as published (since 2026-10-10; before,
+calculable bins were filtered and the controller swapped invalid ones for the TOML seeds or the
+live global values). Bins come from `speed_dependent.toml` or the defaults seeded with the
+global offline values. A bin refits whenever a point has been routed to it since its last fit. Until 2026-09-30 the test was the bucket length, which stops changing once all eight
 ring buffers are full (12000 points) while new points keep replacing old ones, so a full bin
 froze at whatever it had learned when it filled: on the test car every bin above 16 m/s was
 full, and the device's values sat within 5% of the seeds while a refit of its own cached

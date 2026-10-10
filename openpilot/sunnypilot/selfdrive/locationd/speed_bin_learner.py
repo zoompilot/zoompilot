@@ -96,7 +96,6 @@ class SpeedBinLearner:
     # a bin with points since its last fit: a full bin's length stops changing while its ring
     # buffers keep turning over, so the length cannot mark new data
     self._speed_bin_dirty = [True] * n_bins
-    self._speed_bin_last_valid = [False] * n_bins
 
     # seeds from the TOML entry, else the global offline values for every bin
     ref_lafs = cfg.get('laf_bp', [self.offline_latAccelFactor] * n_bins)
@@ -278,18 +277,20 @@ class SpeedBinLearner:
 
   def _estimate_params_speed_binned(self):
     """Independent total-least-squares fit per bin, upstream's estimate_params() per bucket
-    set. A bin that goes NaN with valid data is reset, as upstream resets its global fit."""
+    set. As upstream filters its global fit, a bin is fit and filtered only once it is valid,
+    so until then it publishes its seed (or the value restored from its cache). A bin that
+    goes NaN is reset, as upstream resets its global fit."""
     torqued = _torqued()
 
     results = []
     for i, bucket in enumerate(self.speed_bin_points):
-      if not bucket.is_calculable():
+      if not bucket.is_valid():
         results.append((i, False))
         continue
 
       # nothing new since the last fit
       if not self._speed_bin_dirty[i]:
-        results.append((i, self._speed_bin_last_valid[i]))
+        results.append((i, True))
         continue
 
       # self.fit_points honors the decimated (qlog) point count
@@ -305,18 +306,15 @@ class SpeedBinLearner:
           self.speed_bin_filtered[i]['frictionCoefficient'].update(np.clip(friction_coeff, fric_lo, fric_hi))
           self.speed_bin_filtered[i]['frictionCoefficient'].update_alpha(self.speed_bin_decays[i])
           self._speed_bin_dirty[i] = False
-          self._speed_bin_last_valid[i] = bucket.is_valid()
-          results.append((i, self._speed_bin_last_valid[i]))
+          results.append((i, True))
           continue
       except np.linalg.LinAlgError:
         pass
 
-      if bucket.is_valid():
-        cloudlog.warning(f"speed-dep: bin {i} produced NaN with valid data, resetting bin")
-        self.speed_bin_points[i] = self._make_speed_bin_bucket()
-        self.speed_bin_decays[i] = torqued.MIN_FILTER_DECAY
-        self._speed_bin_dirty[i] = True
-      self._speed_bin_last_valid[i] = False
+      cloudlog.warning(f"speed-dep: bin {i} produced NaN with valid data, resetting bin")
+      self.speed_bin_points[i] = self._make_speed_bin_bucket()
+      self.speed_bin_decays[i] = torqued.MIN_FILTER_DECAY
+      self._speed_bin_dirty[i] = True
       results.append((i, False))
     return results
 

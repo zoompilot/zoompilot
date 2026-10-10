@@ -256,7 +256,6 @@ class TestNaNHandling:
   @staticmethod
   def _failing_bucket(est, target_bin, valid):
     bucket = MagicMock()
-    bucket.is_calculable.return_value = True
     bucket.is_valid.return_value = valid
     bucket.get_points.return_value = np.zeros((10, 3))
     est.speed_bin_points[target_bin] = bucket
@@ -264,7 +263,7 @@ class TestNaNHandling:
 
   def test_svd_failure_returns_false(self, fake_params):
     est = TorqueEstimator(make_cp())
-    self._failing_bucket(est, 1, valid=False)
+    self._failing_bucket(est, 1, valid=True)
     with patch('numpy.linalg.svd', side_effect=np.linalg.LinAlgError):
       results = est._estimate_params_speed_binned()
     assert dict(results)[1] is False
@@ -279,12 +278,14 @@ class TestNaNHandling:
     assert isinstance(est.speed_bin_points[1], TorqueBuckets)
     assert est.speed_bin_decays[1] == MIN_FILTER_DECAY
 
-  def test_non_valid_bin_svd_failure_preserves_bin(self, fake_params):
-    """A bin that is calculable but not valid is NOT reset on SVD failure."""
+  def test_invalid_bin_is_not_fit(self, fake_params):
+    """A bin short of points is never fit, so an SVD failure cannot reset it."""
     est = TorqueEstimator(make_cp())
     bucket = self._failing_bucket(est, 1, valid=False)
-    with patch('numpy.linalg.svd', side_effect=np.linalg.LinAlgError):
-      est._estimate_params_speed_binned()
+    with patch('numpy.linalg.svd', side_effect=np.linalg.LinAlgError) as svd:
+      results = est._estimate_params_speed_binned()
+    svd.assert_not_called()
+    assert dict(results)[1] is False
     assert est.speed_bin_points[1] is bucket
 
 
@@ -316,11 +317,32 @@ class TestFullBinKeepsLearning:
   def test_no_refit_without_new_points(self, fake_params):
     est = TorqueEstimator(make_cp())
     bucket = est.speed_bin_points[0]
-    bucket.load_points([[s, 2.0 * s] for s in np.linspace(-0.45, 0.45, 400)])
+    bucket.load_points([[s, 2.0 * s] for s in np.linspace(-0.45, 0.45, 1000)])
+    assert bucket.is_valid()
     est._estimate_params_speed_binned()
     before = est.speed_bin_filtered[0]['latAccelFactor'].x
     est._estimate_params_speed_binned()
     assert est.speed_bin_filtered[0]['latAccelFactor'].x == before
+
+
+@needs_speed_dep_car
+class TestFilteredOnlyOnceValid:
+  """As upstream gates its global filter, a bin is fit and filtered only once it is valid; until
+  then it publishes its seed and reads not valid."""
+
+  def test_a_calculable_bin_keeps_its_seed_until_valid(self, fake_params):
+    est = TorqueEstimator(make_cp())
+    bucket = est.speed_bin_points[0]
+    seed = est.speed_bin_filtered[0]['latAccelFactor'].x
+    bucket.load_points([[s, 3.0 * s] for s in np.linspace(-0.45, 0.45, 80)])  # every bucket, too few points
+    assert bucket.is_calculable() and not bucket.is_valid()
+    assert dict(est._estimate_params_speed_binned())[0] is False
+    assert est.speed_bin_filtered[0]['latAccelFactor'].x == seed
+
+    bucket.load_points([[s, 3.0 * s] for s in np.linspace(-0.45, 0.45, 1000)])
+    assert bucket.is_valid()
+    assert dict(est._estimate_params_speed_binned())[0] is True
+    assert est.speed_bin_filtered[0]['latAccelFactor'].x != seed
 
 
 class TestLegacyFirmwareBins:

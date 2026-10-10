@@ -81,7 +81,6 @@ def make_ext_stub(fingerprint='TEST_CAR'):
   stub._speed_dep_speed_bp = []
   stub._speed_dep_lat_accel_factor_bp = []
   stub._speed_dep_friction_bp = []
-  stub._speed_dep_car_cfg = None
   return stub
 
 
