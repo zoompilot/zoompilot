@@ -55,13 +55,6 @@ KEYS = _Keys(link='JetlinkLink', offroad='IsOffroad', progress='AcceleratorProgr
 # hardware package is too heavy for the owner, so they are written out here
 CHESTNUT_IDS = frozenset({(0xADD1, 0x0001), (0x3801, 0x0001), (0x174C, 0x2464), (0x174C, 0x2463)})
 
-# where the build puts the warp for each camera (SConscript) and modeld loads
-# it from: in the fork's tree, never in the jetlink submodule (a file there
-# leaves it dirty for the updater), and under the *.pkl ignore, which the
-# release scripts add past. Not Paths.comma_home(), which on AGNOS is a tmpfs
-# overlay: the pickle was gone every boot
-WARP_DIR = Path(__file__).resolve().parent / 'models'
-
 OWNER_LOG = Path('/data/log/jetlink-owner.log')
 
 _AGNOS = os.path.isfile('/AGNOS')
@@ -77,11 +70,6 @@ def _params_dir() -> Path:
   if root is None:
     root = '/data/params' if _AGNOS else os.path.join(os.environ.get('HOME', ''), '.comma' + prefix, 'params')
   return Path(root) / os.environ.get('OPENPILOT_PREFIX', 'd')
-
-
-def warp_path(cam_w: int, cam_h: int, model_w: int, model_h: int) -> Path:
-  """The warp for one geometry: the build's target and what modeld opens."""
-  return WARP_DIR / f'warp_{cam_w}x{cam_h}_{model_w}x{model_h}_tinygrad.pkl'
 
 
 def owner_config():
@@ -103,7 +91,7 @@ def main() -> None:
 
 def adapter() -> Adapter:
   """The adapter, for jetlink's entry points that run as their own process:
-  the provisioning run and the warp build."""
+  the provisioning run."""
   return Adapter()
 
 
@@ -157,7 +145,7 @@ class Adapter:
     return chestnut_present()
 
   def camera(self) -> tuple[int, int, int, int]:
-    # the choice modeld/SConscript makes for a source build
+    # this device's road camera, which names the warp modeld loads
     from openpilot.common.hardware import HARDWARE
     from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
     from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE
@@ -165,7 +153,11 @@ class Adapter:
     return camera.width, camera.height, *MEDMODEL_INPUT_SIZE
 
   def warp_path(self, cam_w: int, cam_h: int, model_w: int, model_h: int) -> Path:
-    return warp_path(cam_w, cam_h, model_w, model_h)
+    # the warp modeld_tinygrad loads, which every checkout carries (LFS); stock
+    # modeld loads the same compile from its own models dir, which only scons
+    # fills. One per camera, for the one model input size, which jetlink
+    # checks the warp makes
+    return self.basedir / 'openpilot/sunnypilot/modeld_v2/models' / f'driving_warp_{cam_w}x{cam_h}_tinygrad.pkl'
 
   def model_root(self) -> Path:
     from openpilot.common.hardware.hw import Paths
@@ -195,15 +187,6 @@ class Adapter:
 
   def event(self, name: str, **fields) -> None:
     self.log.event(name, **fields)
-
-  # -- the build --------------------------------------------------------------
-
-  def make_warp(self, cam_w: int, cam_h: int, model_w: int, model_h: int):
-    # compile_modeld first: it patches tinygrad's firmware fetch as it loads
-    from openpilot.selfdrive.modeld.compile_modeld import NV12Frame, make_warp
-    from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
-    nv12 = NV12Frame(cam_w, cam_h, *get_nv12_info(cam_w, cam_h))
-    return make_warp(nv12, model_w, model_h), nv12.size
 
 
 # -- what the hooks call ------------------------------------------------------

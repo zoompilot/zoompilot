@@ -13,10 +13,7 @@ pinned jetlink, with the network mocked.
 from __future__ import annotations
 
 import copy
-import shutil
-import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 import requests
@@ -220,19 +217,14 @@ class RefreshTest(JetlinkTest):
     self.params = Params()
     self.offline = False
     self.newer: dict | Exception = LATER
-    warps = Path(tempfile.mkdtemp())
-    self.addCleanup(shutil.rmtree, warps, ignore_errors=True)
+    # the checkout carries the warp for this camera, so readiness is the pick's engine alone
     for patcher in (
       mock.patch('openpilot.sunnypilot.models.fetcher.requests.get', side_effect=self.serve),
       mock.patch('jetlink.registry.catalog.fetch_catalogs', side_effect=self.probe),
       *chestnut(self.CHESTNUT),
-      # a warp built for this camera, so readiness is the pick's engine alone
-      mock.patch.object(jetlink_adapter, 'WARP_DIR', warps),
     ):
       patcher.start()
       self.addCleanup(patcher.stop)
-    op = jetlink_adapter.Adapter()
-    op.warp_path(*op.camera()).touch()
     self.new_process()
     self.addCleanup(model_helpers._LAST_VALIDATED_RAW.clear)
 

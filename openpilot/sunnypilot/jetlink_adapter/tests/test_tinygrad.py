@@ -7,14 +7,15 @@ See the LICENSE.md file in the root directory for more details.
 jetlink's comma side on this fork's tinygrad. jetlink's own tests run it on a
 numpy stand-in, since its CI installs neither tinygrad nor openpilot; what
 only the real one can show is here: the small model's reset on a real
-TinyJit, the warp built from comma's graph and captured under the names every
-frame passes, and the large model's frame path from the camera buffer to the
-wire.
+TinyJit, on the buffers each of openpilot's ModelStates keeps, and the large
+model's frame path from the camera buffer to the wire through modeld's warp.
 """
+import ast
 import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,98 +25,126 @@ from tinygrad import Tensor
 from jetlink.openpilot.warp import prepare_reset
 
 from openpilot.common.test import OpenpilotTestCase
+from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 
 ROOT = Path(__file__).resolve().parents[4]
+
+
+def state(*shape, dtype=np.float32):
+  return Tensor(np.zeros(shape, dtype=dtype)).contiguous().realize()
+
+
+def assigned(path: Path, cls: str) -> set[str]:
+  """Every self.<attr> a class of `path` assigns."""
+  tree = ast.parse(path.read_text())
+  node = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == cls)
+  return {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Store)
+          and isinstance(n.value, ast.Name) and n.value.id == 'self'}
 
 
 class TestPrepareReset(OpenpilotTestCase):
   """The small model's history, cleared after the large model drove, on the
   buffers its JIT captured: nothing allocated or compiled on the failure frame."""
 
-  def test_reset_clears_history_in_place_on_repeated_fallbacks(self):
-    model = SimpleNamespace(
-      input_queues={k: Tensor.zeros(4, 8, device='CPU').contiguous().realize()
-                    for k in ('img_q', 'big_img_q', 'feat_q', 'desire_q')},
-      prev_desire=np.ones(8), npy={'prev_feat': np.ones(32), 'desire': np.ones(8)})
+  def test_stock_modelds_state_clears_in_place_on_repeated_fallbacks(self):
+    from openpilot.selfdrive.modeld.modeld import input_view
+    queues = {'state_img_q': state(5, 6, 2, 4, dtype=np.uint8), 'state_feat_q': state(8, 1, 16)}
+    pairs = {name: f'next_{name}' for name in queues}
+    # the model writes its next state into the same buffers, through views
+    outputs = {pairs[name]: input_view(q._buffer(), q.shape, q.dtype, 0) for name, q in queues.items()}
+    packed = np.ones(64, np.uint8)
+    model = SimpleNamespace(input_queues={**queues, 'desire': state(8)}, state_pairs=pairs, packed_input=packed,
+                            prev_desire=np.ones(8))
     identities = {k: id(v) for k, v in model.input_queues.items()}
     reset = prepare_reset(model)
     for _ in range(3):
       for q in model.input_queues.values():
         q.assign(7).realize()
+      packed.fill(1)
       model.prev_desire.fill(1)
-      for v in model.npy.values():
-        v.fill(1)
       reset()
       self.assertEqual({k: id(v) for k, v in model.input_queues.items()}, identities)
-      for q in model.input_queues.values():
-        np.testing.assert_array_equal(q.numpy(), 0)
+      for name in queues:
+        np.testing.assert_array_equal(model.input_queues[name].numpy(), 0)
+        np.testing.assert_array_equal(outputs[pairs[name]].numpy(), 0)
+      # a view of the packed upload, which the next frame writes before it runs
+      np.testing.assert_array_equal(model.input_queues['desire'].numpy(), 7)
+      np.testing.assert_array_equal(packed, 0)
       np.testing.assert_array_equal(model.prev_desire, 0)
-      for v in model.npy.values():
-        np.testing.assert_array_equal(v, 0)
 
-  def test_reset_takes_a_modeld_v2_bundle_as_it_is(self):
-    # a split bundle: no feature queue, numpy inputs under numpy_inputs, and the
-    # packed NPY tensor and the two transforms the warp reads are not queues
-    packed = np.ones(16, dtype=np.float32)
-    model = SimpleNamespace(
-      input_queues={**{k: Tensor.zeros(4, 8, device='CPU').contiguous().realize() for k in ('img_q', 'big_img_q', 'desire_q')},
-                    'packed_npy_inputs': Tensor(packed, device='NPY').realize()},
-      prev_desire=np.ones(8),
-      numpy_inputs={'desire': packed[:8], 'lateral_control_params': packed[8:10], 'prev_desired_curv': packed[10:],
-                    'tfm': np.ones((3, 3), dtype=np.float32), 'big_tfm': np.ones((3, 3), dtype=np.float32)})
+  def test_a_modeld_v2_native_bundle(self):
+    packed = np.ones(64, np.uint8)
+    adapter = SimpleNamespace(is_native=True, input_queues={'state_img_q': state(5, 6, 2, 4, dtype=np.uint8)},
+                              state_pairs={'state_img_q': 'next_state_img_q'}, packed_input=packed)
+    model = SimpleNamespace(adapter=adapter, prev_desire=np.ones(8))
     reset = prepare_reset(model)
-    for q in ('img_q', 'big_img_q', 'desire_q'):
-      model.input_queues[q].assign(7).realize()
+    adapter.input_queues['state_img_q'].assign(7).realize()
     reset()
-    for q in ('img_q', 'big_img_q', 'desire_q'):
-      np.testing.assert_array_equal(model.input_queues[q].numpy(), 0)
+    np.testing.assert_array_equal(adapter.input_queues['state_img_q'].numpy(), 0)
+    np.testing.assert_array_equal(packed, 0)
     np.testing.assert_array_equal(model.prev_desire, 0)
-    np.testing.assert_array_equal(packed, 0)  # every numpy input is a view into it
-    np.testing.assert_array_equal(model.input_queues['packed_npy_inputs'].numpy(), 0)
+
+  def test_a_modeld_v2_legacy_bundle(self):
+    # a split bundle: no feature queue, and the packed NPY tensor is not a
+    # queue; every numpy input is a view into it
+    packed = np.ones(16, dtype=np.float32)
+    queues = {k: state(4, 8) for k in ('img_q', 'big_img_q', 'desire_q')}
+    adapter = SimpleNamespace(is_native=False, input_queues={**queues, 'packed_npy_inputs': Tensor(packed, device='NPY').realize()},
+                              numpy_inputs={'desire': packed[:8], 'lateral_control_params': packed[8:10], 'prev_desired_curv': packed[10:],
+                                            'tfm': np.ones((3, 3), dtype=np.float32), 'big_tfm': np.ones((3, 3), dtype=np.float32)})
+    model = SimpleNamespace(adapter=adapter, prev_desire=np.ones(8))
+    reset = prepare_reset(model)
+    for q in queues.values():
+      q.assign(7).realize()
+    reset()
+    for q in queues.values():
+      np.testing.assert_array_equal(q.numpy(), 0)
+    np.testing.assert_array_equal(model.prev_desire, 0)
+    np.testing.assert_array_equal(packed, 0)
+    np.testing.assert_array_equal(adapter.input_queues['packed_npy_inputs'].numpy(), 0)
 
   def test_it_reads_what_openpilots_model_states_have(self):
-    # prepare_reset is duck-typed on these names; a sync that renames one
-    # breaks every fallback to the small model
-    import ast
-    for path, npy in ((ROOT / 'openpilot/selfdrive/modeld/modeld.py', 'npy'),
-                      (ROOT / 'openpilot/sunnypilot/modeld_v2/modeld.py', 'numpy_inputs')):
-      tree = ast.parse(path.read_text())
-      cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'ModelState')
-      assigned = {n.attr for n in ast.walk(cls) if isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Store)
-                  and isinstance(n.value, ast.Name) and n.value.id == 'self'}
-      self.assertLessEqual({'input_queues', npy, 'prev_desire'}, assigned, path.name)
+    # prepare_reset reads these names; a sync that renames one breaks every
+    # fallback to the small model
+    adapters = ROOT / 'openpilot/sunnypilot/modeld_v2/model_adapters.py'
+    for path, cls, names in ((ROOT / 'openpilot/selfdrive/modeld/modeld.py', 'ModelState',
+                              {'input_queues', 'state_pairs', 'packed_input', 'prev_desire'}),
+                             (ROOT / 'openpilot/sunnypilot/modeld_v2/modeld.py', 'ModelState', {'adapter', 'prev_desire'}),
+                             (adapters, 'BaseModelAdapter', {'is_native'}),
+                             (adapters, 'NativeTinygradAdapter', {'input_queues', 'state_pairs', 'packed_input', 'is_native'}),
+                             (adapters, 'LegacyModelAdapter', {'input_queues', 'numpy_inputs'})):
+      with self.subTest(cls, path=path.name):
+        self.assertLessEqual(names, assigned(path, cls))
 
 
-# Run as its own process on tinygrad's CPU device: a Metal device on a Mac
-# cannot take a camera buffer by pointer (Tensor.from_blob), and the device
-# is fixed at the first use in a process
+# The warp as the fork's build compiles it (selfdrive/modeld/SConscript), on
+# tinygrad's CPU device, with this checkout's tinygrad
+CAM, MODEL = (1928, 1208), (512, 256)
+
+# Run as its own process: the device is fixed at the first use in a process
 FRAME_PATH = '''
-import json, shutil, tempfile
+import json, sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 import numpy as np
 
 from openpilot.sunnypilot import jetlink_adapter
-from jetlink.openpilot.warp import Warp, Warps, call_warp, compile_warp, init_device
+from jetlink.openpilot.warp import Warp, Warps, init_device
 from jetlink.spec import ModelSpec
 
 CAM, MODEL = (1928, 1208), (512, 256)
-tmp = Path(tempfile.mkdtemp())
 op = jetlink_adapter.adapter()
-op.warp_path = lambda *geometry: tmp / 'warp.pkl'
+op.warp_path = lambda *geometry: Path(sys.argv[1])
 
 log = mock.MagicMock()
 init_device(log)
 found = {'init_failed': log.exception.called}
 
-graph, size = op.make_warp(*CAM, *MODEL)
-compile_warp(graph, size, op.warp_path())
-jit = Warps(op).load(*CAM, *MODEL)
-found['names'] = list(jit.captured.expected_names)
 face = op.model_face()
-found['frame_size'] = size == face.frame_size(*CAM)
-warp = Warp(jit, face.frame_size(*CAM), log)
+loaded = Warps(op).load(*CAM, *MODEL)
+reads = loaded['input_specs']['input_frame'][0][1]
+warp = Warp(loaded, face.frame_size(*CAM))
 
 # Cinque Terre V3's inputs and output layout, read off its ONNX
 SLICES = {'lane_lines': (0, 528), 'lane_lines_prob': (528, 536), 'road_edges': (536, 800), 'meta': (800, 855),
@@ -146,25 +175,25 @@ from jetlink.openpilot.model_state import JetlinkModelState
 client, events = Client(), []
 model = JetlinkModelState(client, spec, warp, face=face, log=log, event=lambda name, **f: events.append(name))
 rng = np.random.default_rng(1)
-frames = {k: rng.integers(0, 256, face.frame_size(*CAM), dtype=np.uint8) for k in ('img', 'big_img')}
-bufs = {k: SimpleNamespace(data=v) for k, v in frames.items()}
 tfm = {'img': np.eye(3, dtype=np.float32), 'big_img': np.eye(3, dtype=np.float32) * 0.9}
 tfm['big_img'][2, 2] = 1.0
-out = None
+out, same = None, []
+from tinygrad.tensor import Tensor
 for i in range(3):
+  # camera buffers, a new pair each frame as camerad cycles them
+  frames = {k: rng.integers(0, 256, face.frame_size(*CAM), dtype=np.uint8) for k in ('img', 'big_img')}
+  bufs = {k: SimpleNamespace(data=v) for k, v in frames.items()}
   out = model.run(bufs, tfm, {'desire_pulse': np.zeros(8, np.float32), 'traffic_convention': np.array([1, 0], np.float32),
                               'action_t': np.array([0.1, 0.2], np.float32)})
+  # the same frames through the warp directly, as modeld calls it
+  direct = loaded['run'](input_frame=Tensor(np.stack([frames['img'][:reads], frames['big_img'][:reads]])),
+                         M_inv=Tensor(np.stack([tfm['img'], tfm['big_img']]))).numpy().tobytes()
+  same.append(client.sent[-1][0] == direct)
 
-# the same frame warped directly: what the model sent is the warp's output
 from tinygrad.device import Device
-from tinygrad.tensor import Tensor
-blobs = {k: Tensor.from_blob(v.ctypes.data, (v.size,), dtype='uint8', device=Device.DEFAULT) for k, v in frames.items()}
-direct = call_warp(jit, Tensor(tfm['img'], device='NPY').realize(), Tensor(tfm['big_img'], device='NPY').realize(),
-                   blobs['img'], blobs['big_img']).numpy().tobytes()
-found.update(device=Device.DEFAULT, sent=len(client.sent), bytes=len(client.sent[0][0]), expected=int(np.prod(spec.warped_shape)),
-             same=client.sent[-1][0] == direct, resets=[s[2] for s in client.sent], asks=[s[3] for s in client.sent],
-             parsed=sorted(out), events=events)
-shutil.rmtree(tmp)
+found.update(device=Device.DEFAULT, reads=reads, sent=len(client.sent), bytes=len(client.sent[0][0]),
+             expected=int(np.prod(spec.warped_shape)), same=same, blank=all(not any(s[0]) for s in client.sent),
+             resets=[s[2] for s in client.sent], asks=[s[3] for s in client.sent], parsed=sorted(out), events=events)
 print(json.dumps(found))
 '''
 
@@ -173,9 +202,18 @@ class TestTheFramePath(OpenpilotTestCase):
   @classmethod
   def setUpClass(cls):
     super().setUpClass()
-    env = {**os.environ, 'DEV': 'CPU', 'PYTHONPATH': os.pathsep.join([str(ROOT), *sys.path])}
-    out = subprocess.run([sys.executable, '-c', FRAME_PATH], capture_output=True, text=True, env=env, cwd=str(ROOT),
-                         timeout=600)
+    env = {**os.environ, 'DEV': 'CPU', 'PYTHONPATH': os.pathsep.join([str(ROOT / 'tinygrad_repo'), str(ROOT), *sys.path])}
+    with tempfile.TemporaryDirectory() as tmp:
+      pkl = Path(tmp) / 'warp.pkl'
+      stride, y_height, uv_height, _ = get_nv12_info(*CAM)
+      frame = f'{CAM[0]},{CAM[1]},{stride},{y_height},{uv_height},{stride * (y_height + uv_height)}'
+      compile_warp = ROOT / 'tinygrad_repo/examples/openpilot/compile_warp.py'
+      built = subprocess.run([sys.executable, str(compile_warp), '--frame', frame, '--warp-to', f'{MODEL[0]}x{MODEL[1]}',
+                              '--layout', 'yuv420', '--frames', '2', '--output', str(pkl), '--benchmark-runs', '1'],
+                             capture_output=True, text=True, env=env, cwd=tmp, timeout=600)
+      assert built.returncode == 0, built.stderr
+      out = subprocess.run([sys.executable, '-c', FRAME_PATH, str(pkl)], capture_output=True, text=True, env=env, cwd=str(ROOT),
+                           timeout=600)
     assert out.returncode == 0, out.stderr
     cls.found = json.loads(out.stdout.strip().splitlines()[-1])
 
@@ -183,17 +221,17 @@ class TestTheFramePath(OpenpilotTestCase):
     # tinygrad's device and its compile pool, started on the caller's thread
     self.assertFalse(self.found['init_failed'])
 
-  def test_the_warp_is_captured_under_the_names_every_frame_passes(self):
-    from jetlink.openpilot.warp import WARP_INPUT_NAMES
-    self.assertEqual(self.found['names'], WARP_INPUT_NAMES)
-    self.assertTrue(self.found['frame_size'], "make_warp's frame is not the camera buffer modeld hands over")
+  def test_the_warp_reads_what_modeld_copies_of_a_camera_buffer(self):
+    stride, y_height, uv_height, _ = get_nv12_info(*CAM)
+    self.assertEqual(self.found['reads'], stride * (y_height + uv_height))
 
   def test_the_large_model_sends_the_warped_frame(self):
     found = self.found
     self.assertEqual(found['device'], 'CPU')
     self.assertEqual(found['sent'], 3)
     self.assertEqual(found['bytes'], found['expected'])
-    self.assertTrue(found['same'], "the model sent something other than the warp's output")
+    self.assertEqual(found['same'], [True] * 3, "the model sent something other than the warp's output")
+    self.assertFalse(found['blank'])
     self.assertEqual(found['resets'], [True, False, False])
 
   def test_it_parses_the_reply_with_comma_s_parser(self):

@@ -137,7 +137,7 @@ class TestTheDevice(OpenpilotTestCase):
       with mock.patch('openpilot.selfdrive.modeld.helpers.chestnut_present', return_value=fitted):
         self.assertEqual(Adapter().chestnut_present(), fitted)
 
-  def test_the_camera_is_the_one_modelds_build_picks(self):
+  def test_the_camera_is_this_devices_road_camera(self):
     from openpilot.common.hardware import HARDWARE
     from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
     from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE
@@ -145,11 +145,16 @@ class TestTheDevice(OpenpilotTestCase):
       with mock.patch.object(HARDWARE, 'get_device_type', return_value=device):
         self.assertEqual(Adapter().camera(), (camera.width, camera.height, *MEDMODEL_INPUT_SIZE))
 
-  def test_the_warp_is_where_the_build_puts_it(self):
-    # the SConscript's targets are jetlink_adapter.warp_path (test_warp_build)
-    geometry = (1928, 1208, 512, 256)
-    self.assertEqual(Adapter().warp_path(*geometry), jetlink_adapter.warp_path(*geometry))
-    self.assertEqual(jetlink_adapter.warp_path(*geometry).parent, Path(jetlink_adapter.__file__).parent / 'models')
+  def test_the_warp_is_modelds_own_in_every_checkout(self):
+    # modeld_tinygrad's, which the checkout carries (LFS) for every camera, so
+    # a device without a build has it too
+    from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
+    from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE
+    for camera in (_ar_ox_fisheye, _os_fisheye):
+      path = Adapter().warp_path(camera.width, camera.height, *MEDMODEL_INPUT_SIZE)
+      self.assertEqual(path, Path(BASEDIR) / 'openpilot/sunnypilot/modeld_v2/models' /
+                       f'driving_warp_{camera.width}x{camera.height}_tinygrad.pkl')
+      self.assertTrue(path.is_file(), path)
 
 
 class TestModeld(OpenpilotTestCase):
@@ -199,36 +204,6 @@ class TestModeld(OpenpilotTestCase):
     with mock.patch.object(op.log, 'event') as event:
       op.event('jetlinkTelemetry', dead=False, rtt_ms=3.0)
     event.assert_called_once_with('jetlinkTelemetry', dead=False, rtt_ms=3.0)
-
-
-class TestTheBuild(OpenpilotTestCase):
-  def test_the_warp_graph_comes_before_tinygrad(self):
-    # compile_modeld patches tinygrad's firmware fetch as it loads, and the
-    # warp build makes the adapter before it asks for the graph
-    code = '''
-import json, sys
-from openpilot.sunnypilot import jetlink_adapter
-op = jetlink_adapter.adapter()
-built = 'tinygrad' in sys.modules
-seen = []
-class Order:
-  def find_spec(self, name, path=None, target=None):
-    seen.append(name)
-    return None
-sys.meta_path.insert(0, Order())
-graph, size = op.make_warp(1928, 1208, 512, 256)
-from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
-print(json.dumps({'built': built, 'seen': seen, 'callable': callable(graph), 'size': size == get_nv12_info(1928, 1208)[3]}))
-'''
-    out = run_fresh(code)
-    self.assertEqual(out.returncode, 0, out.stderr)
-    found = json.loads(out.stdout.strip().splitlines()[-1])
-    self.assertFalse(found['built'], "making the adapter imported tinygrad")
-    self.assertTrue(found['callable'] and found['size'])
-    seen = found['seen']
-    self.assertIn('openpilot.selfdrive.modeld.compile_modeld', seen)
-    first_tinygrad = next(i for i, name in enumerate(seen) if name.split('.')[0] == 'tinygrad')
-    self.assertLess(seen.index('openpilot.selfdrive.modeld.compile_modeld'), first_tinygrad)
 
 
 class TestTheOwner(OpenpilotTestCase):
