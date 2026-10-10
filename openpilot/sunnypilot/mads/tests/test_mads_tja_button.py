@@ -12,22 +12,11 @@ from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.selfdrived.events import ET
 from openpilot.sunnypilot.selfdrive.selfdrived.events import AudibleAlert
 from openpilot.sunnypilot.mads.state import State
-from openpilot.sunnypilot.mads.tests.test_mads_main_cruise_off_switch import make_mads
+from openpilot.sunnypilot.mads.tests.mads_harness import car_state, make_mads
 
 EventName = log.OnroadEvent.EventName
 EventNameSP = custom.OnroadEventSP.EventName
 ButtonType = structs.CarState.ButtonEvent.Type
-
-
-def car_state(available, lkas_pressed=False):
-  cs = structs.CarState()
-  cs.cruiseState.available = available
-  if lkas_pressed:
-    be = structs.CarState.ButtonEvent()
-    be.type = ButtonType.lkas
-    be.pressed = True
-    cs.buttonEvents = [be]
-  return cs
 
 
 class TestMadsTjaButton(OpenpilotTestCase):
@@ -56,7 +45,7 @@ class TestMadsTjaButton(OpenpilotTestCase):
 
   def test_press_engages_without_acc_main(self):
     mads = self._mads()
-    mads.update_events(car_state(False, lkas_pressed=True))
+    mads.update_events(car_state(False, button=ButtonType.lkas))
     assert mads.selfdrive.events_sp.has(EventNameSP.lkasEnable)
 
   def test_acc_main_arming_does_not_engage(self):
@@ -104,14 +93,6 @@ class TestMadsTjaButtonChimes(OpenpilotTestCase):
       sd.CP.alphaLongitudinalAvailable = True
       sd.CP.openpilotLongitudinalControl = True
     return mads, sd
-
-  def _button_state(self, btn, available=True):
-    cs = car_state(available)
-    be = structs.CarState.ButtonEvent()
-    be.type = btn
-    be.pressed = True
-    cs.buttonEvents = [be]
-    return cs
 
   def test_event_ordinals(self):
     assert int(EventNameSP.longitudinalEnableChime) == 35
@@ -200,7 +181,7 @@ class TestMadsTjaButtonChimes(OpenpilotTestCase):
     mads.enabled = True
     for btn in (ButtonType.setCruise, ButtonType.resumeCruise, ButtonType.cancel,
                 ButtonType.accelCruise, ButtonType.decelCruise):
-      mads.update_events(self._button_state(btn))
+      mads.update_events(car_state(True, btn))
       assert mads.enabled
       assert not sd.events_sp.has(EventNameSP.lkasDisable)
       assert not sd.events_sp.has(EventNameSP.lkasEnable)
@@ -272,6 +253,6 @@ class TestMadsTjaButtonChimes(OpenpilotTestCase):
     for btn in (ButtonType.setCruise, ButtonType.resumeCruise,
                 ButtonType.accelCruise, ButtonType.decelCruise):
       sd.events_sp.clear()
-      mads.update_events(self._button_state(btn))
+      mads.update_events(car_state(True, btn))
       assert not sd.events_sp.has(EventNameSP.longitudinalEnableChime)
       assert not sd.events_sp.has(EventNameSP.longitudinalDisableChime)

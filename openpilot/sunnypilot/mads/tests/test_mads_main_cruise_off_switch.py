@@ -6,51 +6,12 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 from openpilot.cereal import custom
-from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
-from openpilot.selfdrive.selfdrived.events import Events
-from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
-from openpilot.sunnypilot.mads.mads import ModularAssistiveDrivingSystem
 from openpilot.common.test import OpenpilotTestCase
+from openpilot.sunnypilot.mads.tests.mads_harness import car_state, make_mads
 
 EventNameSP = custom.OnroadEventSP.EventName
-SafetyModel = structs.CarParams.SafetyModel
-
-
-def make_car_state(available):
-  cs = structs.CarState()
-  cs.cruiseState.available = available
-  return cs
-
-
-def make_mads(mocker, brand, prev_available, flags=0, sp_flags=0):
-  sd = mocker.MagicMock()
-  sd.CP = structs.CarParams()
-  sd.CP.brand = brand
-  sd.CP.flags = int(flags)
-  sd.CP_SP = structs.CarParamsSP()
-  sd.CP_SP.flags = int(sp_flags)
-  sd.params = mocker.MagicMock()
-  sd.params.get_bool = mocker.MagicMock(side_effect=lambda k: {
-    "Mads": True, "MadsMainCruiseAllowed": True,
-    "DisengageOnAccelerator": True, "MadsUnifiedEngagementMode": True,
-  }.get(k, False))
-  sd.events = Events()
-  sd.events_sp = EventsSP()
-  sd.enabled = False
-  sd.enabled_prev = False
-  sd.initialized = True
-  sd.CS_prev = make_car_state(prev_available)
-  ps = mocker.MagicMock()
-  ps.controlsAllowedLateral = True
-  ps.safetyModel = SafetyModel.mazda
-  sd.sm = {'pandaStates': [ps]}
-  sd.state_machine = mocker.MagicMock()
-
-  mads = ModularAssistiveDrivingSystem(sd)
-  mads.enabled_toggle = True
-  return mads, sd
 
 
 class TestMainCruiseOffSwitch(OpenpilotTestCase):
@@ -62,7 +23,7 @@ class TestMainCruiseOffSwitch(OpenpilotTestCase):
     mocker = self._fixture("mocker")
     mads, sd = make_mads(mocker, brand, prev_available, flags)
     mads.enabled = enabled
-    mads.update_events(make_car_state(False))
+    mads.update_events(car_state(False))
     return sd.events_sp.has(EventNameSP.lkasDisable)
 
   def test_falling_edge_still_disables(self):
@@ -88,7 +49,7 @@ class TestMainCruiseEngage(OpenpilotTestCase):
   def _engages(self, brand, sp_flags=0):
     mocker = self._fixture("mocker")
     mads, sd = make_mads(mocker, brand, prev_available=False, sp_flags=sp_flags)
-    mads.update_events(make_car_state(True))
+    mads.update_events(car_state(True))
     return sd.events_sp.has(EventNameSP.lkasEnable)
 
   def test_rivian_and_tesla_engage_on_main(self):
