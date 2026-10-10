@@ -15,7 +15,7 @@ from openpilot.common.realtime import DT_CTRL
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature, MAX_LATERAL_JERK
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import (
-  LaneChangeSmoothing, level_jerk_factor, lane_change_time_extra, read_level,
+  LaneChangeSmoothing, clip_curvature_rate, level_jerk_factor, lane_change_time_extra, read_level,
   LEVELS, LEVEL_OFF, LEVEL_FAST, LEVEL_MEDIUM, LEVEL_EXTRA_SLOW, UNWIND_JERK_MAX, SMOOTH_RELEASE_T,
 )
 
@@ -129,12 +129,26 @@ class TestLaneChangeSmoothing(OpenpilotTestCase):
       self.update(OFF, 0.0, 0.0)
     assert self.update(OFF, -0.005, 0.0) > self.lcs.set_jerk
 
-  def test_clip_curvature_scales_with_factor(self):
+  def test_rate_clip_scales_with_factor(self):
     full, _ = clip_curvature(15.0, 0.0, 0.01, 0.0)
-    half, _ = clip_curvature(15.0, 0.0, 0.01, 0.0, jerk_factor=0.5)
+    half, _ = clip_curvature(15.0, 0.0, clip_curvature_rate(15.0, 0.0, 0.01, 0.5), 0.0)
     assert half == pytest.approx(full / 2)
-    stock, _ = clip_curvature(15.0, 0.0, 0.01, 0.0, jerk_factor=1.0)
-    assert stock == full
+    assert clip_curvature_rate(15.0, 0.0, 0.01, 1.0) == 0.01  # stock: clip_curvature's own clip
+
+  def test_rate_clip_is_inside_clip_curvatures(self):
+    # clip_curvature must pass the pre-clipped value through: the result is exactly a jerk clip
+    # at the factor followed by the accel and max-curvature clamps, which alone set limited
+    rng = np.random.default_rng(0)
+    for jf in (*[level_jerk_factor(lv) for lv in LEVELS[1:]], UNWIND_JERK_MAX, 0.999):
+      for _ in range(200):
+        v, roll = rng.uniform(0.0, 40.0), rng.normal(0.0, 0.05)
+        prev = rng.normal(0.0, 0.02)
+        new = prev + rng.normal(0.0, 0.002) * rng.choice([0.01, 1.0, 100.0])
+        pre = clip_curvature_rate(v, prev, new, jf)
+        out, limited = clip_curvature(v, prev, pre, roll)
+        rate = MAX_LATERAL_JERK / max(v, 1.0) ** 2 * DT_CTRL
+        assert abs(pre - prev) <= jf * rate * (1 + 1e-12)
+        assert limited == (out != pre)
 
 
 class TestClosedLoop(OpenpilotTestCase):
@@ -163,7 +177,7 @@ class TestClosedLoop(OpenpilotTestCase):
       jf = 1.0
       if smoothing is not None:
         jf = smoothing.update(make_cs(self.V_EGO), make_model(state, LaneChangeDirection.left), True, k_model, k_cmd)
-      k_next, _ = clip_curvature(self.V_EGO, k_cmd, k_model, 0.0, jf)
+      k_next, _ = clip_curvature(self.V_EGO, k_cmd, clip_curvature_rate(self.V_EGO, k_cmd, k_model, jf), 0.0)
       jerks.append(abs(k_next - k_cmd) / DT_CTRL * self.V_EGO ** 2)
       k_cmd = k_next
       y_dot += k_cmd * self.V_EGO ** 2 * DT_CTRL
