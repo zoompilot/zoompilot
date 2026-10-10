@@ -7,7 +7,8 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.common.params import ParamKeyFlag
 from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import HANDBACK_WAIT_T, REQUEST_KEY
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeClock, FakeParams, answer
-from openpilot.sunnypilot.system.hardware.hardwared_ext import HardwaredExt
+from openpilot.sunnypilot.system.hardware import hardwared_ext
+from openpilot.sunnypilot.system.hardware.hardwared_ext import ACCELERATOR_OFF_WAIT_T, HardwaredExt
 
 
 def _ext(**values):
@@ -125,3 +126,71 @@ class TestForcedOffroad:
       params.put_bool("AlphaLongitudinalEnabled", not params.get_bool("AlphaLongitudinalEnabled"))
       assert not ext.update(started=False)
     assert params.cleared == [] and params.get(REQUEST_KEY) is None and params.get_bool("OffroadMode")
+
+
+class FakeAccelerator:
+  """The adapter's power-off hooks and offroad reason, as HardwaredExt sees them."""
+
+  def __init__(self, pending: bool = True, why: str | None = None):
+    self.pending = pending
+    self.why = why
+    self.requests: list[str] = []
+
+  def request_shutdown(self, reason: str) -> bool:
+    self.requests.append(reason)
+    return self.pending
+
+  def shutdown_pending(self) -> bool:
+    return self.pending
+
+  def reason(self) -> str | None:
+    return self.why
+
+
+def _power_off(monkeypatch, **kwargs):
+  ext, _, clock = _ext()
+  ext.now = clock
+  jetlink = FakeAccelerator(**kwargs)
+  monkeypatch.setattr(hardwared_ext, "jetlink_adapter", jetlink)
+  return ext, jetlink, clock
+
+
+class TestPowerOff:
+  """A shutdown asks the accelerator once and DoShutdown waits until it took the request or
+  ACCELERATOR_OFF_WAIT_T has passed; meanwhile powering_off holds any new drive back."""
+
+  def test_no_shutdown_asks_nothing(self, monkeypatch):
+    ext, jetlink, _ = _power_off(monkeypatch)
+    assert not any(ext.shutdown_ready(False, 12.0) for _ in range(3))
+    assert jetlink.requests == [] and not ext.powering_off
+
+  def test_nothing_to_ask_goes_down_at_once(self, monkeypatch):
+    ext, jetlink, _ = _power_off(monkeypatch, pending=False)
+    assert ext.shutdown_ready(True, 12.0)
+    assert jetlink.requests == ["comma shutting down, offroad since 12.0"]
+
+  def test_it_asks_once_and_goes_down_when_the_request_is_taken(self, monkeypatch):
+    ext, jetlink, clock = _power_off(monkeypatch)
+    assert not ext.shutdown_ready(True, 12.0)
+    assert ext.powering_off
+    clock.t = 5.0
+    assert not ext.shutdown_ready(False, 12.0)  # once asked, the power monitor is not asked again
+    jetlink.pending = False
+    assert ext.shutdown_ready(False, 12.0)
+    assert len(jetlink.requests) == 1
+
+  def test_nobody_taking_it_costs_the_wait_and_no_more(self, monkeypatch):
+    ext, _, clock = _power_off(monkeypatch)
+    assert not ext.shutdown_ready(True, 12.0)
+    clock.t = ACCELERATOR_OFF_WAIT_T - 0.1
+    assert not ext.shutdown_ready(True, 12.0)
+    clock.t = ACCELERATOR_OFF_WAIT_T
+    assert ext.shutdown_ready(True, 12.0)
+
+  def test_the_unavailable_alert_follows_the_reason(self, monkeypatch):
+    ext, jetlink, _ = _power_off(monkeypatch)
+    shown = []
+    for why in (None, "no Jetson on USB"):
+      jetlink.why = why
+      ext.alerts(lambda *args, **kwargs: shown.append((*args, kwargs["extra_text"])))
+    assert shown == [("Offroad_AcceleratorUnavailable", False, None), ("Offroad_AcceleratorUnavailable", True, "no Jetson on USB")]

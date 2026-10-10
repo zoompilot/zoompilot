@@ -4,9 +4,16 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import time
+from collections.abc import Callable
+
 from openpilot.common.params import Params, ParamKeyFlag
 from openpilot.common.swaglog import cloudlog
+from openpilot.sunnypilot import jetlink_adapter
 from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import StockEcuHandBackGate
+
+# how long a shutdown waits on an accelerator that has not taken the request to power off
+ACCELERATOR_OFF_WAIT_T = 25.0
 
 
 class HardwaredExt:
@@ -25,11 +32,37 @@ class HardwaredExt:
   Exiting clears the previous session's CarParams and readiness first, so pandad sequences
   the fresh session like a boot (ELM327 until the new CarParams is ready) instead of
   applying the old safety and opening the relay seconds before controls come up.
+
+  An accelerator on its own supply outlives the comma, so a shutdown asks it once to power
+  off and DoShutdown waits until it took the request or ACCELERATOR_OFF_WAIT_T has passed.
+  hardware_thread keeps publishing deviceState through that wait, and no drive may start
+  under the power-off that follows (powering_off is a startup condition).
   """
 
   def __init__(self, params: Params) -> None:
     self.params = params
     self.handback = StockEcuHandBackGate(params)
+    self.now = time.monotonic
+    self.accelerator_off_ts: float | None = None
+
+  @property
+  def powering_off(self) -> bool:
+    return self.accelerator_off_ts is not None
+
+  def alerts(self, set_offroad_alert: Callable[..., None]) -> None:
+    # an enabled accelerator that cannot come up is otherwise silently absent
+    accelerator_error = jetlink_adapter.reason()
+    set_offroad_alert("Offroad_AcceleratorUnavailable", accelerator_error is not None, extra_text=accelerator_error)
+
+  def shutdown_ready(self, should_shutdown: bool, off_ts: float | None) -> bool:
+    """True once hardwared may put DoShutdown. Once asked, the power monitor is not consulted again."""
+    if self.accelerator_off_ts is None:
+      if not should_shutdown:
+        return False
+      cloudlog.warning(f"shutting device down, offroad since {off_ts}")
+      jetlink_adapter.request_shutdown(f"comma shutting down, offroad since {off_ts}")
+      self.accelerator_off_ts = self.now()
+    return not jetlink_adapter.shutdown_pending() or self.now() - self.accelerator_off_ts >= ACCELERATOR_OFF_WAIT_T
 
   def update(self, started: bool) -> bool:
     cycle = self.params.get_bool("OnroadCycleRequested")
