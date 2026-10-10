@@ -12,12 +12,14 @@ from opendbc.sunnypilot.car import lateral_tune
 from openpilot.sunnypilot.selfdrive.controls.lib import latcontrol_torque_ext_override as override_module
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_override import LatControlTorqueExtOverride
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_zp import LatControlTorqueExtZP
-from openpilot.sunnypilot.selfdrive.controls.tests.speed_dep_helpers import FakeParams, make_cp
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
+from openpilot.sunnypilot.selfdrive.locationd.tests.speed_dep_helpers import make_cp
 
 
 class TorqueParamsOverride(LatControlTorqueExtZP, LatControlTorqueExtOverride):
   """The torque-params half of LatControlTorqueExt: upstream's manual override under the fork's
-  layer, without NNLC, which needs model files to init. The host only carries steer_max."""
+  layer, without NNLC and jerk-aware, which these tests do not reach. The host only carries
+  steer_max."""
 
   def __init__(self, CP):
     LatControlTorqueExtOverride.__init__(self, CP)
@@ -30,7 +32,8 @@ def make_override(monkeypatch):
   """Factory for a TorqueParamsOverride whose Params is a FakeParams; the fake is reachable
   afterwards as ovr.params."""
   def _make(enforce=False, manual_override=False, manual_lat_accel_factor='200', manual_friction='15', CP=None):
-    fake = FakeParams(enforce, manual_override, manual_lat_accel_factor, manual_friction)
+    fake = FakeParams(EnforceTorqueControl=enforce, TorqueParamsOverrideEnabled=manual_override,
+                      TorqueParamsOverrideLatAccelFactor=manual_lat_accel_factor, TorqueParamsOverrideFriction=manual_friction)
     monkeypatch.setattr(override_module, "Params", lambda: fake)
     return TorqueParamsOverride(CP or make_cp())
   return _make

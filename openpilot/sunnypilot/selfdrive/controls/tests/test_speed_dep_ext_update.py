@@ -12,7 +12,7 @@ import pytest
 
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 from openpilot.sunnypilot.selfdrive.controls.lib.tests.torque_harness import LAF, make_lac
-from openpilot.sunnypilot.selfdrive.controls.tests.speed_dep_helpers import SAMPLE_SPEED_BP, make_torqued_msg
+from openpilot.sunnypilot.selfdrive.locationd.tests.speed_dep_helpers import SAMPLE_SPEED_BP, make_torqued_msg
 
 CP_FRICTION = 0.12
 LAFS = [3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6]

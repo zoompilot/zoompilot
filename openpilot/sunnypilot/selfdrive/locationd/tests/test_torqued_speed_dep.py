@@ -133,15 +133,15 @@ class TestSelfTuneGate:
   def test_follows_self_tune(self, fake_params_off, brand, self_tunes_bare):
     # bare: upstream's brand gate; under Enforce Torque Control: the Self-Tune toggle
     assert TorqueEstimator(self._cp(brand)).speed_binned == self_tunes_bare
-    fake_params_off.bools.add("EnforceTorqueControl")
+    fake_params_off.put_bool("EnforceTorqueControl", True)
     assert not TorqueEstimator(self._cp(brand)).speed_binned
-    fake_params_off.bools.add("LiveTorqueParamsToggle")
+    fake_params_off.put_bool("LiveTorqueParamsToggle", True)
     assert TorqueEstimator(self._cp(brand)).speed_binned
 
   def test_manual_override_keeps_bins(self, fake_params):
     # the override pauses the learner's output, not the learner
-    fake_params.bools.update({"CustomTorqueParams", "TorqueParamsOverrideEnabled"})
-    fake_params.store.update({"TorqueParamsOverrideLatAccelFactor": 2.0, "TorqueParamsOverrideFriction": 0.1})
+    fake_params.values.update(CustomTorqueParams=True, TorqueParamsOverrideEnabled=True,
+                              TorqueParamsOverrideLatAccelFactor=2.0, TorqueParamsOverrideFriction=0.1)
     est = TorqueEstimator(make_cp(fingerprint=NON_SPEED_DEP_FINGERPRINT))
     assert est.speed_binned
     assert not est.use_params
@@ -315,8 +315,7 @@ class TestCustomTorqueParamsScale:
 
   @pytest.mark.parametrize("brand, laf, friction", [('mazda', 1.8, 0.1), ('toyota', 1.2, 0.15)])
   def test_offline_values_on_steer_max(self, fake_params, brand, laf, friction):
-    fake_params.store.update(TorqueParamsOverrideLatAccelFactor='1.2', TorqueParamsOverrideFriction='0.15')
-    fake_params.bools.add('CustomTorqueParams')
+    fake_params.values.update(CustomTorqueParams=True, TorqueParamsOverrideLatAccelFactor='1.2', TorqueParamsOverrideFriction='0.15')
     CP = make_cp('MAZDA_CX5_2022', brand=brand)
     if brand == 'mazda':
       CP.flags = int(MazdaFlags.GEN1 | MazdaFlags.STEER_TO_ZERO_EPS)

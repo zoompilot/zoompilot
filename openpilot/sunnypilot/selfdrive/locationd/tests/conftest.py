@@ -8,7 +8,7 @@ import pytest
 
 from openpilot.selfdrive.locationd import torqued
 from openpilot.sunnypilot.selfdrive.locationd import torqued_ext
-from openpilot.sunnypilot.selfdrive.locationd.tests.speed_dep_helpers import FakeParams
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 
 
 def _route_params(monkeypatch, fake):
@@ -20,11 +20,13 @@ def _route_params(monkeypatch, fake):
 
 @pytest.fixture
 def fake_params(monkeypatch):
-  """One FakeParams behind both Params sites, Enforce Torque Control and Self-Tune on, caches empty."""
-  return _route_params(monkeypatch, FakeParams())
+  """One FakeParams behind both Params sites, Enforce Torque Control and Self-Tune on, caches
+  empty. Speed-dep learning runs wherever self-tune does, and make_cp's brand is not one
+  upstream self-tunes, so both toggles are needed."""
+  return _route_params(monkeypatch, FakeParams(EnforceTorqueControl=True, LiveTorqueParamsToggle=True))
 
 
 @pytest.fixture
 def fake_params_off(monkeypatch):
   """Same, with Enforce Torque Control and Self-Tune off."""
-  return _route_params(monkeypatch, FakeParams(self_tune_on=False))
+  return _route_params(monkeypatch, FakeParams())

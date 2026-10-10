@@ -97,8 +97,8 @@ class TestCacheRestore:
   def test_fork_cache_read_from_params_when_not_passed(self, fake_params):
     est = TorqueEstimator(make_cp())
     lafs, frictions = in_bounds_values(est)
-    fake_params.store[LIVE_TORQUE_PARAMETERS_SP_KEY] = make_cache_sp(est.speed_bin_centers, lafs, frictions,
-                                                                     points=_one_point_per_bin(est)).to_bytes()
+    fake_params.put(LIVE_TORQUE_PARAMETERS_SP_KEY, make_cache_sp(est.speed_bin_centers, lafs, frictions,
+                                                                 points=_one_point_per_bin(est)).to_bytes())
     est._restore_ext_cache(_cache(), cache_CP=est.CP)
     assert est.speed_bin_filtered[0]['latAccelFactor'].x == lafs[0]
     assert all(len(b) == 1 for b in est.speed_bin_points)
@@ -318,8 +318,8 @@ class TestCacheRestoreGolden:
 
   @staticmethod
   def _restore_from(fake, CP, cache, cache_sp, prev_route=None):
-    fake.store = {"LiveTorqueParameters": cache, "CarParamsPrevRoute": (CP if prev_route is None else prev_route).to_bytes(),
-                  LIVE_TORQUE_PARAMETERS_SP_KEY: cache_sp}
+    fake.values.update({"LiveTorqueParameters": cache, "CarParamsPrevRoute": (CP if prev_route is None else prev_route).to_bytes(),
+                        LIVE_TORQUE_PARAMETERS_SP_KEY: cache_sp})
     return TorqueEstimator(CP)
 
   def test_valid_cache_restores_values_bit_identical(self, fake_params):
@@ -353,7 +353,7 @@ class TestCacheRestoreGolden:
   def test_missing_prev_route_carparams_rejected(self, fake_params):
     CP = make_cp()
     cache, cache_sp, seed_est = self._healthy_cache(CP)
-    fake_params.store = {"LiveTorqueParameters": cache, LIVE_TORQUE_PARAMETERS_SP_KEY: cache_sp}
+    fake_params.values.update({"LiveTorqueParameters": cache, LIVE_TORQUE_PARAMETERS_SP_KEY: cache_sp})
     est = TorqueEstimator(CP)
     assert_untouched(est, seed_values(seed_est))
 
@@ -374,11 +374,11 @@ class TestPointsCacheWrite:
     self._two_points(est)
     est.get_msg(with_points=False)
     assert len(est._pm.last().speedBinPoints) == 0
-    assert LIVE_TORQUE_PARAMETERS_SP_KEY not in fake_params.store
+    assert LIVE_TORQUE_PARAMETERS_SP_KEY not in fake_params.values
     est.frame += 1
     est.get_msg(with_points=True)
     assert len(est._pm.last().speedBinPoints) == 0
-    assert LIVE_TORQUE_PARAMETERS_SP_KEY in fake_params.store
+    assert LIVE_TORQUE_PARAMETERS_SP_KEY in fake_params.values
 
   def test_cache_write_persists_fork_key(self, fake_params):
     est = TorqueEstimator(make_cp())
@@ -386,7 +386,7 @@ class TestPointsCacheWrite:
     bounds = self._two_points(est)
     est.get_msg(with_points=True)
 
-    with log.Event.from_bytes(fake_params.store[LIVE_TORQUE_PARAMETERS_SP_KEY]) as evt:
+    with log.Event.from_bytes(fake_params.values[LIVE_TORQUE_PARAMETERS_SP_KEY]) as evt:
       sp = getattr(evt, LIVE_TORQUE_PARAMETERS_SP_SERVICE)
       assert sp.version == VERSION
       assert sp.seedVersion == est.speed_dep_seed_version == seed_version_of(est.CP.carFingerprint)
@@ -403,8 +403,8 @@ class TestPointsCacheWrite:
     cache = est.get_msg(with_points=True).to_bytes()
     written = [b.get_points()[:, [0, 2]].tolist() for b in est.speed_bin_points]
 
-    fake_params.store["LiveTorqueParameters"] = cache
-    fake_params.store["CarParamsPrevRoute"] = CP.to_bytes()
+    fake_params.put("LiveTorqueParameters", cache)
+    fake_params.put("CarParamsPrevRoute", CP.to_bytes())
     restored = TorqueEstimator(CP)
     for want, bucket in zip(written, restored.speed_bin_points, strict=True):
       got = np.asarray(bucket.get_points()[:, [0, 2]], dtype=float).reshape(-1, 2)
