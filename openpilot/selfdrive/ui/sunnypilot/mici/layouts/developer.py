@@ -15,4 +15,3 @@ class DeveloperLayoutMiciSP(DeveloperLayoutMici):
     self._adb_toggle.set_enabled(lambda: ui_state.is_offroad() and not ui_state.adb_blocked)
     # the alpha switch lives in the alpha longitudinal panel
     self._scroller.items.remove(self._alpha_long_toggle)
-    self._long_maneuver_toggle.set_superseded(lambda: ui_state.CP is not None and not ui_state.has_longitudinal_control)

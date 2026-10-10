@@ -6,7 +6,6 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 from opendbc.car.structs import car
-from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import (
   BigButtonSP,
   BigMultiParamToggleSP,
@@ -65,7 +64,7 @@ class SteeringLayoutMici(NavScroller):
     self._lane_change_btn = BigButtonSP(tr("lane change"))
     self._blinker_settings_btn = BigButtonSP(tr("blinker pause"))
     self._torque_settings_btn = BigButtonSP(tr("torque control"))
-    self._nnlc_toggle = BigParamControl(tr("nnlc"), "NeuralNetworkLateralControl")
+    self._nnlc_toggle = BigParamControlSP(tr("nnlc"), "NeuralNetworkLateralControl")
 
     for btn in [self._mads_settings_btn, self._lane_change_btn, self._blinker_settings_btn, self._torque_settings_btn]:
       btn.set_subtitle_font_size(24)
@@ -76,7 +75,7 @@ class SteeringLayoutMici(NavScroller):
       self._torque_settings_btn, self._nnlc_toggle,
     ])
 
-    self._mads_toggle = BigParamControl(tr("enable mads"), "Mads")
+    self._mads_toggle = BigParamControlSP(tr("enable mads"), "Mads")
     self._mads_toggle.set_enabled(ui_state.is_offroad)
     # Read the live toggle so dependent controls update in the same frame.
     self._mads_main_cruise = BigParamControlSP(tr("main cruise toggle"), "MadsMainCruiseAllowed",
@@ -100,13 +99,13 @@ class SteeringLayoutMici(NavScroller):
                                            list(ALC_LABELS.values()), values=list(ALC_LABELS))
     self._lc_bsm = BigParamControlSP(tr("bsm delay"), "AutoLaneChangeBsmDelay",
                                      depends_on=lambda: self._bsm_applies(self._alc_val) and self._car_has_bsm())
-    self._lc_road_edge = BigParamControl(tr("road edge block"), "RoadEdgeLaneChangeEnabled")
+    self._lc_road_edge = BigParamControlSP(tr("road edge block"), "RoadEdgeLaneChangeEnabled")
     # off = stock; every level is a slower lane change than stock
     self._lc_level = BigMultiParamToggleSP(tr("lane change") + "\n" + tr("smoothing"), "LaneChangeSmoothing", LC_LEVEL_LABELS)
     self._lc_view = self._lane_change_btn.link_sub_panel([self._lc_timer, self._lc_bsm, self._lc_road_edge,
                                                           self._lc_level])
 
-    self._blinker_toggle = BigParamControl(tr("enable blinker pause"), "BlinkerPauseLateralControl")
+    self._blinker_toggle = BigParamControlSP(tr("enable blinker pause"), "BlinkerPauseLateralControl")
     self._blinker_speed = BigParamOption(tr("blinker speed"), "BlinkerMinLateralControlSpeed",
                                          min_value=0, max_value=255, value_change_step=5,
                                          label_callback=lambda v: f"{v} {speed_unit()}", picker_unit=speed_unit)
@@ -117,14 +116,14 @@ class SteeringLayoutMici(NavScroller):
       opt.set_enabled(lambda: self._blinker_toggle._checked)
     self._blinker_view = self._blinker_settings_btn.link_sub_panel([self._blinker_toggle, self._blinker_speed, self._blinker_delay])
 
-    self._torque_toggle = BigParamControl(tr("enable torque control"), "EnforceTorqueControl")
+    self._torque_toggle = BigParamControlSP(tr("enable torque control"), "EnforceTorqueControl")
     self._torque_toggle.set_enabled(lambda: self._torque_allowed and ui_state.is_offroad() and
                                     not ui_state.params.get_bool("NeuralNetworkLateralControl"))
 
     # Jerk-aware control is independent of EnforceTorqueControl on torque-native cars.
     # NNLC and the v2 tune use the same controller path, so they disable this option
     # (v2 only when every model size runs it; see torque_tune.jerk_aware_has_effect).
-    self._jerk_aware_toggle = BigParamControl(tr("jerk aware"), "LateralJerkTorqueController")
+    self._jerk_aware_toggle = BigParamControlSP(tr("jerk aware"), "LateralJerkTorqueController")
     self._jerk_aware_toggle.set_enabled(lambda: ui_state.is_offroad() and
                                         not ui_state.params.get_bool("NeuralNetworkLateralControl"))
     self._jerk_aware_toggle.set_superseded(lambda: not jerk_aware_has_effect(ui_state.params))
@@ -139,7 +138,7 @@ class SteeringLayoutMici(NavScroller):
     self._tq_self_tune_btn = BigButtonSP(tr("self tune"))
     self._tq_self_tune_btn.set_subtitle_font_size(24)
     # Third-level panels do not run this layout's update loop, so gate their controls directly.
-    self._tq_self_tune = BigParamControl(tr("enable self-tune"), "LiveTorqueParamsToggle")
+    self._tq_self_tune = BigParamControlSP(tr("enable self-tune"), "LiveTorqueParamsToggle")
     # torqued drops the live estimate while manual realtime overrides it
     self._tq_self_tune.set_enabled(ui_state.is_offroad)
     self._tq_self_tune.set_superseded(self._tq_overridden)
@@ -150,7 +149,7 @@ class SteeringLayoutMici(NavScroller):
 
     self._tq_custom_btn = BigButtonSP(tr("custom tune"))
     self._tq_custom_btn.set_subtitle_font_size(24)
-    self._tq_custom = BigParamControl(tr("enable custom tuning"), "CustomTorqueParams")
+    self._tq_custom = BigParamControlSP(tr("enable custom tuning"), "CustomTorqueParams")
     self._tq_custom.set_enabled(ui_state.is_offroad)
     self._tq_manual_rt = BigParamControlSP(tr("manual realtime"), "TorqueParamsOverrideEnabled",
                                            depends_on=lambda: self._tq_custom._checked)

@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 
-from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl
+from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.scroller import NavScroller
@@ -29,10 +29,10 @@ class VisualsLayoutMici(NavScroller):
   def __init__(self):
     super().__init__()
 
-    self._toggles: dict[str, BigParamControl] = {}
+    self._toggles: dict[str, BigParamControlSP] = {}
     items = []
     for label, param in TOGGLE_PARAMS:
-      toggle = BigParamControl(label, param)
+      toggle = BigParamControlSP(label, param)
       self._toggles[param] = toggle
       items.append(toggle)
 

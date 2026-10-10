@@ -183,7 +183,35 @@ class SubPanelSP(NavScroller):
       item.refresh()
 
 
-class BigParamControlSP(BigParamControl):
+class SupersededPill:
+  """BigToggle mixin: another setting overrides this one. Locked, and an on pill draws grey.
+  A lock from set_enabled, like onroad, keeps it green."""
+  _superseded: bool | Callable[[], bool] = False
+
+  def _load_images(self):
+    super()._load_images()
+    # on but overridden by another setting: it applies again once that one is off
+    self._txt_inactive_toggle = gui_app.grayscale_texture("icons_mici/buttons/toggle_pill_enabled.png", 84, 66)
+
+  def set_superseded(self, superseded: bool | Callable[[], bool]):
+    self._superseded = superseded
+
+  @property
+  def superseded(self) -> bool:
+    return self._superseded() if callable(self._superseded) else self._superseded
+
+  @property
+  def enabled(self) -> bool:
+    return super().enabled and not self.superseded
+
+  def _draw_pill(self, x: float, y: float, checked: bool):
+    if checked and self.superseded:
+      rl.draw_texture_ex(self._txt_inactive_toggle, (x, y), 0, 1.0, rl.Color(255, 255, 255, int(255 * 0.6)))
+    else:
+      super()._draw_pill(x, y, checked)
+
+
+class BigParamControlSP(SupersededPill, BigParamControl):
   """Lock the control while a control dependency is unmet.
 
   The stored value stays on screen, an on pill drawn grey, and applies again once the dependency is met.
@@ -197,7 +225,7 @@ class BigParamControlSP(BigParamControl):
       self.set_superseded(lambda: not depends_on())
 
 
-class BigMultiParamToggleSP(BigMultiParamToggle):
+class BigMultiParamToggleSP(SupersededPill, BigMultiParamToggle):
   """BigMultiParamToggle with bounded reads, refresh, and dynamic pill spacing.
 
   When supplied, `values` maps each option to its stored value instead of its list index.

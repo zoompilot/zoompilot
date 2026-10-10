@@ -5,12 +5,12 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl
 from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import alpha_longitudinal_reachable, longitudinal_mode_labels
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import (
   BigButtonSP,
   BigMultiParamToggleSP,
+  BigParamControlSP,
   BigParamOption,
   speed_unit,
 )
@@ -60,8 +60,8 @@ class CruiseLayoutMici(NavScroller):
     self._alpha_long_btn = BigButtonSP(tr("alpha longitudinal"))
     alpha_long_view = AlphaLongitudinalLayoutMici()
     self._alpha_long_btn.set_click_callback(lambda: gui_app.push_widget(alpha_long_view))
-    self._scc_v_toggle = BigParamControl(tr("slow for curves: vision"), "SmartCruiseControlVision")
-    self._scc_m_toggle = BigParamControl(tr("slow for curves: map"), "SmartCruiseControlMap")
+    self._scc_v_toggle = BigParamControlSP(tr("slow for curves: vision"), "SmartCruiseControlVision")
+    self._scc_m_toggle = BigParamControlSP(tr("slow for curves: map"), "SmartCruiseControlMap")
     self._custom_acc_btn = BigButtonSP(tr("custom increments"))
     self._speed_limit_btn = BigButtonSP(tr("speed limit"))
 
@@ -74,7 +74,7 @@ class CruiseLayoutMici(NavScroller):
       self._speed_limit_btn, self._custom_acc_btn,
     ])
 
-    self._custom_acc_toggle = BigParamControl(tr("enable custom increments"), "CustomAccIncrementsEnabled")
+    self._custom_acc_toggle = BigParamControlSP(tr("enable custom increments"), "CustomAccIncrementsEnabled")
 
     def _speed_label(v):
       return f"{v} {speed_unit()}"

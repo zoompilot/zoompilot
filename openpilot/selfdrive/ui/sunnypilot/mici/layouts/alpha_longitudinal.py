@@ -10,7 +10,8 @@ DeveloperLayoutMiciSP) so each switch appears once.
 """
 from openpilot.selfdrive.ui.mici.layouts.settings.developer import AlphaLongConfirmPage
 from openpilot.selfdrive.ui.mici.layouts.settings.toggles import ExperimentalModeConfirmPage
-from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigToggle
+from openpilot.selfdrive.ui.mici.widgets.button import BigToggle
+from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
@@ -23,9 +24,9 @@ class AlphaLongitudinalLayoutMici(NavScroller):
 
     self._alpha_long_toggle = BigToggle(tr("alpha longitudinal"), toggle_callback=self._on_alpha_long)
     self._experimental_toggle = BigToggle(tr("experimental mode"), toggle_callback=self._on_experimental_mode)
-    self._dec_toggle = BigParamControl(tr("dynamic experimental control"), "DynamicExperimentalControl")
-    self._set_speed_toggle = BigParamControl(tr("speed assist"), "ExperimentalModeSetSpeed")
-    self._lead_gap_toggle = BigParamControl(tr("lead follow assist"), "ExperimentalModeLeadGap")
+    self._dec_toggle = BigParamControlSP(tr("dynamic experimental control"), "DynamicExperimentalControl")
+    self._set_speed_toggle = BigParamControlSP(tr("speed assist"), "ExperimentalModeSetSpeed")
+    self._lead_gap_toggle = BigParamControlSP(tr("lead follow assist"), "ExperimentalModeLeadGap")
 
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
