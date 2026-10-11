@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 import types
+from datetime import datetime, timezone
 
 
 class FakeParamsDict:
@@ -364,3 +365,94 @@ def test_ring_failure_is_tolerated(tmp_path, monkeypatch):
   uploader = make_uploader(tmp_path, params=params)
   monkeypatch.setattr(uploader, '_list_archive', lambda: (_ for _ in ()).throw(RuntimeError('list failed')))
   uploader.maybe_prune(force=True)  # a ring outage must not raise out of upload()
+
+
+def _freeze_keep_markers(uploader, routes):
+  # skip the bucket refresh; the marker set is the test input
+  uploader._refresh_keep_routes = lambda: None
+  uploader.keep_routes = set(routes)
+
+
+def test_selected_scope_uploads_only_kept(tmp_path):
+  uploader = make_uploader(tmp_path, scope='selected')
+  _freeze_keep_markers(uploader, ['00000020--abcdefghij'])
+  write_segment(tmp_path, '00000019', {'qlog': b'no', 'rlog': b'no'})
+  write_segment(tmp_path, '00000020', {'qlog': b'yes', 'rlog': b'yes', 'qcamera.ts': b'v'})
+  (tmp_path / 'crash').mkdir()
+  (tmp_path / 'crash' / 'c1').write_bytes(b'c')
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  routes = sorted({k.split('/')[0] for k in keys if not k.startswith(('boot/', 'crash/'))})
+  assert routes == ['00000020--abcdefghij']
+  assert any(k.endswith('rlog') for k in keys)  # full files of a kept route
+  assert any(k.startswith('crash/') for k in keys)
+
+
+def test_selected_bypasses_epoch(tmp_path):
+  params = FakeParamsDict()
+  params.put('RouteCount', '20')  # epoch records 20: 00000013 is from before
+  uploader = make_uploader(tmp_path, params=params, scope='selected')
+  _freeze_keep_markers(uploader, ['00000013--abcdefghij'])
+  write_segment(tmp_path, '00000013', {'qlog': b'old', 'rlog': b'old'})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert sorted(k.rsplit('/', 1)[-1] for k in keys) == ['qlog', 'rlog']
+
+
+def test_selected_falls_back_to_silence_without_markers(tmp_path):
+  # no markers anywhere (default endpoint unreachable): only crash and boot
+  uploader = make_uploader(tmp_path, scope='selected')
+  write_segment(tmp_path, '00000021', {'qlog': b'x'})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert keys == []
+
+
+def test_keep_markers_read_from_bucket(tmp_path):
+  uploader = make_uploader(tmp_path, scope='selected')
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+  RecordingStub.list_xml = list_result_xml([
+    ('zooprefix/keep/00000020--abcdefghij', 0, '2026-01-01T00:00:00.000Z'),
+    ('zooprefix/keep/00000021--abcdefghij/', 0, '2026-01-01T00:00:00.000Z'),
+  ])
+  try:
+    uploader._refresh_keep_routes()
+  finally:
+    server.shutdown()
+  assert uploader.keep_routes == {'00000020--abcdefghij', '00000021--abcdefghij'}
+
+
+def test_ring_spares_kept_and_fresh_routes(tmp_path):
+  params = FakeParamsDict()
+  params.put('ZooS3ArchiveBudget', '1300')
+  uploader = make_uploader(tmp_path, params=params)
+
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+  fresh = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+  RecordingStub.list_xml = list_result_xml([
+    ('zooprefix/boot/00000002--bootid.zst.gpg', 50, '2026-01-01T00:00:00.000Z'),
+    ('zooprefix/keep/00000001--abcdefghij', 0, '2026-01-01T00:00:00.000Z'),
+    ('zooprefix/00000001--abcdefghij/qlog.gpg', 300, '2026-01-01T05:00:00.000Z'),  # kept
+    ('zooprefix/00000002--abcdefghij/qlog.gpg', 300, fresh),  # too new to touch
+    ('zooprefix/00000003--abcdefghij/qlog.gpg', 400, '2026-01-02T00:00:00.000Z'),
+    ('zooprefix/00000003--abcdefghij/qcamera.ts.gpg', 400, '2026-01-02T00:01:00.000Z'),
+    ('zooprefix/00000004--abcdefghij/qlog.gpg', 400, '2026-01-03T00:00:00.000Z'),
+  ])
+  RecordingStub.deletions = []
+  try:
+    uploader.maybe_prune(force=True)
+  finally:
+    server.shutdown()
+
+  # routes total 1800, fixed 50: the ring must free 550. Route 1 is kept,
+  # route 2 was just added: the whole oldest deletable route (3) goes, then
+  # the ring stops under budget before touching kept or fresh data
+  assert sorted(RecordingStub.deletions) == [
+    '/bucket/zooprefix/00000003--abcdefghij/qcamera.ts.gpg',
+    '/bucket/zooprefix/00000003--abcdefghij/qlog.gpg',
+  ]
+  assert not any('/keep/' in d for d in RecordingStub.deletions)

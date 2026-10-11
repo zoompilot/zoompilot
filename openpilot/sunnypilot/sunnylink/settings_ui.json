@@ -1830,7 +1830,7 @@
               "key": "ZooS3Scope",
               "widget": "option",
               "title": "Upload Scope",
-              "description": "Minimal uploads qlogs, compressed camera segments, and crash/boot logs. Full uploads everything.",
+              "description": "Minimal uploads qlogs, compressed camera segments, and crash/boot logs. Full uploads everything. Selected uploads only routes you keep with tools/zoo/fetch.py keep.",
               "options": [
                 {
                   "value": "minimal",
@@ -1839,6 +1839,10 @@
                 {
                   "value": "full",
                   "label": "Full archive"
+                },
+                {
+                  "value": "selected",
+                  "label": "Selected routes only"
                 }
               ]
             }

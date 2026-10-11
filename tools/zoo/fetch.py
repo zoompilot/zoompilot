@@ -4,12 +4,16 @@
 With no frontend anywhere, this is the friendly read path: list objects,
 download, gpg-decrypt, and decompress a route's files back to their
 original names. Uses read/list credentials (the device's put-only
-credential cannot read anything back).
+credential cannot read anything back). keep and unkeep write the route
+selection markers, so they need a write-capable credential.
 
 Usage (from the repo root, with requests installed; zstandard optional):
   python tools/zoo/fetch.py list [--prefix P] [options]
   python tools/zoo/fetch.py get OBJECT_KEY [-o OUT] [options]
   python tools/zoo/fetch.py route DIR [options]
+  python tools/zoo/fetch.py kept [options]
+  python tools/zoo/fetch.py keep ROUTE [options]
+  python tools/zoo/fetch.py unkeep ROUTE [options]
 
 Options: --endpoint --region --bucket --access-key-id --secret-access-key
 --path-style --prefix (archive prefix), or the ZOO_S3_* environment vars.
@@ -24,7 +28,7 @@ import xml.etree.ElementTree as ET
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO_ROOT)
 
-from openpilot.common.zoo.s3sig import S3Config, signed_request
+from openpilot.common.zoo.s3sig import S3Config, signed_put, signed_request
 
 NS = '{http://s3.amazonaws.com/doc/2006-03-01/}'
 
@@ -80,10 +84,33 @@ def get_object(cfg: S3Config, key: str, out_path: str) -> str:
   return out_path or name
 
 
+def kept_routes(cfg: S3Config, archive_prefix: str) -> list[str]:
+  marker_prefix = f'{archive_prefix}/keep/' if archive_prefix else 'keep/'
+  names = set()
+  for key in list_objects(cfg, archive_prefix, 'keep'):
+    name = key.removeprefix(marker_prefix).split('/', 1)[0]
+    if name:
+      names.add(name)
+  return sorted(names)
+
+
+def set_kept(cfg: S3Config, key: str, keep: bool) -> None:
+  """Write or delete a keep marker object; needs write credentials."""
+  import requests
+
+  if keep:
+    url, headers, body = signed_put(cfg, key, b'')
+    r = requests.put(url, headers=headers, data=body, timeout=30)
+  else:
+    url, headers = signed_request(cfg, 'DELETE', key)
+    r = requests.delete(url, headers=headers, timeout=30)
+  r.raise_for_status()
+
+
 def main() -> int:
   parser = argparse.ArgumentParser()
-  parser.add_argument('command', choices=['list', 'get', 'route'])
-  parser.add_argument('target', nargs='?', help='object key (get) or directory name (route)')
+  parser.add_argument('command', choices=['list', 'get', 'route', 'kept', 'keep', 'unkeep'])
+  parser.add_argument('target', nargs='?', help='object key (get), directory name (route), or route name (keep/unkeep)')
   parser.add_argument('--prefix', default='', help='key filter for list')
   parser.add_argument('-o', '--out')
   parser.add_argument('--endpoint', default=os.environ.get('ZOO_S3_ENDPOINT', ''))
@@ -113,6 +140,20 @@ def main() -> int:
       print(key.removeprefix(f'{archive_prefix}/'))
     return 0
 
+  if args.command == 'kept':
+    for name in kept_routes(cfg, archive_prefix):
+      print(name)
+    return 0
+
+  if args.command in ('keep', 'unkeep'):
+    route = (args.target or '').strip().strip('/')
+    if not route or '/' in route:
+      parser.error('give one route name, for example 000001a3--c20ba54385')
+    marker_key = f'{archive_prefix}/keep/{route}'.lstrip('/')
+    set_kept(cfg, marker_key, args.command == 'keep')
+    print(f"{'kept' if args.command == 'keep' else 'unkept'}: {route}")
+    return 0
+
   if not args.target:
     parser.error(f'{args.command} needs a target')
   key = f'{archive_prefix}/{args.target}'.strip('/') if archive_prefix else args.target
@@ -123,6 +164,9 @@ def main() -> int:
 
   for obj in list_objects(cfg, archive_prefix, args.target):
     name = obj.removeprefix(f'{archive_prefix}/')
+    parent = os.path.dirname(name)
+    if parent:
+      os.makedirs(parent, exist_ok=True)
     print(get_object(cfg, obj, name))
   return 0
 

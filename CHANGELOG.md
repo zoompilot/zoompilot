@@ -4,6 +4,7 @@ zoompilot v2026.10.16-16
 * Keep an encrypted copy of your driving data in your own S3-compatible bucket (AWS, R2, B2, MinIO).
 * One-time setup on a laptop with `tools/zoo/configure.py`: bucket, put-only credentials, and your own PGP key. Stock `gpg` decrypts the archive anywhere.
 * Reads back with `tools/zoo/fetch.py`. Toggles also appear under Settings > Device in the sunnylink app.
+* Route selection: scope **Selected** uploads only routes you keep with `tools/zoo/fetch.py keep <route>`. Kept routes survive the archive ring.
 * Optional archive ring: set a bucket budget like 8G and the device deletes the oldest archived routes to stay under it. Automatic, dashcam rules; newest routes survive longest, boot and crash files are never pruned.
 * Fixes bugs
   * Fixes "sunnypilot unavailable" for AUS/NZ Mazdas.

@@ -47,9 +47,32 @@ settings surface; mici hardware itself is untested.
 
 Settings → Device in the sunnylink app shows the toggles on any device,
 mici included: the archive on/off switch and the upload scope (minimal =
-qlog + compressed camera + crash/boot; full = everything). String
-settings (endpoint, bucket, credentials, key, prefix) are one-time entry
-through `configure.py` or SSH.
+qlog + compressed camera + crash/boot; full = everything; selected =
+kept routes only). String settings (endpoint, bucket, credentials, key,
+prefix) are one-time entry through `configure.py` or SSH.
+
+## Selecting routes
+
+Set the Upload Scope to **Selected routes only** and the device uploads
+crash and boot logs plus only the routes you keep. Keep a route from a
+laptop:
+
+```
+python tools/zoo/fetch.py keep 000001a3--c20ba54385
+python tools/zoo/fetch.py kept
+python tools/zoo/fetch.py unkeep 000001a3--c20ba54385
+```
+
+`keep` and `unkeep` write marker objects into a `keep/` folder in the
+bucket, so they need a write-capable credential. The read-only
+credential can list what is kept with `kept`. Making a folder named
+after the route inside `keep/` in the provider's console does the same
+thing.
+
+A kept route uploads even when it was recorded before the archive was
+enabled, as long as it is still on the device. The archive ring never
+deletes a kept route. The device key needs list permission for Selected
+scope, the same key shape as the ring below.
 
 ## Archive ring
 
@@ -58,9 +81,13 @@ Without a ring, the archive grows forever. Set `ZooS3ArchiveBudget`
 once per boot, and again about once per GiB uploaded, it lists the
 prefix and deletes the oldest routes, whole routes only, until the
 archive fits. Boot and crash files are never pruned — they are tiny,
-and a crash payload cannot be regenerated. Dashcam rules: newest data
-survives longest. Nothing still on the device is touched — pending
-uploads are invisible to the ring, and completed uploads never repeat.
+and a crash payload cannot be regenerated. Kept routes (see Selecting
+routes) are never pruned, and neither is any route younger than a day,
+so the ring never fights the uploader for the same files. When
+protected data alone is over the budget, the ring deletes nothing
+further. Dashcam rules: newest data survives longest. Nothing still on
+the device is touched — pending uploads are invisible to the ring, and
+completed uploads never repeat.
 
 The ring needs more of the credential: with a budget set, the device
 key requires `listFiles` and `deleteFiles` next to `PutObject`. Keep

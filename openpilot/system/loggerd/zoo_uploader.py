@@ -5,6 +5,11 @@ Uploads the same files the comma uploader sees, encrypted to the user's
 PGP public keys, to the user's own S3-compatible bucket. Tracks completion
 with its own xattr so comma uploads and zoo uploads never suppress each
 other, and never marks a file done on an authentication failure.
+
+Scope 'minimal' uploads qlogs, the compressed camera, and crash/boot logs;
+'full' uploads everything; 'selected' uploads only routes with a keep
+marker under keep/<route>, plus crash/boot logs. Keep markers also spare
+their routes from the archive ring.
 """
 
 import os
@@ -16,6 +21,7 @@ import tempfile
 import threading
 import time
 import xml.etree.ElementTree as ET
+from datetime import datetime
 
 import requests
 
@@ -35,6 +41,16 @@ NetworkType = log.DeviceState.NetworkType
 SCOPE_MINIMAL_FILES = {'qlog', 'qlog.zst', 'qcamera.ts'}
 SPOOL_SUBDIR = '.zoo-spool'
 S3_NS = {'s3': 'http://s3.amazonaws.com/doc/2006-03-01/'}
+
+# keep markers: an object keep/<route> (a provider-console "folder" inside
+# keep/ works too) selects that route. Selected scope uploads only kept
+# routes, and the ring never deletes one.
+KEEP_MARKER_DIR = 'keep'
+KEEP_REFRESH_SECONDS = 300
+
+# the ring never deletes a route whose newest object is younger than this,
+# so it cannot fight the uploader for the same files
+PRUNE_MIN_AGE_SECONDS = 24 * 60 * 60
 
 # one list+sweep per GiB uploaded keeps ring traffic negligible next to the
 # uploads it meters
@@ -93,6 +109,11 @@ class ZooUploader(Uploader):
       cloudlog.warning('zoo archive ring: unparseable ZooS3ArchiveBudget, ring off')
     self.bytes_since_prune = 0
 
+    # route selection; filled from keep markers, re-read at most every
+    # KEEP_REFRESH_SECONDS
+    self.keep_routes: set[str] = set()
+    self._keep_checked_at = 0.0
+
     self._init_epoch()
 
   def _destination_fingerprint(self) -> str:
@@ -131,17 +152,41 @@ class ZooUploader(Uploader):
       return 0
 
   def list_upload_files(self, metered: bool):
+    self._refresh_keep_routes()
     for name, key, fn in super().list_upload_files(metered):
-      if self._in_scope(key) and self._after_epoch(key):
+      if not self._in_scope(key):
+        continue
+      # a selected scope means the user picked the routes, so the enable
+      # moment does not gate them
+      if self.scope == 'selected' or self._after_epoch(key):
         yield name, key, fn
 
   def _in_scope(self, key: str) -> bool:
-    if self.scope == 'full':
-      return True
     top = key.split('/', 1)[0]
     if top in ('crash', 'boot'):
       return True
+    if self.scope == 'full':
+      return True
+    if self.scope == 'selected':
+      return self._route_of(key) in self.keep_routes
     return key.rsplit('/', 1)[-1] in SCOPE_MINIMAL_FILES
+
+  @staticmethod
+  def _route_of(key: str) -> str:
+    return key.split('/', 1)[0]
+
+  def _refresh_keep_routes(self) -> None:
+    if self.scope != 'selected':
+      return  # other scopes never consult the marker set
+    now = time.monotonic()
+    if now - self._keep_checked_at < KEEP_REFRESH_SECONDS:
+      return
+    self._keep_checked_at = now
+    try:
+      self.keep_routes = self._list_keep_markers()
+    except Exception:
+      # without markers, Selected scope holds everything but crash and boot
+      cloudlog.exception('zoo_keep_marker_refresh_failed')
 
   def _after_epoch(self, key: str) -> bool:
     parts = key.split('/')
@@ -221,17 +266,28 @@ class ZooUploader(Uploader):
   def _prune(self) -> int:
     """Delete whole oldest routes until the archive fits the budget.
 
-    boot/ and crash/ objects are protected: they are tiny next to route
-    data, and a crash payload is the one thing that cannot be
-    regenerated. They still count toward the budget they occupy.
+    boot/ and crash/ objects, keep-marked routes, and routes with objects
+    younger than a day are protected: a crash payload cannot be
+    regenerated, a kept route was picked on purpose, and the ring must
+    not fight the uploader for the same files. Protection still counts
+    toward the budget it occupies; when protected data alone is over the
+    budget, the ring deletes nothing further.
     """
     objects = self._list_archive()
+    keep_prefix = f'{self.dongle_id}/{KEEP_MARKER_DIR}/'
+    protected: set[str] = set()
     routes: dict[str, list[tuple[int, str, str]]] = {}
     fixed = 0
     route_total = 0
+    now = time.time()
     for key, size, lastmod in objects:
       group = key.split('/', 2)[1]  # the component after the prefix
-      if group in ('boot', 'crash'):
+      if group == KEEP_MARKER_DIR:
+        fixed += size
+        name = key.removeprefix(keep_prefix).split('/', 1)[0]
+        if name:
+          protected.add(name)
+      elif group in ('boot', 'crash'):
         fixed += size
       else:
         route_total += size
@@ -244,6 +300,8 @@ class ZooUploader(Uploader):
     for group in sorted(routes, key=lambda g: min(m for _, m, _ in routes[g])):
       if route_total <= target:
         break
+      if group in protected or self._route_is_fresh(routes[group], now):
+        continue
       for size, _, key in routes[group]:
         url, headers = signed_request(self.s3, 'DELETE', key)
         response = requests.delete(url, headers=headers, timeout=30)
@@ -253,12 +311,34 @@ class ZooUploader(Uploader):
         deleted += 1
     return deleted
 
+  @staticmethod
+  def _route_is_fresh(entries: list[tuple[int, str, str]], now: float) -> bool:
+    for _, lastmod, _ in entries:
+      stamp = _parse_last_modified(lastmod)
+      if stamp is not None and now - stamp < PRUNE_MIN_AGE_SECONDS:
+        return True
+    return False
+
   def _list_archive(self) -> list[tuple[str, int, str]]:
     """All (key, size, last-modified) under the archive prefix."""
+    return self._list_objects(f'{self.dongle_id}/')
+
+  def _list_keep_markers(self) -> set[str]:
+    """Route names with a keep marker under keep/."""
+    routes = set()
+    keep_prefix = f'{self.dongle_id}/{KEEP_MARKER_DIR}/'
+    for key, _, _ in self._list_objects(keep_prefix):
+      name = key.removeprefix(keep_prefix).split('/', 1)[0].strip()
+      if name:
+        routes.add(name)
+    return routes
+
+  def _list_objects(self, prefix: str) -> list[tuple[str, int, str]]:
+    """All (key, size, last-modified) under one prefix."""
     objects = []
     token = ''
     while True:
-      query = {'list-type': '2', 'prefix': f'{self.dongle_id}/'}
+      query = {'list-type': '2', 'prefix': prefix}
       if token:
         query['continuation-token'] = token
       url, headers = signed_request(self.s3, 'GET', '', query=query)
@@ -287,6 +367,14 @@ class ZooUploader(Uploader):
       cloudlog.exception('zoo_upload_error_classify')
     self.params.put('ZooS3LastError', reason)
     cloudlog.event('zoo_upload_failed', key=key, reason=reason)
+
+
+def _parse_last_modified(text: str) -> float | None:
+  """S3 LastModified (ISO 8601) to epoch seconds; None when unparseable."""
+  try:
+    return datetime.fromisoformat(text.replace('Z', '+00:00')).timestamp()
+  except ValueError:
+    return None
 
 
 def zoo_config_from_params(params: Params) -> tuple[S3Config, str, str, list] | None:
