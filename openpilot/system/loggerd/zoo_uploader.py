@@ -16,8 +16,9 @@ Scope 'minimal' uploads qlogs, the compressed camera, and crash/boot logs;
 'full' uploads everything; 'selected' uploads only routes with a keep
 marker under keep/<route>, plus crash/boot logs. Keep markers also spare
 their routes from the archive ring. An upload request (queued on the
-device or by a marker) uploads one route in full regardless of scope,
-persists until the route is fully uploaded, then clears.
+device or by a marker) uploads one route per ZooS3UploadContents
+regardless of scope, persists until the route is fully uploaded, then
+clears.
 """
 
 import os
@@ -85,14 +86,14 @@ class ZooUploader(Uploader):
   success_codes = (200, 201)
 
   def __init__(self, root: str, s3: S3Config, prefix: str, scope: str, recipients: list, params: Params,
-               contents: str = 'full'):
+               contents: str = 'default'):
     self.api = None  # no backend API for this destination
     self.dongle_id = prefix
     self.root = root
     self.params = params
     self.s3 = s3
     self.scope = scope
-    self.contents = contents if contents in ('logs', 'video') else 'full'
+    self.contents = contents if contents in ('everything', 'road') else 'default'
     self.recipients = recipients
     self.last_filename = ""
     self.immediate_folders = ["crash/", "boot/"]
@@ -190,11 +191,12 @@ class ZooUploader(Uploader):
 
   def _mask_allows(self, key: str) -> bool:
     """Which files of a requested route go up, per ZooS3UploadContents."""
-    if self.contents == 'logs':
-      return key.rsplit('/', 1)[-1] in ('rlog', 'rlog.zst', 'qlog', 'qlog.zst')
-    if self.contents == 'video':
-      return key.rsplit('/', 1)[-1] == 'fcamera.hevc'
-    return True
+    name = key.rsplit('/', 1)[-1]
+    if self.contents == 'default':
+      return name in SCOPE_MINIMAL_FILES
+    if self.contents == 'road':
+      return name in ('fcamera.hevc', 'rlog', 'rlog.zst')
+    return True  # everything
 
   @staticmethod
   def _route_of(key: str) -> str:
@@ -489,7 +491,7 @@ def zoo_config_from_params(params: Params) -> tuple[S3Config, str, str, list] | 
   )
   prefix = (params.get('ZooS3Prefix') or b'zoo').decode()
   scope = (params.get('ZooS3Scope') or b'minimal').decode()
-  contents = (params.get('ZooS3UploadContents') or b'full').decode()
+  contents = (params.get('ZooS3UploadContents') or b'default').decode()
   # runtime reload tolerates an expired key: warn, never stop uploading
   recipients = pgp.load_recipients(public_key.decode(), strict_expiry=False)
   return s3, prefix, scope, contents, recipients

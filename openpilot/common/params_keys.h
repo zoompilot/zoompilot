@@ -340,7 +340,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ZooS3PublicKey", {PERSISTENT | DONT_LOG, STRING}},
     {"ZooS3Scope", {PERSISTENT | DONT_LOG, STRING, "minimal"}},
     {"ZooS3UploadRoutes", {PERSISTENT | DONT_LOG, STRING}},
-    {"ZooS3UploadContents", {PERSISTENT | DONT_LOG, STRING, "full"}},
+    {"ZooS3UploadContents", {PERSISTENT | DONT_LOG, STRING, "default"}},
     {"ZooS3Prefix", {PERSISTENT | DONT_LOG, STRING}},
     {"ZooS3ArchiveBudget", {PERSISTENT | DONT_LOG, STRING}},
     {"ZooS3DestinationFp", {PERSISTENT | DONT_LOG, STRING}},

@@ -1850,19 +1850,19 @@
               "key": "ZooS3UploadContents",
               "widget": "option",
               "title": "Uploaded Route Contents",
-              "description": "What an upload request sends for its route. Everything uploads logs and all cameras. Logs only uploads rlog and qlog. Road video only uploads the forward camera.",
+              "description": "What an upload request sends for its route. Default uploads qlog and the compressed camera. Road adds the road camera and rlog. Everything uploads rlog, all cameras (driver camera when available), and the default files.",
               "options": [
                 {
-                  "value": "full",
-                  "label": "Everything"
+                  "value": "default",
+                  "label": "Default (qlog + qcam)"
                 },
                 {
-                  "value": "logs",
-                  "label": "Logs only"
+                  "value": "road",
+                  "label": "Road cam + rlog"
                 },
                 {
-                  "value": "video",
-                  "label": "Road video only"
+                  "value": "everything",
+                  "label": "Everything (rlog + all cameras)"
                 }
               ]
             }

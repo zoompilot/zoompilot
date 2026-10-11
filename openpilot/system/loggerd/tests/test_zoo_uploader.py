@@ -505,7 +505,7 @@ def test_latest_route_dir(tmp_path):
 def test_upload_request_bypasses_scope_and_epoch(tmp_path):
   params = FakeParamsDict()
   params.put('RouteCount', '20')  # epoch records 20: route 13 predates it
-  uploader = make_uploader(tmp_path, params=params, scope='minimal')
+  uploader = make_uploader(tmp_path, params=params, scope='minimal', contents='everything')
   add_upload_request(params, '00000013--abcdefghij')
   write_segment(tmp_path, '00000013', {'qlog': b'x', 'rlog': b'r', 'fcamera.hevc': b'f'})
   write_segment(tmp_path, '00000019', {'rlog': b'other'})
@@ -517,12 +517,18 @@ def test_upload_request_bypasses_scope_and_epoch(tmp_path):
 
 
 def test_upload_request_contents_mask(tmp_path):
-  for contents, expected in (('logs', ['qlog', 'rlog']), ('video', ['fcamera.hevc']), ('full', ['fcamera.hevc', 'qlog', 'rlog'])):
+  files = {'qlog': b'x', 'qcamera.ts': b'v', 'rlog': b'r', 'fcamera.hevc': b'f', 'ecamera.hevc': b'e', 'dcamera.hevc': b'd'}
+  cases = (
+    ('default', ['qcamera.ts', 'qlog']),
+    ('road', ['fcamera.hevc', 'rlog']),
+    ('everything', sorted(files)),
+  )
+  for contents, expected in cases:
     params = FakeParamsDict()
     params.put('ZooS3UploadContents', contents)
     uploader = make_uploader(tmp_path, params=params, scope='minimal', contents=contents)
     add_upload_request(params, '00000013--abcdefghij')
-    write_segment(tmp_path, '00000013', {'qlog': b'x', 'rlog': b'r', 'fcamera.hevc': b'f'})
+    write_segment(tmp_path, '00000013', files)
 
     keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
     names = sorted(k.rsplit('/', 1)[-1] for k in keys if k.startswith('00000013'))

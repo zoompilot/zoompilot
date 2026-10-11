@@ -61,11 +61,12 @@ asks for the drive number in hex (like `1a3`). The full route ID also
 works. Only drives still stored on the device can upload; a wrong or
 gone number is rejected with the recent numbers shown.
 
-A queued drive uploads with everything, logs only, or road video only,
-per the **Uploaded Route Contents** setting. The request works in any
-scope, persists across reboots, and clears once the route is fully
-uploaded. If the drive is deleted from the device before anything of it
-was uploaded, the request is dropped.
+A queued drive uploads qlog and the compressed camera by default; the
+**Uploaded Route Contents** setting widens that to road camera + rlog,
+or everything (rlog and all cameras, driver camera when available). The
+request works in any scope, persists across reboots, and clears once the
+route is fully uploaded. If the drive is deleted from the device before
+anything of it was uploaded, the request is dropped.
 
 Routes can also be marked from a laptop. Set the Upload Scope to
 **Selected routes only** and the device uploads crash and boot logs plus
