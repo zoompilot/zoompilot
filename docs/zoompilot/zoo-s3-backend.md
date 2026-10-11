@@ -63,8 +63,9 @@ prefix, and the key when encrypting) are one-time entry through
 Two buttons under Settings → Device queue one drive for upload, no
 laptop needed: **Upload Last Drive** and **Upload a Route...**, which
 asks for the drive number in hex (like `1a3`). The full route ID also
-works. Only drives still stored on the device can upload; a wrong or
-gone number is rejected with the recent numbers shown.
+works. Only drives still stored on the device can upload. A wrong or
+gone number is rejected; the rejection on tizi lists the recent drive
+numbers, mici shows the plain message.
 
 A queued drive uploads qlog and the compressed camera by default; the
 **Uploaded Route Contents** setting widens that to road camera + rlog,

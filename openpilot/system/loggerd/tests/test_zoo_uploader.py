@@ -165,7 +165,8 @@ def list_result_xml(entries):
   contents = ''.join(
     f'<Contents><Key>{k}</Key><Size>{s}</Size><LastModified>{d}</LastModified></Contents>'
     for k, s, d in entries)
-  return f'<?xml version="1.0"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated>{contents}</ListBucketResult>'.encode()
+  head = '<?xml version="1.0"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated>'
+  return (head + contents + '</ListBucketResult>').encode()
 
 
 def test_scope_filter(tmp_path):

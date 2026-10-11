@@ -126,8 +126,6 @@ def signed_request(cfg: S3Config, method: str, key: str = '', query: dict[str, s
   signed = ';'.join(sorted(k.lower() for k in headers))
   canonical_headers = ''.join(f'{k.lower()}:{headers[k].strip()}\n' for k in sorted(headers, key=str.lower))
 
-  payload_hash = payload_hash_hex
-
   canonical_request = '\n'.join(
     [
       method,
@@ -135,7 +133,7 @@ def signed_request(cfg: S3Config, method: str, key: str = '', query: dict[str, s
       canonical_query,
       canonical_headers,
       signed,
-      payload_hash,
+      payload_hash_hex,
     ]
   )
   scope = f'{date_stamp}/{cfg.region}/s3/aws4_request'
