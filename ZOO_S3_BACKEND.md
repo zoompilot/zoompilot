@@ -86,6 +86,16 @@ python tools/zoo/fetch.py route 000001a3--c20ba54385
 `fetch.py` lists, downloads, decrypts, and decompresses; original file
 names come back. Raw `aws s3 cp` + `gpg` works too.
 
+Full-quality video comes back as raw HEVC segments. To watch a route,
+join the segments and remux to MP4:
+
+```
+cat 000001a3--c20ba54385/fcamera.hevc* > all.hevc
+ffmpeg -framerate 20 -i all.hevc -c copy fcam.mp4
+```
+
+`qcamera.ts` from the Minimal scope plays directly in any player.
+
 ## What the bucket provider sees
 
 File contents are end-to-end encrypted. Object names, file types, sizes,
