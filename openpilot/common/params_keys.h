@@ -326,4 +326,28 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"IcbmDemandMigrated", {PERSISTENT | BACKUP, BOOL}},  // ICBM toggle to ICBM on demand (intelligent_cruise_button_management/migration.py)
     {"MazdaTorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},  // steer-to-zero Mazda torque defaults seeded once
     {"MazdaTorqueTuneSeeded", {PERSISTENT | BACKUP, FLOAT}},  // tune version last seeded for the steer-to-zero Mazda EPS; a bump re-seeds everyone once
+
+    // zoo private S3 archive: every key stays out of rlog (DONT_LOG) so the
+    // endpoint, bucket, credentials, and PGP public key never ride qlogs to
+    // comma; none are BACKUP, so they stay out of sunnylink backups too
+    {"ZooS3Enabled", {PERSISTENT | DONT_LOG, BOOL, "0"}},
+    {"ZooS3CommaLinkEnabled", {PERSISTENT | DONT_LOG, BOOL, "1"}},
+    {"ZooAppliedMode", {PERSISTENT | DONT_LOG, STRING, "comma"}},
+    {"ZooS3Endpoint", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3Region", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3Bucket", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3PathStyle", {PERSISTENT | DONT_LOG, BOOL, "1"}},
+    {"ZooS3AccessKeyId", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3SecretAccessKey", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3PublicKey", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3Scope", {PERSISTENT | DONT_LOG, STRING, "minimal"}},
+    {"ZooS3Prefix", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3ArchiveBudget", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3DestinationFp", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3EpochRouteCount", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3EpochBootCount", {PERSISTENT | DONT_LOG, STRING}},
+    {"ZooS3UploadsDone", {PERSISTENT | DONT_LOG, STRING, "0"}},
+    {"ZooS3LastUploadTime", {CLEAR_ON_MANAGER_START | DONT_LOG, STRING}},
+    {"ZooS3LastError", {CLEAR_ON_MANAGER_START | DONT_LOG, STRING}},
+    {"ZooS3LastPruneTime", {CLEAR_ON_MANAGER_START | DONT_LOG, STRING}},
 };

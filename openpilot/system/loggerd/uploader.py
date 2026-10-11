@@ -24,9 +24,9 @@ UPLOAD_ATTR_NAME = 'user.upload'
 UPLOAD_ATTR_VALUE = b'1'
 
 MAX_UPLOAD_SIZES = {
-  "qlog": 25*1e6,  # can't be too restrictive here since we use qlogs to find
-                   # bugs, including ones that can cause massive log sizes
-  "qcam": 5*1e6,
+  "qlog": 25 * 1e6,  # can't be too restrictive here since we use qlogs to find
+  # bugs, including ones that can cause massive log sizes
+  "qcam": 5 * 1e6,
 }
 
 allow_sleep = bool(int(os.getenv("UPLOADER_SLEEP", "1")))
@@ -48,6 +48,7 @@ class FakeResponse:
 def get_directory_sort(d: str) -> list[str]:
   return [s.rjust(10, '0') for s in d.rsplit('--', 1)]
 
+
 def listdir_by_creation(d: str) -> list[str]:
   if not os.path.isdir(d):
     return []
@@ -59,6 +60,7 @@ def listdir_by_creation(d: str) -> list[str]:
   except OSError:
     cloudlog.exception("listdir_by_creation failed")
     return []
+
 
 def clear_locks(root: str) -> None:
   for logdir in os.listdir(root):
@@ -72,6 +74,12 @@ def clear_locks(root: str) -> None:
 
 
 class Uploader:
+  # destination policy: a subclass targets another upload destination by
+  # overriding these; the comma policy stays exactly as it was
+  upload_attr_name = UPLOAD_ATTR_NAME
+  upload_attr_value = UPLOAD_ATTR_VALUE
+  success_codes = (200, 201, 401, 403, 412)
+
   def __init__(self, dongle_id: str, root: str):
     self.dongle_id = dongle_id
     self.api = Api(dongle_id)
@@ -105,7 +113,7 @@ class Uploader:
         # skip files already uploaded
         try:
           ctime = os.path.getctime(fn)
-          is_uploaded = getxattr(fn, UPLOAD_ATTR_NAME) == UPLOAD_ATTR_VALUE
+          is_uploaded = getxattr(fn, self.upload_attr_name) == self.upload_attr_value
         except OSError:
           cloudlog.event("uploader_getxattr_failed", key=key, fn=fn)
           # deleter could have deleted, so skip
@@ -185,7 +193,7 @@ class Uploader:
       except Exception as e:
         last_exc = (e, traceback.format_exc())
 
-      if stat is not None and stat.status_code in (200, 201, 401, 403, 412):
+      if stat is not None and stat.status_code in self.success_codes:
         self.last_filename = fn
         dt = time.monotonic() - start_time
         if stat.status_code == 412:
@@ -193,8 +201,7 @@ class Uploader:
         else:
           content_length = int(stat.request.headers.get("Content-Length", 0))
           speed = (content_length / 1e6) / dt
-          cloudlog.event("upload_success", key=key, fn=fn, sz=sz, content_length=content_length,
-                         network_type=network_type, metered=metered, speed=speed)
+          cloudlog.event("upload_success", key=key, fn=fn, sz=sz, content_length=content_length, network_type=network_type, metered=metered, speed=speed)
         success = True
       else:
         success = False
@@ -203,12 +210,11 @@ class Uploader:
     if success:
       # tag file as uploaded
       try:
-        setxattr(fn, UPLOAD_ATTR_NAME, UPLOAD_ATTR_VALUE)
+        setxattr(fn, self.upload_attr_name, self.upload_attr_value)
       except OSError:
         cloudlog.event("uploader_setxattr_failed", exc=last_exc, key=key, fn=fn, sz=sz)
 
     return success
-
 
   def step(self, network_type: int, metered: bool) -> bool | None:
     d = self.next_file_to_upload(metered)
@@ -262,7 +268,7 @@ def main(exit_event: threading.Event | None = None) -> None:
       backoff = 0.1
     else:
       cloudlog.info("upload backoff %r", backoff)
-      backoff = min(backoff*2, 120)
+      backoff = min(backoff * 2, 120)
     if allow_sleep:
       time.sleep(backoff + random.uniform(0, backoff))
 
