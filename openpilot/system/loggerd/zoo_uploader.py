@@ -86,6 +86,8 @@ ERROR_CLASSES = {
 class ZooUploader(Uploader):
   upload_attr_name = 'user.zoo_upload.s3'
   success_codes = (200, 201)
+  # the archive promises everything; the comma per-file caps do not apply
+  max_upload_sizes = {}
 
   def __init__(self, root: str, s3: S3Config, prefix: str, scope: str, recipients: list, params: Params,
                contents: str = 'default', encrypt: bool = False):

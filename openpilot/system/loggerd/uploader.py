@@ -80,6 +80,7 @@ class Uploader:
   upload_attr_name = UPLOAD_ATTR_NAME
   upload_attr_value = UPLOAD_ATTR_VALUE
   success_codes = (200, 201, 401, 403, 412)
+  max_upload_sizes = MAX_UPLOAD_SIZES
 
   def __init__(self, dongle_id: str, root: str):
     self.dongle_id = dongle_id
@@ -181,7 +182,7 @@ class Uploader:
     if sz == 0:
       # tag files of 0 size as uploaded
       success = True
-    elif name in MAX_UPLOAD_SIZES and sz > MAX_UPLOAD_SIZES[name]:
+    elif name in self.max_upload_sizes and sz > self.max_upload_sizes[name]:
       cloudlog.event("uploader_too_large", key=key, fn=fn, sz=sz)
       success = True
     else:

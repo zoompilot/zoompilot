@@ -86,7 +86,7 @@ from openpilot.common.zoo import pgp
 from openpilot.common.zoo import add_upload_request, latest_route_dir, load_upload_requests, normalize_route_request
 from openpilot.common.zoo import add_current_drive_request
 from openpilot.common.zoo.s3sig import S3Config
-from openpilot.system.loggerd.uploader import listdir_by_creation
+from openpilot.system.loggerd.uploader import MAX_UPLOAD_SIZES, Uploader, listdir_by_creation
 from openpilot.system.loggerd.zoo_uploader import ZooUploader, PRUNE_TRIGGER_BYTES, zoo_config_from_params
 from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
 
@@ -197,6 +197,26 @@ def test_hidden_dirs_never_upload(tmp_path):
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
   assert keys == ['00000010--abcdefghij/qlog']
   assert not uploader._in_scope('.zoo-spool/tmpabc.plain')
+
+
+def test_size_caps_by_uploader(tmp_path, monkeypatch):
+  # the comma policy keeps its caps; the zoo archive drops them
+  assert Uploader.max_upload_sizes == MAX_UPLOAD_SIZES
+  assert ZooUploader.max_upload_sizes == {}
+
+  monkeypatch.setattr(pgp, 'encrypt_file', lambda src, out, recs, chunk_size=1 << 20: open(out, 'wb').write(open(src, 'rb').read()))
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader = make_uploader(tmp_path)
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+
+  # this qlog is over the comma qlog cap, and the zoo uploader sends it anyway
+  monkeypatch.setattr(Uploader, 'max_upload_sizes', {'qlog': 4})
+  seg = write_segment(tmp_path, '00000017', {'qlog': b'0123456789'})
+  ok = uploader.upload('qlog', '00000017--abcdefghij/qlog', str(seg / 'qlog'), 1, False)
+  assert ok is True
+  assert any(k.endswith('/00000017--abcdefghij/qlog.gpg') for k, _ in RecordingStub.seen)
+  server.shutdown()
 
 
 def test_epoch_skips_pre_enable_dirs(tmp_path):
