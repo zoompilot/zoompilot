@@ -1,4 +1,10 @@
-"""Header-signed AWS Signature Version 4 PUT for the zoo S3 archive.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Header-signed AWS Signature Version 4 PUT for the zoo S3 archive.
 
 Signs the payload hash and an x-amz-checksum-sha256 header into the
 Authorization header, so a spooled ciphertext of known length and digest

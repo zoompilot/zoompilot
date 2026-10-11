@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Private S3 archive uploader for the zoo backend.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Private S3 archive uploader for the zoo backend.
 
 Uploads the same files the comma uploader sees, encrypted to the user's
 PGP public keys, to the user's own S3-compatible bucket. Tracks completion

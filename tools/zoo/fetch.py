@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Read the zoo private S3 archive from a laptop.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Read the zoo private S3 archive from a laptop.
 
 With no frontend anywhere, this is the friendly read path: list objects,
 download, gpg-decrypt, and decompress a route's files back to their

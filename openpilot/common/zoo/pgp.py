@@ -1,4 +1,10 @@
-"""Minimal OpenPGP encryptor for the zoo S3 archive.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Minimal OpenPGP encryptor for the zoo S3 archive.
 
 Encrypts to user-supplied PGP public keys and produces a message that stock
 gpg decrypts: OpenPGP v4 keys only (RFC 4880), PKESK v3 + SEIPD v1 with

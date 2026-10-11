@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Set up the zoo private S3 archive on a laptop.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Set up the zoo private S3 archive on a laptop.
 
 Prompts for the bucket and credentials, validates the PGP public key the
 same way the device will, optionally PUTs an encrypted probe object as a
