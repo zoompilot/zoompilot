@@ -1841,12 +1841,6 @@
                   "label": "Full archive"
                 }
               ]
-            },
-            {
-              "key": "ZooS3CommaLinkEnabled",
-              "widget": "toggle",
-              "title": "Keep comma Connection",
-              "description": "On (default): comma uploads, live connection, and registration keep working; the archive is an extra encrypted copy. Off: privacy mode - no comma traffic at all; the device restarts into the private archive only, and reversing it re-registers with comma."
             }
           ]
         },

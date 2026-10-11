@@ -10,7 +10,6 @@ import openpilot.cereal.messaging as messaging
 from openpilot.common.utils import atomic_write
 from openpilot.sunnypilot.common.ignition import get_ignition_state
 from openpilot.common.params import Params, ParamKeyFlag
-from openpilot.common.zoo import zoo_privacy_mode
 from openpilot.common.text_window import TextWindow
 from openpilot.common.hardware import HARDWARE, PC
 from openpilot.system.manager.helpers import unblock_stdout, save_bootlog
@@ -84,20 +83,12 @@ def manager_init() -> None:
   params.put_bool("IsReleaseSpBranch", build_metadata.release_sp_channel, block=True)
   params.put("HardwareSerial", serial, block=True)
 
-  # zoo privacy mode: the user opted into the private S3 archive with the
-  # comma link off, so no comma registration, no athena (manager ignores
-  # manage_athenad/uploader natively when DongleId is absent), no Sentry
-  privacy = zoo_privacy_mode(params)
-
   # set dongle id
-  if privacy:
-    dongle_id = ""
+  reg_res = register(show_spinner=True)
+  if reg_res:
+    dongle_id = reg_res
   else:
-    reg_res = register(show_spinner=True)
-    if reg_res:
-      dongle_id = reg_res
-    else:
-      raise Exception(f"Registration failed for device {serial}")
+    raise Exception(f"Registration failed for device {serial}")
   os.environ['DONGLE_ID'] = dongle_id  # Needed for swaglog
   os.environ['GIT_ORIGIN'] = build_metadata.openpilot.git_normalized_origin # Needed for swaglog
   os.environ['GIT_BRANCH'] = build_metadata.channel # Needed for swaglog
@@ -107,8 +98,7 @@ def manager_init() -> None:
     os.environ['CLEAN'] = '1'
 
   # init logging
-  if not privacy:
-    sentry.init(sentry.SentryProject.SELFDRIVE)
+  sentry.init(sentry.SentryProject.SELFDRIVE)
   cloudlog.bind_global(dongle_id=dongle_id,
                        version=build_metadata.openpilot.version,
                        origin=build_metadata.openpilot.git_normalized_origin,
@@ -139,10 +129,6 @@ def manager_thread() -> None:
   ignore: list[str] = []
   if params.get("DongleId") in (None, UNREGISTERED_DONGLE_ID):
     ignore += ["manage_athenad", "uploader"]
-    # privacy mode keeps the sunnylink daemon off too (its PythonProcess
-    # siblings are gated by their conditions in process_config)
-    if zoo_privacy_mode(params):
-      ignore += ["manage_sunnylinkd"]
   if os.getenv("NOBOARD") is not None:
     ignore.append("pandad")
   ignore += [x for x in os.getenv("BLOCK", "").split(",") if len(x) > 0]

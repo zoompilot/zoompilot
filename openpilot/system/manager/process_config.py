@@ -5,7 +5,6 @@ import platform
 from opendbc.car.structs import car
 from openpilot.cereal import custom
 from openpilot.common.params import Params
-from openpilot.common.zoo import zoo_privacy_mode
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware import PC, COMMA_HARDWARE
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
@@ -106,10 +105,6 @@ def uploader_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
 def zoo_s3_enabled(started: bool, params: Params, CP: car.CarParams) -> bool:
   return params.get_bool("ZooS3Enabled")
 
-def not_zoo_privacy(started: bool, params: Params, CP: car.CarParams) -> bool:
-  # privacy mode cuts every sunnylink-side connection along with comma
-  return not zoo_privacy_mode(params)
-
 def or_(*fns):
   return lambda *args: operator.or_(*(fn(*args) for fn in fns))
 
@@ -172,8 +167,8 @@ procs = [
 
   # sunnylink <3
   DaemonProcess("manage_sunnylinkd", "openpilot.sunnypilot.sunnylink.athena.manage_sunnylinkd", "SunnylinkdPid"),
-  PythonProcess("sunnylink_registration_manager", "openpilot.sunnypilot.sunnylink.registration_manager", and_(sunnylink_need_register_shim, not_zoo_privacy)),
-  PythonProcess("statsd_sp", "openpilot.sunnypilot.sunnylink.statsd", and_(always_run, sunnylink_ready_shim, not_zoo_privacy)),
+  PythonProcess("sunnylink_registration_manager", "openpilot.sunnypilot.sunnylink.registration_manager", sunnylink_need_register_shim),
+  PythonProcess("statsd_sp", "openpilot.sunnypilot.sunnylink.statsd", and_(always_run, sunnylink_ready_shim)),
 ]
 
 # sunnypilot

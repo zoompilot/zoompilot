@@ -46,10 +46,10 @@ settings surface; mici hardware itself is untested.
 ## Everyday control
 
 Settings → Device in the sunnylink app shows the toggles on any device,
-mici included: the archive on/off switch, the upload scope (minimal =
-qlog + compressed camera + crash/boot; full = everything), and the comma
-connection. String settings (endpoint, bucket, credentials, key, prefix)
-are one-time entry through `configure.py` or SSH.
+mici included: the archive on/off switch and the upload scope (minimal =
+qlog + compressed camera + crash/boot; full = everything). String
+settings (endpoint, bucket, credentials, key, prefix) are one-time entry
+through `configure.py` or SSH.
 
 ## Archive ring
 
@@ -75,14 +75,6 @@ the budget with that in mind.
 
 On Backblaze's 10 GB free tier, `8G` leaves room to grow between ring
 passes, so a no-card account never crosses into paid storage.
-
-## Privacy mode
-
-Turning **Keep comma Connection** off (param `ZooS3CommaLinkEnabled=0`)
-restarts the device into privacy mode: no comma registration, no uploads
-to comma, no athena live connection, no sunnylink, no crash reports
-(Sentry), no GNSS assist fetch. The updater still reaches GitHub. Turning
-it back on re-registers with comma; your archive prefix never changes.
 
 ## Reading the archive back
 

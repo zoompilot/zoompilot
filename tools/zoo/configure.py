@@ -120,9 +120,6 @@ def main() -> int:
   if budget:
     print('Ring on: the device key needs listFiles and deleteFiles too, and bucket')
     print('versioning with an expiry window protects the archive from a leaked key.')
-    print()
-  print('Optional full privacy (stops ALL comma traffic; re-registers when undone):')
-  print("  printf '0' > /data/params/d/ZooS3CommaLinkEnabled")
   return 0
 
 
