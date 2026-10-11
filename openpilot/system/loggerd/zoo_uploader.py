@@ -183,6 +183,8 @@ class ZooUploader(Uploader):
     top = key.split('/', 1)[0]
     if top in ('crash', 'boot'):
       return True
+    if top == SPOOL_SUBDIR:
+      return False  # in-flight spool files never enter the scope on their own
     route = self._route_of(key)
     if route in pending_routes:
       return self._mask_allows(key)

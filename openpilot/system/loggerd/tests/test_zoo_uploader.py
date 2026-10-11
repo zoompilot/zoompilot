@@ -86,6 +86,7 @@ from openpilot.common.zoo import pgp
 from openpilot.common.zoo import add_upload_request, latest_route_dir, load_upload_requests, normalize_route_request
 from openpilot.common.zoo import add_current_drive_request
 from openpilot.common.zoo.s3sig import S3Config
+from openpilot.system.loggerd.uploader import listdir_by_creation
 from openpilot.system.loggerd.zoo_uploader import ZooUploader, PRUNE_TRIGGER_BYTES, zoo_config_from_params
 from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
 
@@ -184,6 +185,18 @@ def test_scope_filter(tmp_path):
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
   names = sorted(k.rsplit('/', 1)[-1] for k in keys)
   assert 'rlog' in names and 'fcamera.ts' in names
+
+
+def test_hidden_dirs_never_upload(tmp_path):
+  uploader = make_uploader(tmp_path, scope='full')
+  write_segment(tmp_path, '00000010', {'qlog': b'q'})
+  (tmp_path / '.zoo-spool' / 'tmpabc.plain').write_bytes(b'in flight')
+
+  # the stock enumeration behind both uploaders and the deleter skips it
+  assert listdir_by_creation(str(tmp_path)) == ['00000010--abcdefghij']
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert keys == ['00000010--abcdefghij/qlog']
+  assert not uploader._in_scope('.zoo-spool/tmpabc.plain')
 
 
 def test_epoch_skips_pre_enable_dirs(tmp_path):
