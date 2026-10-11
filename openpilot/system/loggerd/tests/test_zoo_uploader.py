@@ -3,7 +3,7 @@ import os
 import sys
 import threading
 import types
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class FakeParamsDict:
@@ -77,6 +77,7 @@ except Exception:
   sys.modules['openpilot.common.swaglog'] = swaglog_mod
 
 from openpilot.common.zoo import pgp
+from openpilot.common.zoo import add_upload_request, latest_route_dir, load_upload_requests, normalize_route_request
 from openpilot.common.zoo.s3sig import S3Config
 from openpilot.system.loggerd.zoo_uploader import ZooUploader, PRUNE_TRIGGER_BYTES
 from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
@@ -118,7 +119,7 @@ class RecordingStub(http.server.BaseHTTPRequestHandler):
     pass
 
 
-def make_uploader(tmp_path, params=None, scope='minimal', status_map=None, bucket='bucket'):
+def make_uploader(tmp_path, params=None, scope='minimal', status_map=None, bucket='bucket', contents='full'):
   params = params or FakeParamsDict()
   if params.get('RouteCount') is None:
     params.put('RouteCount', '0')
@@ -141,7 +142,7 @@ def make_uploader(tmp_path, params=None, scope='minimal', status_map=None, bucke
   # in tests that exercise bytes end to end
   s3 = S3Config(endpoint='http://127.0.0.1:9', region='us-east-1', bucket=bucket, access_key_id='k', secret_access_key='s', path_style=True)
   RecordingStub.responses = status_map or {}
-  return ZooUploader(str(tmp_path), s3, 'zooprefix', scope, [recipient], params)
+  return ZooUploader(str(tmp_path), s3, 'zooprefix', scope, [recipient], params, contents)
 
 
 def write_segment(root, counter_hex, files):
@@ -432,7 +433,7 @@ def test_ring_spares_kept_and_fresh_routes(tmp_path):
   server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
   threading.Thread(target=server.serve_forever, daemon=True).start()
   uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
-  fresh = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+  fresh = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%S.000Z')
   RecordingStub.list_xml = list_result_xml([
     ('zooprefix/boot/00000002--bootid.zst.gpg', 50, '2026-01-01T00:00:00.000Z'),
     ('zooprefix/keep/00000001--abcdefghij', 0, '2026-01-01T00:00:00.000Z'),
@@ -456,3 +457,126 @@ def test_ring_spares_kept_and_fresh_routes(tmp_path):
     '/bucket/zooprefix/00000003--abcdefghij/qlog.gpg',
   ]
   assert not any('/keep/' in d for d in RecordingStub.deletions)
+
+
+def test_normalize_route_request():
+  dirs = ['0000000f--abcdef0123', '000001a3--c20ba54385']
+  full = '000001a3--c20ba54385'
+  assert normalize_route_request('1a3', dirs) == full
+  assert normalize_route_request('01A3', dirs) == full
+  assert normalize_route_request('1a3-c20ba54385', dirs) == full
+  assert normalize_route_request(full, dirs) == full
+  assert normalize_route_request('000001A3--C20BA54385', dirs) == full
+  assert normalize_route_request('dongleid|000001a3--c20ba54385', dirs) == full
+  assert normalize_route_request('dongleid/000001a3--c20ba54385', dirs) == full
+  assert normalize_route_request('f', dirs) == '0000000f--abcdef0123'
+  # wrong suffix on a real counter never matches
+  assert normalize_route_request('1a3--deadbeef00', dirs) is None
+  # unknown counters, non-hex text, and empty input never match
+  assert normalize_route_request('2a3', dirs) is None
+  assert normalize_route_request('15', dirs) is None
+  assert normalize_route_request('zz', dirs) is None
+  assert normalize_route_request('', dirs) is None
+
+
+def test_upload_request_helpers():
+  params = FakeParamsDict()
+  assert add_upload_request(params, '000001a3--c20ba54385') is True
+  assert add_upload_request(params, '000001a3--c20ba54385') is False
+  assert load_upload_requests(params) == [{'route': '000001a3--c20ba54385', 'uploaded_any': False}]
+  # corrupt JSON falls back to an empty list, never raises
+  params.put('ZooS3UploadRoutes', 'not json')
+  assert load_upload_requests(params) == []
+
+
+def test_latest_route_dir(tmp_path):
+  (tmp_path / 'boot').mkdir()
+  write_segment(tmp_path, '00000002', {'qlog': b'x'})
+  write_segment(tmp_path, '00000010', {'qlog': b'x'})
+  assert latest_route_dir(str(tmp_path)) == '00000010--abcdefghij'
+
+
+def test_upload_request_bypasses_scope_and_epoch(tmp_path):
+  params = FakeParamsDict()
+  params.put('RouteCount', '20')  # epoch records 20: route 13 predates it
+  uploader = make_uploader(tmp_path, params=params, scope='minimal')
+  add_upload_request(params, '00000013--abcdefghij')
+  write_segment(tmp_path, '00000013', {'qlog': b'x', 'rlog': b'r', 'fcamera.hevc': b'f'})
+  write_segment(tmp_path, '00000019', {'rlog': b'other'})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  # minimal scope leaves 19 alone, but the request pulls the whole drive in
+  assert '00000019--abcdefghij/rlog' not in keys
+  assert sorted(k.rsplit('/', 1)[-1] for k in keys if k.startswith('00000013')) == ['fcamera.hevc', 'qlog', 'rlog']
+
+
+def test_upload_request_contents_mask(tmp_path):
+  for contents, expected in (('logs', ['qlog', 'rlog']), ('video', ['fcamera.hevc']), ('full', ['fcamera.hevc', 'qlog', 'rlog'])):
+    params = FakeParamsDict()
+    params.put('ZooS3UploadContents', contents)
+    uploader = make_uploader(tmp_path, params=params, scope='minimal', contents=contents)
+    add_upload_request(params, '00000013--abcdefghij')
+    write_segment(tmp_path, '00000013', {'qlog': b'x', 'rlog': b'r', 'fcamera.hevc': b'f'})
+
+    keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+    names = sorted(k.rsplit('/', 1)[-1] for k in keys if k.startswith('00000013'))
+    assert names == expected, contents
+
+
+def test_upload_request_fulfills_and_writes_marker(tmp_path, monkeypatch):
+  monkeypatch.setattr(pgp, 'encrypt_file', lambda src, out, recs, chunk_size=1 << 20: open(out, 'wb').write(b'G(' + open(src, 'rb').read() + b')'))
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader = make_uploader(tmp_path)
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+  add_upload_request(uploader.params, '00000030--abcdefghij')
+  write_segment(tmp_path, '00000030', {'qlog': b'x', 'rlog': b'y'})
+
+  keys = sorted(k for _, k, _ in uploader.list_upload_files(metered=False))
+  for key in keys:
+    assert uploader.upload(key.rsplit('/', 1)[-1], key, os.path.join(str(tmp_path), key), 1, False) is True
+
+  # fully uploaded: the pending entry clears and the marker lands in keep/
+  assert load_upload_requests(uploader.params) == []
+  marker_puts = [path for path, _ in RecordingStub.seen if '/keep/' in path]
+  assert marker_puts == ['/bucket/zooprefix/keep/00000030--abcdefghij']
+  server.shutdown()
+
+
+def test_upload_request_abandoned_when_route_vanishes(tmp_path):
+  uploader = make_uploader(tmp_path)
+  add_upload_request(uploader.params, '00000040--abcdefghij')
+
+  RecordingStub.seen = []
+  uploader.service_upload_requests()
+  # deleted before a single file uploaded: dropped, no marker ever written
+  assert load_upload_requests(uploader.params) == []
+  assert not any('/keep/' in path for path, _ in RecordingStub.seen)
+
+
+def test_ring_spares_pending_requests(tmp_path):
+  params = FakeParamsDict()
+  params.put('ZooS3ArchiveBudget', '1300')
+  uploader = make_uploader(tmp_path, params=params)
+  add_upload_request(params, '00000001--abcdefghij')
+
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+  RecordingStub.list_xml = list_result_xml([
+    ('zooprefix/boot/00000002--bootid.zst.gpg', 50, '2026-01-01T00:00:00.000Z'),
+    ('zooprefix/00000001--abcdefghij/qlog.gpg', 300, '2026-01-01T00:00:00.000Z'),  # pending
+    ('zooprefix/00000002--abcdefghij/qlog.gpg', 300, '2026-01-02T00:00:00.000Z'),
+    ('zooprefix/00000003--abcdefghij/qlog.gpg', 400, '2026-01-03T00:00:00.000Z'),
+    ('zooprefix/00000004--abcdefghij/qlog.gpg', 400, '2026-01-04T00:00:00.000Z'),
+  ])
+  RecordingStub.deletions = []
+  try:
+    uploader.maybe_prune(force=True)
+  finally:
+    server.shutdown()
+
+  # routes total 1400, target 1250: the pending route is oldest but is
+  # protected, so the ring takes the next route instead and stops under
+  # budget
+  assert RecordingStub.deletions == ['/bucket/zooprefix/00000002--abcdefghij/qlog.gpg']

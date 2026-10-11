@@ -9,8 +9,11 @@ from openpilot.selfdrive.ui.onroad.cabin_camera_dialog import CabinCameraDialog
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.sunnypilot.ui_state import set_always_offroad
 from openpilot.common.hardware import HARDWARE
+from openpilot.common.hardware.hw import Paths
+from openpilot.common.zoo import add_upload_request, latest_route_dir, list_route_dirs, normalize_route_request
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
 from openpilot.system.ui.sunnypilot.widgets.list_view import option_item_sp, multiple_button_item_sp, button_item_sp, \
   dual_button_item_sp, Spacer
 from openpilot.system.ui.widgets import DialogResult
@@ -102,6 +105,13 @@ class DeviceLayoutSP(DeviceLayout):
       right_callback=self._reset_settings
     )
 
+    self._zoo_upload_buttons = dual_button_item_sp(
+      left_text=lambda: tr("Upload Last Drive"),
+      left_callback=self._zoo_upload_last_drive,
+      right_text=lambda: tr("Upload a Route..."),
+      right_callback=self._zoo_upload_route,
+    )
+
     self._power_buttons = dual_button_item_sp(
       left_text=lambda: tr("Reboot"),
       right_text=lambda: tr("Power Off"),
@@ -127,6 +137,8 @@ class DeviceLayoutSP(DeviceLayout):
       self._quiet_mode_and_dcam,
       self._reg_and_training,
       self._onroad_uploads_and_reset_settings,
+      LineSeparator(),
+      self._zoo_upload_buttons,
       Spacer(10),
       LineSeparator(height=10),
       self._power_buttons,
@@ -220,3 +232,47 @@ class DeviceLayoutSP(DeviceLayout):
     self._reg_and_training.action_item.left_button.set_enabled(ui_state.is_offroad())
     self._reg_and_training.action_item.right_button.set_enabled(ui_state.is_offroad())
     self._onroad_uploads_and_reset_settings.action_item.right_button.set_enabled(ui_state.is_offroad())
+
+    # zoo upload requests need the private archive on
+    zoo_on = ui_state.params.get_bool("ZooS3Enabled")
+    self._zoo_upload_buttons.action_item.left_button.set_enabled(zoo_on)
+    self._zoo_upload_buttons.action_item.right_button.set_enabled(zoo_on)
+
+  def _zoo_upload_last_drive(self):
+    route = latest_route_dir(Paths.log_root())
+    if route is None:
+      gui_app.push_widget(alert_dialog(tr("No drives are stored on this device.")))
+      return
+    self._zoo_add_request(route)
+
+  def _zoo_upload_route(self):
+    def _confirmed(result: DialogResult, text: str):
+      if result != DialogResult.CONFIRM:
+        return
+      route = normalize_route_request(text, list_route_dirs(Paths.log_root()))
+      if route is None:
+        gui_app.push_widget(alert_dialog(self._zoo_unknown_route_text()))
+        return
+      self._zoo_add_request(route)
+
+    # held so the keyboard widget survives past the button callback
+    self._zoo_route_dialog = InputDialogSP(
+      tr("Upload a Route"),
+      tr("Drive number in hex (like 1a3) or the full route ID. Only drives still stored on this device can upload."),
+      callback=_confirmed,
+    )
+    gui_app.push_widget(self._zoo_route_dialog)
+
+  def _zoo_add_request(self, route: str):
+    if add_upload_request(ui_state.params, route):
+      gui_app.push_widget(alert_dialog(tr("Queued for upload:") + f"\n{route}"))
+    else:
+      gui_app.push_widget(alert_dialog(tr("That drive is already queued for upload.")))
+
+  @staticmethod
+  def _zoo_unknown_route_text() -> str:
+    counters = [d.split('--', 1)[0].lstrip('0') or '0' for d in list_route_dirs(Paths.log_root())]
+    base = tr("No drive with that number is on this device. Only drives still stored locally can upload.")
+    if not counters:
+      return base
+    return base + "\n" + tr("Recent drive numbers:") + f"\n{', '.join(counters[-3:])}"

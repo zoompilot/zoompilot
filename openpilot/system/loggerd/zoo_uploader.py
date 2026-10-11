@@ -9,7 +9,9 @@ other, and never marks a file done on an authentication failure.
 Scope 'minimal' uploads qlogs, the compressed camera, and crash/boot logs;
 'full' uploads everything; 'selected' uploads only routes with a keep
 marker under keep/<route>, plus crash/boot logs. Keep markers also spare
-their routes from the archive ring.
+their routes from the archive ring. An upload request (queued on the
+device or by a marker) uploads one route in full regardless of scope,
+persists until the route is fully uploaded, then clears.
 """
 
 import os
@@ -33,8 +35,9 @@ from openpilot.common.realtime import set_core_affinity
 from openpilot.common.hardware.hw import Paths
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.loggerd.uploader import Uploader, clear_locks
-from openpilot.common.zoo import pgp
-from openpilot.common.zoo.s3sig import S3Config, signed_put_file, signed_request, parse_budget
+from openpilot.system.loggerd.xattr_cache import getxattr
+from openpilot.common.zoo import pgp, load_upload_requests, save_upload_requests
+from openpilot.common.zoo.s3sig import S3Config, signed_put, signed_put_file, signed_request, parse_budget
 
 NetworkType = log.DeviceState.NetworkType
 
@@ -75,13 +78,15 @@ class ZooUploader(Uploader):
   upload_attr_name = 'user.zoo_upload.s3'
   success_codes = (200, 201)
 
-  def __init__(self, root: str, s3: S3Config, prefix: str, scope: str, recipients: list, params: Params):
+  def __init__(self, root: str, s3: S3Config, prefix: str, scope: str, recipients: list, params: Params,
+               contents: str = 'full'):
     self.api = None  # no backend API for this destination
     self.dongle_id = prefix
     self.root = root
     self.params = params
     self.s3 = s3
     self.scope = scope
+    self.contents = contents if contents in ('logs', 'video') else 'full'
     self.recipients = recipients
     self.last_filename = ""
     self.immediate_folders = ["crash/", "boot/"]
@@ -153,23 +158,37 @@ class ZooUploader(Uploader):
 
   def list_upload_files(self, metered: bool):
     self._refresh_keep_routes()
+    pending_routes = {r['route'] for r in load_upload_requests(self.params)}
     for name, key, fn in super().list_upload_files(metered):
-      if not self._in_scope(key):
+      if not self._in_scope(key, pending_routes):
         continue
-      # a selected scope means the user picked the routes, so the enable
-      # moment does not gate them
-      if self.scope == 'selected' or self._after_epoch(key):
+      # a requested route bypasses the enable moment in every scope: the
+      # user asked for this drive, and a selected scope means the user
+      # picked the routes too
+      route = self._route_of(key)
+      if route in pending_routes or self.scope == 'selected' or self._after_epoch(key):
         yield name, key, fn
 
-  def _in_scope(self, key: str) -> bool:
+  def _in_scope(self, key: str, pending_routes: frozenset | set = frozenset()) -> bool:
     top = key.split('/', 1)[0]
     if top in ('crash', 'boot'):
       return True
+    route = self._route_of(key)
+    if route in pending_routes:
+      return self._mask_allows(key)
     if self.scope == 'full':
       return True
     if self.scope == 'selected':
-      return self._route_of(key) in self.keep_routes
+      return route in self.keep_routes
     return key.rsplit('/', 1)[-1] in SCOPE_MINIMAL_FILES
+
+  def _mask_allows(self, key: str) -> bool:
+    """Which files of a requested route go up, per ZooS3UploadContents."""
+    if self.contents == 'logs':
+      return key.rsplit('/', 1)[-1] in ('rlog', 'rlog.zst', 'qlog', 'qlog.zst')
+    if self.contents == 'video':
+      return key.rsplit('/', 1)[-1] == 'fcamera.hevc'
+    return True
 
   @staticmethod
   def _route_of(key: str) -> str:
@@ -240,9 +259,74 @@ class ZooUploader(Uploader):
       self.params.put('ZooS3UploadsDone', str(self._counter('ZooS3UploadsDone') + 1))
       self.bytes_since_prune += getattr(self, '_last_upload_bytes', 0)
       self.maybe_prune()
+      route = self._route_of(key)
+      if any(r['route'] == route for r in load_upload_requests(self.params)):
+        self._mark_request_uploaded(route)
+        self.service_upload_requests(route)
     else:
       self._record_error(key)
     return result
+
+  def service_upload_requests(self, route: str | None = None) -> None:
+    """Retire finished and impossible requests; never raises.
+
+    A request is finished when none of its in-scope files are left to
+    upload: the marker goes to the bucket and the pending entry clears,
+    so it survives reboots only for as long as work remains. A route
+    deleted before anything of it was uploaded can never finish; its
+    request is dropped instead of waiting forever.
+    """
+    try:
+      requests = load_upload_requests(self.params)
+      remaining = []
+      changed = False
+      for req in requests:
+        name = req['route']
+        if route is not None and name != route:
+          remaining.append(req)
+          continue
+        dir_path = os.path.join(self.root, name)
+        if self._route_has_pending_files(name, dir_path):
+          remaining.append(req)
+        elif not os.path.isdir(dir_path) and not req.get('uploaded_any'):
+          cloudlog.event('zoo_upload_request_abandoned', route=name)
+          changed = True
+        else:
+          self._write_keep_marker(name)
+          changed = True
+      if changed:
+        save_upload_requests(self.params, remaining)
+    except Exception:
+      # a failed marker write keeps the entry; the next pass retries it
+      cloudlog.exception('zoo_upload_request_service_failed')
+
+  def _route_has_pending_files(self, route: str, dir_path: str) -> bool:
+    if not os.path.isdir(dir_path):
+      return False
+    for segment in os.listdir(dir_path):
+      fn = os.path.join(dir_path, segment)
+      if not os.path.isfile(fn):
+        continue
+      key = f'{route}/{segment}'
+      if not self._in_scope(key, {route}):
+        continue
+      if getxattr(fn, self.upload_attr_name) != self.upload_attr_value:
+        return True
+    return False
+
+  def _write_keep_marker(self, route: str) -> None:
+    key = f'{self.dongle_id}/{KEEP_MARKER_DIR}/{route}'
+    url, headers, body = signed_put(self.s3, key, b'')
+    response = requests.put(url, headers=headers, data=body, timeout=30)
+    if response.status_code not in (200, 201):
+      raise RuntimeError(f'keep marker write failed: HTTP {response.status_code}')
+
+  def _mark_request_uploaded(self, route: str) -> None:
+    requests = load_upload_requests(self.params)
+    for req in requests:
+      if req['route'] == route:
+        req['uploaded_any'] = True
+    save_upload_requests(self.params, requests)
 
   def maybe_prune(self, force: bool = False) -> None:
     """Keep the remote archive under the budget, oldest routes first.
@@ -276,10 +360,13 @@ class ZooUploader(Uploader):
     objects = self._list_archive()
     keep_prefix = f'{self.dongle_id}/{KEEP_MARKER_DIR}/'
     protected: set[str] = set()
+    # requested-but-unfinished routes are protected too: their partial
+    # bucket data must not be pruned out from under the running uploads
+    protected.update(r['route'] for r in load_upload_requests(self.params))
     routes: dict[str, list[tuple[int, str, str]]] = {}
     fixed = 0
     route_total = 0
-    now = time.time()
+    now = time.time()  # noqa: TID251 — compared against S3 wall-clock stamps
     for key, size, lastmod in objects:
       group = key.split('/', 2)[1]  # the component after the prefix
       if group == KEEP_MARKER_DIR:
@@ -396,9 +483,10 @@ def zoo_config_from_params(params: Params) -> tuple[S3Config, str, str, list] | 
   )
   prefix = (params.get('ZooS3Prefix') or b'zoo').decode()
   scope = (params.get('ZooS3Scope') or b'minimal').decode()
+  contents = (params.get('ZooS3UploadContents') or b'full').decode()
   # runtime reload tolerates an expired key: warn, never stop uploading
   recipients = pgp.load_recipients(public_key.decode(), strict_expiry=False)
-  return s3, prefix, scope, recipients
+  return s3, prefix, scope, contents, recipients
 
 
 def main(exit_event: threading.Event | None = None) -> None:
@@ -417,15 +505,21 @@ def main(exit_event: threading.Event | None = None) -> None:
   if config is None:
     cloudlog.info('zoo uploader: missing configuration, not starting')
     return
-  s3, prefix, scope, recipients = config
-  uploader = ZooUploader(Paths.log_root(), s3, prefix, scope, recipients, params)
+  s3, prefix, scope, contents, recipients = config
+  uploader = ZooUploader(Paths.log_root(), s3, prefix, scope, recipients, params, contents)
   # one ring sweep per boot; an offline failure retries on the upload trigger
   uploader.maybe_prune(force=True)
 
   sm = messaging.SubMaster(['deviceState'])
   backoff = 0.1
+  last_service = 0.0
   while not exit_event.is_set():
     sm.update(0)
+    # reap requests whose route disappeared before anything was uploaded
+    now = time.monotonic()
+    if now - last_service >= KEEP_REFRESH_SECONDS:
+      last_service = now
+      uploader.service_upload_requests()
     offroad = params.get_bool('IsOffroad')
     network_type = sm['deviceState'].networkType
     if network_type == NetworkType.none:

@@ -45,17 +45,31 @@ settings surface; mici hardware itself is untested.
 
 ## Everyday control
 
-Settings → Device in the sunnylink app shows the toggles on any device,
-mici included: the archive on/off switch and the upload scope (minimal =
+Settings → Device in the sunnylink app shows the settings on any device,
+mici included: the archive on/off switch, the upload scope (minimal =
 qlog + compressed camera + crash/boot; full = everything; selected =
-kept routes only). String settings (endpoint, bucket, credentials, key,
-prefix) are one-time entry through `configure.py` or SSH.
+marked routes only), and what an upload request sends. The device
+settings panels also carry the upload buttons; see Uploading a route
+below. String settings (endpoint, bucket, credentials, key, prefix) are
+one-time entry through `configure.py` or SSH.
 
-## Selecting routes
+## Uploading a route
 
-Set the Upload Scope to **Selected routes only** and the device uploads
-crash and boot logs plus only the routes you keep. Keep a route from a
-laptop:
+Two buttons under Settings → Device queue one drive for upload, no
+laptop needed: **Upload Last Drive** and **Upload a Route...**, which
+asks for the drive number in hex (like `1a3`). The full route ID also
+works. Only drives still stored on the device can upload; a wrong or
+gone number is rejected with the recent numbers shown.
+
+A queued drive uploads with everything, logs only, or road video only,
+per the **Uploaded Route Contents** setting. The request works in any
+scope, persists across reboots, and clears once the route is fully
+uploaded. If the drive is deleted from the device before anything of it
+was uploaded, the request is dropped.
+
+Routes can also be marked from a laptop. Set the Upload Scope to
+**Selected routes only** and the device uploads crash and boot logs plus
+only the marked routes:
 
 ```
 python tools/zoo/fetch.py keep 000001a3--c20ba54385
@@ -67,12 +81,13 @@ python tools/zoo/fetch.py unkeep 000001a3--c20ba54385
 bucket, so they need a write-capable credential. The read-only
 credential can list what is kept with `kept`. Making a folder named
 after the route inside `keep/` in the provider's console does the same
-thing.
+thing. A finished upload request writes its own marker, so the device
+queue and the laptop list agree.
 
-A kept route uploads even when it was recorded before the archive was
-enabled, as long as it is still on the device. The archive ring never
-deletes a kept route. The device key needs list permission for Selected
-scope, the same key shape as the ring below.
+Marked routes upload even when they were recorded before the archive
+was enabled, as long as they are still on the device. The device key
+needs list permission for Selected scope, the same key shape as the
+ring below.
 
 ## Archive ring
 
@@ -81,9 +96,10 @@ Without a ring, the archive grows forever. Set `ZooS3ArchiveBudget`
 once per boot, and again about once per GiB uploaded, it lists the
 prefix and deletes the oldest routes, whole routes only, until the
 archive fits. Boot and crash files are never pruned — they are tiny,
-and a crash payload cannot be regenerated. Kept routes (see Selecting
-routes) are never pruned, and neither is any route younger than a day,
-so the ring never fights the uploader for the same files. When
+and a crash payload cannot be regenerated. Marked routes (see Uploading
+a route) are never pruned, and neither is a route with a pending
+upload request, or any route younger than a day, so the ring never
+fights the uploader for the same files. When
 protected data alone is over the budget, the ring deletes nothing
 further. Dashcam rules: newest data survives longest. Nothing still on
 the device is touched — pending uploads are invisible to the ring, and
