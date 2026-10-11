@@ -7,10 +7,12 @@ See the LICENSE.md file in the root directory for more details.
 
 Private S3 archive uploader for the zoo backend.
 
-Uploads the same files the comma uploader sees, encrypted to the user's
-PGP public keys, to the user's own S3-compatible bucket. Tracks completion
-with its own xattr so comma uploads and zoo uploads never suppress each
-other, and never marks a file done on an authentication failure.
+Uploads the same files the comma uploader sees to the user's own
+S3-compatible bucket. Tracks completion with its own xattr so comma
+uploads and zoo uploads never suppress each other, and never marks a
+file done on an authentication failure. Encryption to the user's PGP
+public keys is optional (ZooS3Encryption, off by default); without it
+files store as readable objects.
 
 Scope 'minimal' uploads qlogs, the compressed camera, and crash/boot logs;
 'full' uploads everything; 'selected' uploads only routes with a keep
@@ -86,7 +88,7 @@ class ZooUploader(Uploader):
   success_codes = (200, 201)
 
   def __init__(self, root: str, s3: S3Config, prefix: str, scope: str, recipients: list, params: Params,
-               contents: str = 'default'):
+               contents: str = 'default', encrypt: bool = False):
     self.api = None  # no backend API for this destination
     self.dongle_id = prefix
     self.root = root
@@ -94,6 +96,7 @@ class ZooUploader(Uploader):
     self.s3 = s3
     self.scope = scope
     self.contents = contents if contents in ('everything', 'road') else 'default'
+    self.encrypt = encrypt
     self.recipients = recipients
     self.last_filename = ""
     self.immediate_folders = ["crash/", "boot/"]
@@ -242,13 +245,18 @@ class ZooUploader(Uploader):
       finally:
         stream.close()
 
-      pgp.encrypt_file(plain_path, gpg_path, self.recipients)
-      os.unlink(plain_path)
+      if self.encrypt:
+        pgp.encrypt_file(plain_path, gpg_path, self.recipients)
+        os.unlink(plain_path)
+        object_key = f'{self.dongle_id}/{key}.gpg'
+        upload_path = gpg_path
+      else:
+        object_key = f'{self.dongle_id}/{key}'
+        upload_path = plain_path
 
-      object_key = f'{self.dongle_id}/{key}.gpg'
-      url, headers = signed_put_file(self.s3, object_key, gpg_path)
-      self._last_upload_bytes = os.path.getsize(gpg_path)
-      with open(gpg_path, 'rb') as body:
+      url, headers = signed_put_file(self.s3, object_key, upload_path)
+      self._last_upload_bytes = os.path.getsize(upload_path)
+      with open(upload_path, 'rb') as body:
         response = requests.put(url, headers=headers, data=body, timeout=30)
       self._last_response = response
       return response
@@ -472,13 +480,20 @@ def _parse_last_modified(text: str) -> float | None:
     return None
 
 
-def zoo_config_from_params(params: Params) -> tuple[S3Config, str, str, list] | None:
+def zoo_config_from_params(params: Params) -> tuple[S3Config, str, str, str, bool, list] | None:
   endpoint = params.get('ZooS3Endpoint')
   bucket = params.get('ZooS3Bucket')
   key_id = params.get('ZooS3AccessKeyId')
   secret = params.get('ZooS3SecretAccessKey')
   public_key = params.get('ZooS3PublicKey')
-  if not all((endpoint, bucket, key_id, secret, public_key)):
+  if not all((endpoint, bucket, key_id, secret)):
+    return None
+
+  encrypt = params.get_bool('ZooS3Encryption')
+  if encrypt and not public_key:
+    # a silent plaintext fallback would break a promise the user made
+    cloudlog.error('zoo uploader: ZooS3Encryption on but no ZooS3PublicKey; not starting')
+    params.put('ZooS3LastError', 'missing_key')
     return None
 
   s3 = S3Config(
@@ -492,9 +507,14 @@ def zoo_config_from_params(params: Params) -> tuple[S3Config, str, str, list] | 
   prefix = (params.get('ZooS3Prefix') or b'zoo').decode()
   scope = (params.get('ZooS3Scope') or b'minimal').decode()
   contents = (params.get('ZooS3UploadContents') or b'default').decode()
-  # runtime reload tolerates an expired key: warn, never stop uploading
-  recipients = pgp.load_recipients(public_key.decode(), strict_expiry=False)
-  return s3, prefix, scope, contents, recipients
+  try:
+    # runtime reload tolerates an expired key: warn, never stop uploading
+    recipients = pgp.load_recipients(public_key.decode(), strict_expiry=False) if encrypt else []
+  except pgp.PgpError:
+    cloudlog.error('zoo uploader: unreadable ZooS3PublicKey; not starting')
+    params.put('ZooS3LastError', 'bad_key')
+    return None
+  return s3, prefix, scope, contents, encrypt, recipients
 
 
 def main(exit_event: threading.Event | None = None) -> None:
@@ -513,8 +533,8 @@ def main(exit_event: threading.Event | None = None) -> None:
   if config is None:
     cloudlog.info('zoo uploader: missing configuration, not starting')
     return
-  s3, prefix, scope, contents, recipients = config
-  uploader = ZooUploader(Paths.log_root(), s3, prefix, scope, recipients, params, contents)
+  s3, prefix, scope, contents, encrypt, recipients = config
+  uploader = ZooUploader(Paths.log_root(), s3, prefix, scope, recipients, params, contents, encrypt)
   # one ring sweep per boot; an offline failure retries on the upload trigger
   uploader.maybe_prune(force=True)
 

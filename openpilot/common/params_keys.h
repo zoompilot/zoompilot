@@ -331,6 +331,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // endpoint, bucket, credentials, and PGP public key never ride qlogs to
     // comma; none are BACKUP, so they stay out of sunnylink backups too
     {"ZooS3Enabled", {PERSISTENT | DONT_LOG, BOOL, "0"}},
+    {"ZooS3Encryption", {PERSISTENT | DONT_LOG, BOOL, "0"}},
     {"ZooS3Endpoint", {PERSISTENT | DONT_LOG, STRING}},
     {"ZooS3Region", {PERSISTENT | DONT_LOG, STRING}},
     {"ZooS3Bucket", {PERSISTENT | DONT_LOG, STRING}},

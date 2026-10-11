@@ -8,10 +8,10 @@ See the LICENSE.md file in the root directory for more details.
 Read the zoo private S3 archive from a laptop.
 
 With no frontend anywhere, this is the friendly read path: list objects,
-download, gpg-decrypt, and decompress a route's files back to their
-original names. Uses read/list credentials (the device's put-only
-credential cannot read anything back). keep and unkeep write the route
-selection markers, so they need a write-capable credential.
+download, decrypt when the archive is encrypted, and decompress a route's
+files back to their original names. Uses read/list credentials (the
+device's put-only credential cannot read anything back). keep and unkeep
+write the route selection markers, so they need a write-capable credential.
 
 Usage (from the repo root, with requests installed; zstandard optional):
   python tools/zoo/fetch.py list [--prefix P] [options]
@@ -82,9 +82,10 @@ def get_object(cfg: S3Config, key: str, out_path: str) -> str:
   r.raise_for_status()
 
   name = key.rsplit('/', 1)[-1]
-  if not name.endswith('.gpg'):
-    raise RuntimeError(f'not a zoo archive object: {key}')
-  data, name = maybe_decompress(gpg_decrypt(r.content), name[:-4])
+  if name.endswith('.gpg'):
+    data, name = maybe_decompress(gpg_decrypt(r.content), name[:-4])
+  else:
+    data, name = maybe_decompress(r.content, name)
   with open(os.path.expanduser(out_path or name), 'wb') as f:
     f.write(data)
   return out_path or name

@@ -1,9 +1,11 @@
 # zoo private S3 archive
 
-Keep an encrypted copy of your driving data in your own S3-compatible
-bucket. No server to run, no new account: the device encrypts each file to
-your PGP public key and uploads it with a put-only credential. Stock `gpg`
-decrypts the archive anywhere.
+Keep a copy of your driving data in your own S3-compatible bucket. No
+server to run, no new account: the device uploads each file with a
+put-only credential. Encryption is optional and off by default: on, each
+file is encrypted to your PGP public key on the device and stock `gpg`
+decrypts it anywhere; off, files store readable in the bucket, private
+only as far as your bucket access control goes.
 
 Validated on tizi. mici gets the same behavior through the sunnylink
 settings surface; mici hardware itself is untested.
@@ -17,7 +19,8 @@ settings surface; mici hardware itself is untested.
    versioning (a leaked put-only credential can still overwrite objects)
    and a billing alert. Planning an archive ring budget? The device key
    needs list and delete too — see Archive ring below.
-2. Generate a PGP key and export the public key:
+2. Optional, for encryption: generate a PGP key and export the public
+   key. Skipping this keeps uploads unencrypted.
    ```
    gpg --quick-generate-key "zoo archive" ed25519 cert never
    gpg --quick-add-key <FPR> cv25519 encr never
@@ -30,12 +33,13 @@ settings surface; mici hardware itself is untested.
    ```
    python tools/zoo/configure.py --self-test
    ```
-   It validates the key and credentials, suggests an archive prefix, PUTs
-   one encrypted probe object, and prints the exact params to apply on the
-   device over SSH. It also writes `zoo-key-check.asc` next to your public
-   key: decrypt it once with `gpg -d zoo-key-check.asc`. The output names
-   your key, proving the private half really opens what the device will
-   write — do this especially for a backup recipient key. Plain-`http`
+   It validates the credentials and the PGP key when you supply one,
+   suggests an archive prefix, PUTs one probe object, and prints the
+   exact params to apply on the device over SSH. With a key it also
+   writes `zoo-key-check.asc` next to your public key: decrypt it once
+   with `gpg -d zoo-key-check.asc`. The output names your key, proving
+   the private half really opens what the device will write — do this
+   especially for a backup recipient key. Plain-`http`
    endpoints get a warning: contents stay safe (they are ciphertext), but
    the signed request is a short-lived bearer credential on that wire —
    fine for a trusted LAN, not for production.
@@ -46,12 +50,13 @@ settings surface; mici hardware itself is untested.
 ## Everyday control
 
 Settings → Device in the sunnylink app shows the settings on any device,
-mici included: the archive on/off switch, the upload scope (minimal =
-qlog + compressed camera + crash/boot; full = everything; selected =
-marked routes only), and what an upload request sends. The device
-settings panels also carry the upload buttons; see Uploading a route
-below. String settings (endpoint, bucket, credentials, key, prefix) are
-one-time entry through `configure.py` or SSH.
+mici included: the archive on/off switch, the encryption toggle, the
+upload scope (minimal = qlog + compressed camera + crash/boot; full =
+everything; selected = marked routes only), and what an upload request
+sends. The device settings panels also carry the upload buttons; see
+Uploading a route below. String settings (endpoint, bucket, credentials,
+prefix, and the key when encrypting) are one-time entry through
+`configure.py` or SSH.
 
 ## Uploading a route
 
@@ -133,8 +138,9 @@ python tools/zoo/fetch.py list
 python tools/zoo/fetch.py route 000001a3--c20ba54385
 ```
 
-`fetch.py` lists, downloads, decrypts, and decompresses; original file
-names come back. Raw `aws s3 cp` + `gpg` works too.
+`fetch.py` lists, downloads, and decompresses; it decrypts too when the
+archive is encrypted. Original file names come back. Raw `aws s3 cp` +
+`gpg` works on an encrypted archive.
 
 Full-quality video comes back as raw HEVC segments. To watch a route,
 join the segments and remux to MP4:
@@ -148,11 +154,15 @@ ffmpeg -framerate 20 -i all.hevc -c copy fcam.mp4
 
 ## What the bucket provider sees
 
-File contents are end-to-end encrypted. Object names, file types, sizes,
-and upload timing are visible. A corrupted or tampered object is detected
-at decryption (the MDC check), but encryption does not stop someone with
-write access from replacing objects wholesale — that is what bucket
-versioning is for.
+With encryption on, file contents are end-to-end encrypted: object
+names, file types, sizes, and upload timing are visible, nothing else.
+A corrupted or tampered object is detected at decryption (the MDC
+check), but encryption does not stop someone with write access from
+replacing objects wholesale — that is what bucket versioning is for.
+
+With encryption off, everything in the bucket is readable: to the
+provider, to anyone who gets bucket access, and to a public-bucket
+mistake.
 
 ## Changing things later
 
@@ -160,9 +170,9 @@ versioning is for.
   corrected destination; nothing resets.
 - Changing the bucket or prefix **after** uploads succeeded: a new epoch
   starts from that moment; old files stay where they are.
-- Replacing the PGP key: new files use the new key, old files stay
-  readable with the old one. Keep old private keys as long as their files
-  must stay readable.
+- Replacing the PGP key (encryption on): new files use the new key, old
+  files stay readable with the old one. Keep old private keys as long as
+  their files must stay readable.
 - Disabling and re-enabling: files recorded while off upload on
   re-enable.
 - Changing the budget: the next ring pass enforces the new number.

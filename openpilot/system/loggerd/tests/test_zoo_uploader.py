@@ -86,7 +86,7 @@ from openpilot.common.zoo import pgp
 from openpilot.common.zoo import add_upload_request, latest_route_dir, load_upload_requests, normalize_route_request
 from openpilot.common.zoo import add_current_drive_request
 from openpilot.common.zoo.s3sig import S3Config
-from openpilot.system.loggerd.zoo_uploader import ZooUploader, PRUNE_TRIGGER_BYTES
+from openpilot.system.loggerd.zoo_uploader import ZooUploader, PRUNE_TRIGGER_BYTES, zoo_config_from_params
 from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
 
 
@@ -126,7 +126,7 @@ class RecordingStub(http.server.BaseHTTPRequestHandler):
     pass
 
 
-def make_uploader(tmp_path, params=None, scope='minimal', status_map=None, bucket='bucket', contents='full'):
+def make_uploader(tmp_path, params=None, scope='minimal', status_map=None, bucket='bucket', contents='default', encrypt=True):
   params = params or FakeParamsDict()
   if params.get('RouteCount') is None:
     params.put('RouteCount', '0')
@@ -149,7 +149,7 @@ def make_uploader(tmp_path, params=None, scope='minimal', status_map=None, bucke
   # in tests that exercise bytes end to end
   s3 = S3Config(endpoint='http://127.0.0.1:9', region='us-east-1', bucket=bucket, access_key_id='k', secret_access_key='s', path_style=True)
   RecordingStub.responses = status_map or {}
-  return ZooUploader(str(tmp_path), s3, 'zooprefix', scope, [recipient], params, contents)
+  return ZooUploader(str(tmp_path), s3, 'zooprefix', scope, [recipient], params, contents, encrypt)
 
 
 def write_segment(root, counter_hex, files):
@@ -613,3 +613,50 @@ def test_ring_spares_pending_requests(tmp_path):
   # protected, so the ring takes the next route instead and stops under
   # budget
   assert RecordingStub.deletions == ['/bucket/zooprefix/00000002--abcdefghij/qlog.gpg']
+
+
+def test_plaintext_upload_stores_readable_objects(tmp_path):
+  uploader = make_uploader(tmp_path, encrypt=False)
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+
+  seg = write_segment(tmp_path, '00000016', {'qcamera.ts': b'video-bytes'})
+  fn = seg / 'qcamera.ts'
+  assert uploader.upload('qcamera.ts', '00000016--abcdefghij/qcamera.ts', str(fn), 1, False) is True
+
+  # no .gpg suffix and the body is the raw file bytes
+  path, body = RecordingStub.seen[-1]
+  assert path == '/bucket/zooprefix/00000016--abcdefghij/qcamera.ts'
+  assert body == b'video-bytes'
+  assert getxattr(str(fn), 'user.zoo_upload.s3') == uploader.upload_attr_value
+  server.shutdown()
+
+
+def test_config_encryption_needs_key(monkeypatch):
+  monkeypatch.setattr(pgp, 'load_recipients', lambda armored, strict_expiry=True: ['fake-recipient'])
+
+  def base_params():
+    params = FakeParamsDict()
+    for key, value in (('ZooS3Endpoint', 'https://s3.example.com'), ('ZooS3Bucket', 'b'),
+                       ('ZooS3AccessKeyId', 'k'), ('ZooS3SecretAccessKey', 's')):
+      params.put(key, value)
+    return params
+
+  # encryption on without a key: refuse to start, never silently go plaintext
+  params = base_params()
+  params.put('ZooS3Encryption', '1')
+  assert zoo_config_from_params(params) is None
+  assert params.get('ZooS3LastError') == b'missing_key'
+
+  # key supplied: config carries the encryption flag and recipients
+  params = base_params()
+  params.put('ZooS3Encryption', '1')
+  params.put('ZooS3PublicKey', '-----BEGIN PGP PUBLIC KEY BLOCK-----')
+  config = zoo_config_from_params(params)
+  assert config is not None and config[4] is True
+
+  # encryption off: the key is not needed and is not loaded
+  params = base_params()
+  config = zoo_config_from_params(params)
+  assert config is not None and config[4] is False and config[5] == []
