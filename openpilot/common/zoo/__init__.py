@@ -93,3 +93,21 @@ def add_upload_request(params, route: str) -> bool:
   requests.append({'route': route, 'uploaded_any': False})
   save_upload_requests(params, requests)
   return True
+
+
+def add_current_drive_request(params) -> str | None:
+  """Queue the drive the logger is writing right now.
+
+  Returns the route name, or None when zoo S3 is off or no route is
+  active. Only the CurrentRoute param names the route: a log-root scan
+  in the onroad-transition window would find the previous drive.
+  """
+  if not params.get_bool('ZooS3Enabled'):
+    return None
+  route = params.get('CurrentRoute')
+  if not route:
+    return None
+  if isinstance(route, bytes):
+    route = route.decode()
+  add_upload_request(params, route)
+  return route

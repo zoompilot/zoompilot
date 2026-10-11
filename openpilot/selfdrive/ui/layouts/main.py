@@ -1,6 +1,7 @@
 import pyray as rl
 from enum import IntEnum
 import openpilot.cereal.messaging as messaging
+from openpilot.common.zoo import add_current_drive_request
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.layouts.sidebar import Sidebar, SIDEBAR_WIDTH
@@ -120,6 +121,7 @@ class MainLayout(Widget):
     for service in ('bookmarkButton', 'userBookmark'):
       msg = messaging.new_message(service, valid=True)
       self._pm.send(service, msg)
+    add_current_drive_request(ui_state.params)
 
   def _on_onroad_clicked(self):
     self._sidebar.set_visible(not self._sidebar.is_visible)

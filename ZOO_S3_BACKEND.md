@@ -68,6 +68,12 @@ request works in any scope, persists across reboots, and clears once the
 route is fully uploaded. If the drive is deleted from the device before
 anything of it was uploaded, the request is dropped.
 
+During a drive, the on-road bookmark queues the drive in progress: swipe
+left on mici, or tap the flag on tizi. The whole drive uploads, including
+segments recorded after the swipe; uploads wait for the drive to end and
+run offroad unless on-road uploads are on. The "Bookmark Saved" banner is
+the only confirmation on the road.
+
 Routes can also be marked from a laptop. Set the Upload Scope to
 **Selected routes only** and the device uploads crash and boot logs plus
 only the marked routes:

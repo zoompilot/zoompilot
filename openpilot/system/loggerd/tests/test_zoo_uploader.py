@@ -84,6 +84,7 @@ except Exception:
 
 from openpilot.common.zoo import pgp
 from openpilot.common.zoo import add_upload_request, latest_route_dir, load_upload_requests, normalize_route_request
+from openpilot.common.zoo import add_current_drive_request
 from openpilot.common.zoo.s3sig import S3Config
 from openpilot.system.loggerd.zoo_uploader import ZooUploader, PRUNE_TRIGGER_BYTES
 from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
@@ -493,6 +494,26 @@ def test_upload_request_helpers():
   # corrupt JSON falls back to an empty list, never raises
   params.put('ZooS3UploadRoutes', 'not json')
   assert load_upload_requests(params) == []
+
+
+def test_current_drive_request():
+  # zoo S3 off queues nothing
+  params = FakeParamsDict()
+  params.put('CurrentRoute', '000001a3--c20ba54385')
+  assert add_current_drive_request(params) is None
+  assert load_upload_requests(params) == []
+
+  # no active route queues nothing
+  params = FakeParamsDict()
+  params.put('ZooS3Enabled', '1')
+  assert add_current_drive_request(params) is None
+  assert load_upload_requests(params) == []
+
+  # active route queues once; a second swipe is idempotent
+  params.put('CurrentRoute', '000001a3--c20ba54385')
+  assert add_current_drive_request(params) == '000001a3--c20ba54385'
+  assert add_current_drive_request(params) == '000001a3--c20ba54385'
+  assert load_upload_requests(params) == [{'route': '000001a3--c20ba54385', 'uploaded_any': False}]
 
 
 def test_latest_route_dir(tmp_path):
