@@ -557,6 +557,124 @@ def test_latest_route_dir(tmp_path):
   assert latest_route_dir(str(tmp_path)) == '00000010--abcdefghij'
 
 
+def test_window_uploads_newest_budget_worth(tmp_path):
+  # budget 250 bytes, scope counts 100 per route: the two newest routes fit,
+  # the third would push the archive over and stays on the device. The epoch
+  # (RouteCount 30) is above every counter here — the window replaces it.
+  params = FakeParamsDict()
+  params.put('RouteCount', '30')
+  params.put('ZooS3ArchiveBudget', '250')
+  uploader = make_uploader(tmp_path, params=params)
+  write_segment(tmp_path, '00000013', {'qlog': b'a' * 100})
+  write_segment(tmp_path, '00000014', {'qlog': b'b' * 100})
+  write_segment(tmp_path, '00000015', {'qlog': b'c' * 100})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  dirs = sorted({k.split('/')[0] for k in keys})
+  assert dirs == ['00000014--abcdefghij', '00000015--abcdefghij']
+
+
+def test_window_current_drive_always_in(tmp_path):
+  # a route larger than the whole budget still uploads when it is the
+  # newest: the current drive must make it to the archive
+  params = FakeParamsDict()
+  params.put('ZooS3ArchiveBudget', '50')
+  uploader = make_uploader(tmp_path, params=params)
+  write_segment(tmp_path, '0000002a', {'qlog': b'x' * 100})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert [k.split('/')[0] for k in keys] == ['0000002a--abcdefghij']
+
+
+def test_window_slides_as_routes_record(tmp_path):
+  params = FakeParamsDict()
+  params.put('ZooS3ArchiveBudget', '200')
+  uploader = make_uploader(tmp_path, params=params)
+  write_segment(tmp_path, '0000001a', {'qlog': b'a' * 100})
+  write_segment(tmp_path, '0000001b', {'qlog': b'b' * 100})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert sorted({k.split('/')[0] for k in keys}) == ['0000001a--abcdefghij', '0000001b--abcdefghij']
+
+  # a new route pushes the oldest one out of the window: it stays on the
+  # device, uploaded files are never re-uploaded or un-uploaded
+  write_segment(tmp_path, '0000001c', {'qlog': b'c' * 100})
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert sorted({k.split('/')[0] for k in keys}) == ['0000001b--abcdefghij', '0000001c--abcdefghij']
+
+
+def test_window_counts_scope_masked(tmp_path):
+  # minimal scope uploads qlogs only, so the big rlog is invisible to the
+  # window and both routes fit; under full scope the rlog counts and the
+  # older route falls out
+  files = {'qlog': b'q' * 100, 'rlog': b'r' * 10000}
+  params = FakeParamsDict()
+  params.put('ZooS3ArchiveBudget', '250')
+
+  uploader = make_uploader(tmp_path, params=params, scope='minimal')
+  write_segment(tmp_path, '0000001a', files)
+  write_segment(tmp_path, '0000001b', {'qlog': b'b' * 100})
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert sorted({k.split('/')[0] for k in keys}) == ['0000001a--abcdefghij', '0000001b--abcdefghij']
+
+  uploader = make_uploader(tmp_path, params=params, scope='full')
+  write_segment(tmp_path, '0000001a', files)
+  write_segment(tmp_path, '0000001b', {'qlog': b'b' * 100})
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert [k.split('/')[0] for k in keys] == ['0000001b--abcdefghij']
+
+
+def test_window_requests_and_keeps_bypass(tmp_path):
+  # a requested route uploads whatever the window says; the same holds for
+  # a kept route under selected scope
+  params = FakeParamsDict()
+  params.put('ZooS3ArchiveBudget', '50')
+  params.put('RouteCount', '30')
+  uploader = make_uploader(tmp_path, params=params)
+  add_upload_request(params, '00000010--abcdefghij')
+  write_segment(tmp_path, '00000010', {'qlog': b'old' * 100, 'qcamera.ts': b'v'})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert sorted(k.rsplit('/', 1)[-1] for k in keys if k.startswith('00000010')) == ['qcamera.ts', 'qlog']
+
+  uploader = make_uploader(tmp_path, params=params, scope='selected')
+  _freeze_keep_markers(uploader, ['00000011--abcdefghij'])
+  write_segment(tmp_path, '00000011', {'qlog': b'old' * 100, 'rlog': b'r'})
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert sorted(k.rsplit('/', 1)[-1] for k in keys if k.startswith('00000011')) == ['qlog', 'rlog']
+
+
+def test_window_leaves_boot_epoch_gated(tmp_path):
+  # the window is route-only: boot files keep their enable-epoch gate even
+  # when a budget is set
+  params = FakeParamsDict()
+  params.put('RouteCount', '30')
+  params.put('BootCount', '2')
+  params.put('ZooS3ArchiveBudget', '250')
+  uploader = make_uploader(tmp_path, params=params)
+  write_segment(tmp_path, '00000010', {'qlog': b'x' * 10})
+  (tmp_path / 'boot').mkdir()
+  (tmp_path / 'boot' / '00000001--old.zst').write_bytes(b'oldboot')
+  (tmp_path / 'boot' / '00000002--new.zst').write_bytes(b'newboot')
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  boots = [k for k in keys if k.startswith('boot/')]
+  assert boots == ['boot/00000002--new.zst']
+  assert any(k.startswith('00000010--abcdefghij/') for k in keys)
+
+
+def test_window_unset_keeps_epoch(tmp_path):
+  # no budget: today's behavior — the enable epoch is the only gate
+  params = FakeParamsDict()
+  params.put('RouteCount', '20')
+  uploader = make_uploader(tmp_path, params=params)
+  write_segment(tmp_path, '00000013', {'qlog': b'old'})
+  write_segment(tmp_path, '00000014', {'qlog': b'new'})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert sorted({k.split('/')[0] for k in keys}) == ['00000014--abcdefghij']
+
+
 def test_upload_request_bypasses_scope_and_epoch(tmp_path):
   params = FakeParamsDict()
   params.put('RouteCount', '20')  # epoch records 20: route 13 predates it

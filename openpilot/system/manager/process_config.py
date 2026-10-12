@@ -5,7 +5,6 @@ import platform
 from opendbc.car.structs import car
 from openpilot.cereal import custom
 from openpilot.common.params import Params
-from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware import PC, COMMA_HARDWARE
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
 from openpilot.common.hardware.hw import Paths

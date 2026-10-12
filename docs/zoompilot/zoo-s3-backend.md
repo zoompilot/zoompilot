@@ -43,9 +43,11 @@ settings surface; mici hardware itself is untested.
    endpoints get a warning: contents stay safe (they are ciphertext), but
    the signed request is a short-lived bearer credential on that wire —
    fine for a trusted LAN, not for production.
-4. Apply the printed lines over SSH and restart the device. Uploads start
-   from that moment (no backlog of old drives; the route/boot counters are
-   the marker, not the clock).
+4. Apply the printed lines over SSH and restart the device. Without an
+   archive budget, uploads start from that moment and nothing older comes
+   along (the route/boot counters are the marker, not the clock). With a
+   budget set, the uploader also walks backward: the newest budget-worth
+   of routes on the device uploads as the starting archive.
 
 ## Everyday control
 
@@ -117,6 +119,18 @@ protected data alone is over the budget, the ring deletes nothing
 further. Dashcam rules: newest data survives longest. Nothing still on
 the device is touched — pending uploads are invisible to the ring, and
 completed uploads never repeat.
+
+The budget doubles as the upload window. With it set, the uploader
+considers only the newest budget-worth of routes on the device: counted
+per segment in the files your scope uploads, whole routes, newest first.
+The newest drive always makes it in, and the walk stops at the first
+older route that would push the total over the budget, so automatic
+uploads stay at or under it — the ring then trims anything older that
+requested uploads added. A pending upload request or a kept route rides
+past the window: anything you asked for uploads no matter its age. The
+window never deletes anything — it only decides what is a candidate; the
+ring is still the only deleter, and boot and crash files keep their own
+rules. With no budget set, the enable moment stays the only gate.
 
 The ring needs more of the credential: with a budget set, the device
 key requires `listFiles` and `deleteFiles` next to `PutObject`. Keep

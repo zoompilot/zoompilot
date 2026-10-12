@@ -21,6 +21,14 @@ their routes from the archive ring. An upload request (queued on the
 device or by a marker) uploads one route per ZooS3UploadContents
 regardless of scope, persists until the route is fully uploaded, then
 clears.
+
+When a ZooS3ArchiveBudget is set it doubles as the upload window: the
+automatic path considers only the newest budget-worth of routes, counted
+per segment in the files the scope uploads, whole routes, newest first.
+The window replaces the enable epoch for route files (a pending request
+or a keep marker bypasses it), never deletes anything, and boot and
+crash files stay epoch-gated as before. Without a budget the enable
+epoch remains the only gate and nothing pre-dating it uploads.
 """
 
 import os
@@ -43,7 +51,7 @@ from openpilot.common.utils import get_upload_stream
 from openpilot.common.realtime import set_core_affinity
 from openpilot.common.hardware.hw import Paths
 from openpilot.common.swaglog import cloudlog
-from openpilot.system.loggerd.uploader import Uploader, clear_locks
+from openpilot.system.loggerd.uploader import Uploader, clear_locks, listdir_by_creation
 from openpilot.system.loggerd.xattr_cache import getxattr
 from openpilot.common.zoo import pgp, load_upload_requests, save_upload_requests
 from openpilot.common.zoo.s3sig import S3Config, signed_put, signed_put_file, signed_request, parse_budget
@@ -67,6 +75,10 @@ PRUNE_MIN_AGE_SECONDS = 24 * 60 * 60
 # one list+sweep per GiB uploaded keeps ring traffic negligible next to the
 # uploads it meters
 PRUNE_TRIGGER_BYTES = 1 << 30
+
+# the upload window cache is stale after this long even if the route set
+# has not changed: a recording route keeps growing inside it
+WINDOW_RECOMPUTE_SECONDS = 60
 
 # S3 <Code> to a short, sanitized reason; never put the response body or the
 # signed URL into params or logs
@@ -119,7 +131,9 @@ class ZooUploader(Uploader):
         pass
 
     # archive ring: when a budget is set, oldest objects are pruned until the
-    # bucket fits it; an unparseable value means the ring stays off
+    # bucket fits it; an unparseable value means the ring stays off. The
+    # budget doubles as the upload window: the automatic path only considers
+    # the newest budget-worth of routes.
     budget_text = (self.params.get('ZooS3ArchiveBudget') or b'').decode()
     self.budget = parse_budget(budget_text)
     if budget_text and self.budget is None:
@@ -130,6 +144,10 @@ class ZooUploader(Uploader):
     # KEEP_REFRESH_SECONDS
     self.keep_routes: set[str] = set()
     self._keep_checked_at = 0.0
+
+    # upload window cache: (route-dir names, computed at, in-window set),
+    # recomputed when the route set changes or the cache goes stale
+    self._window_cache = None
 
     self._init_epoch()
 
@@ -174,11 +192,24 @@ class ZooUploader(Uploader):
     for name, key, fn in super().list_upload_files(metered):
       if not self._in_scope(key, pending_routes):
         continue
-      # a requested route bypasses the enable moment in every scope: the
-      # user asked for this drive, and a selected scope means the user
-      # picked the routes too
+      # a requested route bypasses every age gate in every scope: the user
+      # asked for this drive, and a selected scope means the user picked
+      # the routes too
       route = self._route_of(key)
-      if route in pending_routes or self.scope == 'selected' or self._after_epoch(key):
+      if route in pending_routes or self.scope == 'selected':
+        yield name, key, fn
+        continue
+      if key.split('/', 1)[0] in ('crash', 'boot'):
+        # tiny and outside the window; boot still honors the enable epoch
+        if self._after_epoch(key):
+          yield name, key, fn
+      elif self.budget is None:
+        # no archive budget: the enable epoch is the only gate
+        if self._after_epoch(key):
+          yield name, key, fn
+      elif route in self._window_routes():
+        # the budget doubles as the upload window: only the newest
+        # budget-worth of routes is auto-uploaded, whatever the epoch says
         yield name, key, fn
 
   def _in_scope(self, key: str, pending_routes: frozenset | set = frozenset()) -> bool:
@@ -208,6 +239,58 @@ class ZooUploader(Uploader):
   @staticmethod
   def _route_of(key: str) -> str:
     return key.split('/', 1)[0]
+
+  @staticmethod
+  def _is_route_dir(name: str) -> bool:
+    # route directories carry a hex boot counter: 000001a3--c20ba54385.
+    # boot/, crash/, and the spool never match.
+    if '--' not in name:
+      return False
+    try:
+      int(name.split('--', 1)[0], 16)
+    except ValueError:
+      return False
+    return True
+
+  def _window_bytes(self, route_dir: str) -> int:
+    # the files this scope would upload from one route; pending-route
+    # contents masks do not apply here, the window only gates the
+    # automatic path
+    total = 0
+    with os.scandir(route_dir) as entries:
+      for entry in entries:
+        if entry.is_file() and (self.scope == 'full' or entry.name in SCOPE_MINIMAL_FILES):
+          total += entry.stat(follow_symlinks=False).st_size
+    return total
+
+  def _window_routes(self) -> frozenset:
+    """Routes inside the upload window: the newest budget-worth of driving.
+
+    Counted per segment in the files this scope uploads, whole routes
+    only, newest first. The newest route always makes it in, and the span
+    stops at the first older route that would push the total over the
+    budget. The window is a candidate filter only — it never deletes
+    anything; the ring is the only deleter.
+    """
+    now = time.monotonic()
+    names = tuple(d for d in listdir_by_creation(self.root) if self._is_route_dir(d))
+    if self._window_cache is not None:
+      cached_names, cached_at, cached_set = self._window_cache
+      if cached_names == names and now - cached_at < WINDOW_RECOMPUTE_SECONDS:
+        return cached_set
+
+    remaining = self.budget
+    in_window: list[str] = []
+    for route in reversed(names):  # newest first
+      used = self._window_bytes(os.path.join(self.root, route))
+      if in_window and remaining - used < 0:
+        break  # this route would push the archive over the budget
+      in_window.append(route)
+      remaining -= used
+
+    window = frozenset(in_window)
+    self._window_cache = (names, now, window)
+    return window
 
   def _refresh_keep_routes(self) -> None:
     if self.scope != 'selected':
