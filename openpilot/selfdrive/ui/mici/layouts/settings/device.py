@@ -3,11 +3,13 @@ import pyray as rl
 from collections.abc import Callable
 
 from openpilot.common.basedir import BASEDIR
+from openpilot.common.hardware.hw import Paths
 from openpilot.common.params import Params
 from openpilot.common.time_helpers import system_time_valid
+from openpilot.common.zoo import add_upload_request, latest_route_dir, list_route_dirs, normalize_route_request
 from openpilot.system.ui.widgets.scroller import NavRawScrollPanel, NavScroller
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigCircleButton
-from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigConfirmationDialog
+from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigConfirmationDialog, BigInputDialog
 from openpilot.selfdrive.ui.mici.widgets.pairing_dialog import PairingDialog
 from openpilot.selfdrive.ui.mici.onroad.cabin_camera_dialog import CabinCameraDialog
 from openpilot.selfdrive.ui.mici.layouts.onboarding import TrainingGuide, TermsPage
@@ -193,6 +195,14 @@ class DeviceLayoutMici(NavScroller):
     cabin_cam_btn.set_click_callback(lambda: gui_app.push_widget(CabinCameraDialog()))
     cabin_cam_btn.set_enabled(lambda: ui_state.is_offroad())
 
+    upload_last_btn = BigButton("upload last drive", "", gui_app.texture("icons_mici/settings/device/cameras.png", 64, 64))
+    upload_last_btn.set_click_callback(self._zoo_upload_last_drive)
+    upload_last_btn.set_enabled(lambda: ui_state.params.get_bool("ZooS3Enabled"))
+
+    upload_route_btn = BigButton("upload a route", "", gui_app.texture("icons_mici/settings/device/cameras.png", 64, 64))
+    upload_route_btn.set_click_callback(self._zoo_upload_route)
+    upload_route_btn.set_enabled(lambda: ui_state.params.get_bool("ZooS3Enabled"))
+
     review_training_guide_btn = BigButton("review\ntraining guide", "", gui_app.texture("icons_mici/settings/device/info.png", 64, 64))
     review_training_guide_btn.set_click_callback(lambda: gui_app.push_widget(ReviewTrainingGuide(completed_callback=lambda: gui_app.pop_widgets_to(self))))
     review_training_guide_btn.set_enabled(lambda: ui_state.is_offroad())
@@ -205,12 +215,37 @@ class DeviceLayoutMici(NavScroller):
       PairBigButton(),
       review_training_guide_btn,
       cabin_cam_btn,
+      upload_last_btn,
+      upload_route_btn,
       terms_btn,
       regulatory_btn,
       reset_calibration_btn,
       reboot_btn,
       self._power_off_btn,
     ])
+
+  def _zoo_upload_last_drive(self):
+    route = latest_route_dir(Paths.log_root())
+    if route is None:
+      gui_app.push_widget(BigDialog("", "No drives are stored on this device."))
+      return
+    self._zoo_queue_request(route)
+
+  def _zoo_upload_route(self):
+    def _confirmed(text: str):
+      route = normalize_route_request(text, list_route_dirs(Paths.log_root()))
+      if route is None:
+        gui_app.push_widget(BigDialog("", "No drive with that number is stored on this device."))
+        return
+      self._zoo_queue_request(route)
+
+    gui_app.push_widget(BigInputDialog("drive number, e.g. 1a3", minimum_length=1, confirm_callback=_confirmed))
+
+  def _zoo_queue_request(self, route: str):
+    if add_upload_request(ui_state.params, route):
+      gui_app.push_widget(BigDialog("", f"Queued for upload:\n{route}"))
+    else:
+      gui_app.push_widget(BigDialog("", "Already queued for upload."))
 
   def _on_regulatory(self):
     if not self._fcc_dialog:

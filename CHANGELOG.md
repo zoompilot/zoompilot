@@ -1,5 +1,12 @@
 zoompilot vUNRELEASED
 ========================
+**zoo private archive**
+* Keep a copy of your driving data in your own S3-compatible bucket (AWS, R2, B2, MinIO). End-to-end PGP encryption is optional and off by default; stock `gpg` decrypts an encrypted archive anywhere.
+* One-time setup on a laptop with `tools/zoo/configure.py`: bucket and put-only credentials; add your own PGP key for encryption.
+* Reads back with `tools/zoo/fetch.py`. Toggles also appear under Settings > Device in the sunnylink app.
+* Route uploads: **Upload Last Drive** and **Upload a Route...** in Settings > Device queue a drive (qlog + qcam by default; road cam + rlog, or everything, optional); the request persists until uploaded. Scope **Selected** uploads only routes kept with `tools/zoo/fetch.py keep <route>`. Requested and kept routes survive the archive ring.
+* Optional archive ring: set a bucket budget like 8G and the device deletes the oldest archived routes to stay under it. Automatic, dashcam rules; newest routes survive longest, boot and crash files are never pruned.
+
 **jetlink support!**
 * Run big models on a Mac, Jetson, Linux PC, iPhone/iPad or Android <3
 * Settings > Models > Jetlink.

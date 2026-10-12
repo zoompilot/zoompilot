@@ -108,6 +108,9 @@ def uploader_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
 
   return always_run(started, params, CP)
 
+def zoo_s3_enabled(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return params.get_bool("ZooS3Enabled")
+
 def or_(*fns):
   return lambda *args: operator.or_(*(fn(*args) for fn in fns))
 
@@ -231,6 +234,7 @@ procs = [
   PythonProcess("tombstoned", "openpilot.system.tombstoned", always_run, enabled=not PC),
   PythonProcess("updated", "openpilot.system.updated.updated", only_offroad, enabled=not PC),
   PythonProcess("uploader", "openpilot.system.loggerd.uploader", uploader_ready),
+  PythonProcess("zoo_uploader", "openpilot.system.loggerd.zoo_uploader", and_(uploader_ready, zoo_s3_enabled)),
   PythonProcess("statsd", "openpilot.sunnypilot.system.statsd", always_run),
 
   # debug procs
