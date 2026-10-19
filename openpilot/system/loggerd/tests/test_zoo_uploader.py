@@ -83,7 +83,7 @@ except Exception:
   sys.modules['openpilot.common.swaglog'] = swaglog_mod
 
 from openpilot.common.zoo import pgp
-from openpilot.common.zoo import add_upload_request, latest_route_dir, load_upload_requests, normalize_route_request
+from openpilot.common.zoo import add_upload_request, latest_route_dir, list_route_dirs, load_upload_requests, normalize_route_request
 from openpilot.common.zoo import add_current_drive_request
 from openpilot.common.zoo.s3sig import S3Config
 from openpilot.system.loggerd.uploader import MAX_UPLOAD_SIZES, Uploader, listdir_by_creation
@@ -153,8 +153,9 @@ def make_uploader(tmp_path, params=None, scope='minimal', status_map=None, bucke
   return ZooUploader(str(tmp_path), s3, 'zooprefix', scope, [recipient], params, contents, encrypt)
 
 
-def write_segment(root, counter_hex, files):
-  seg = root / f'{counter_hex}--abcdefghij'
+def write_segment(root, counter_hex, files, part=1):
+  # real loggerd layout: one directory per segment, `<route>--<part>`
+  seg = root / f'{counter_hex}--abcdefghij--{part}'
   seg.mkdir(parents=True, exist_ok=True)
   for name, data in files.items():
     (seg / name).write_bytes(data)
@@ -194,9 +195,9 @@ def test_hidden_dirs_never_upload(tmp_path):
   (tmp_path / '.zoo-spool' / 'tmpabc.plain').write_bytes(b'in flight')
 
   # the stock enumeration behind both uploaders and the deleter skips it
-  assert listdir_by_creation(str(tmp_path)) == ['00000010--abcdefghij']
+  assert listdir_by_creation(str(tmp_path)) == ['00000010--abcdefghij--1']
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
-  assert keys == ['00000010--abcdefghij/qlog']
+  assert keys == ['00000010--abcdefghij--1/qlog']
   assert not uploader._in_scope('.zoo-spool/tmpabc.plain')
 
 
@@ -214,9 +215,9 @@ def test_size_caps_by_uploader(tmp_path, monkeypatch):
   # this qlog is over the comma qlog cap, and the zoo uploader sends it anyway
   monkeypatch.setattr(Uploader, 'max_upload_sizes', {'qlog': 4})
   seg = write_segment(tmp_path, '00000017', {'qlog': b'0123456789'})
-  ok = uploader.upload('qlog', '00000017--abcdefghij/qlog', str(seg / 'qlog'), 1, False)
+  ok = uploader.upload('qlog', '00000017--abcdefghij--1/qlog', str(seg / 'qlog'), 1, False)
   assert ok is True
-  assert any(k.endswith('/00000017--abcdefghij/qlog.gpg') for k, _ in RecordingStub.seen)
+  assert any(k.endswith('/00000017--abcdefghij--1/qlog.gpg') for k, _ in RecordingStub.seen)
   server.shutdown()
 
 
@@ -236,7 +237,7 @@ def test_epoch_skips_pre_enable_dirs(tmp_path):
 
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
   dirs = sorted(k.split('/')[0] for k in keys if not k.startswith(('boot/', 'crash/')))
-  assert dirs == ['00000014--abcdefghij', '00000015--abcdefghij']
+  assert dirs == ['00000014--abcdefghij--1', '00000015--abcdefghij--1']
   boots = [k for k in keys if k.startswith('boot/')]
   assert boots == ['boot/00000003--new.zst']
 
@@ -253,12 +254,12 @@ def test_upload_flow_end_to_end(tmp_path, monkeypatch):
 
   seg = write_segment(tmp_path, '00000016', {'qcamera.ts': b'video-bytes'})
   fn = seg / 'qcamera.ts'
-  ok = uploader.upload('qcamera.ts', '00000016--abcdefghij/qcamera.ts', str(fn), 1, False)
+  ok = uploader.upload('qcamera.ts', '00000016--abcdefghij--1/qcamera.ts', str(fn), 1, False)
   assert ok is True
 
   # object key shape and content through the whole pipeline
   path, body = RecordingStub.seen[-1]
-  assert path == '/bucket/zooprefix/00000016--abcdefghij/qcamera.ts.gpg'
+  assert path == '/bucket/zooprefix/00000016--abcdefghij--1/qcamera.ts.gpg'
   assert body == b'GPG(video-bytes)'
 
   # tagged done with the fingerprint value; the comma xattr stays clear
@@ -294,7 +295,7 @@ def test_auth_failure_keeps_file_pending(tmp_path, monkeypatch):
 
   seg = write_segment(tmp_path, '00000017', {'qlog': b'x'})
   fn = seg / 'qlog'
-  ok = uploader.upload('qlog', '00000017--abcdefghij/qlog.zst', str(fn), 1, False)
+  ok = uploader.upload('qlog', '00000017--abcdefghij--1/qlog.zst', str(fn), 1, False)
   assert ok is False
 
   # NOT tagged: the file stays eligible, and the error is classified
@@ -332,7 +333,7 @@ def test_comma_tag_does_not_suppress_zoo(tmp_path):
   setxattr(str(fn), 'user.upload', b'1')  # comma uploader already took it
 
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
-  assert '00000018--abcdefghij/qlog' in keys
+  assert '00000018--abcdefghij--1/qlog' in keys
 
 
 def test_ring_off_by_default(tmp_path):
@@ -425,7 +426,7 @@ def test_selected_scope_uploads_only_kept(tmp_path):
 
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
   routes = sorted({k.split('/')[0] for k in keys if not k.startswith(('boot/', 'crash/'))})
-  assert routes == ['00000020--abcdefghij']
+  assert routes == ['00000020--abcdefghij--1']
   assert any(k.endswith('rlog') for k in keys)  # full files of a kept route
   assert any(k.startswith('crash/') for k in keys)
 
@@ -510,6 +511,8 @@ def test_normalize_route_request():
   assert normalize_route_request('000001A3--C20BA54385', dirs) == full
   assert normalize_route_request('dongleid|000001a3--c20ba54385', dirs) == full
   assert normalize_route_request('dongleid/000001a3--c20ba54385', dirs) == full
+  # a pasted segment directory still finds its route
+  assert normalize_route_request('000001a3--c20ba54385--3', dirs) == full
   assert normalize_route_request('f', dirs) == '0000000f--abcdef0123'
   # wrong suffix on a real counter never matches
   assert normalize_route_request('1a3--deadbeef00', dirs) is None
@@ -557,6 +560,44 @@ def test_latest_route_dir(tmp_path):
   assert latest_route_dir(str(tmp_path)) == '00000010--abcdefghij'
 
 
+def test_route_of_groups_segments(tmp_path):
+  # one drive, two segments on disk: the route identity covers both
+  write_segment(tmp_path, '0000002b', {'qlog': b'one'}, part=1)
+  write_segment(tmp_path, '0000002b', {'qlog': b'two'}, part=2)
+  assert list_route_dirs(str(tmp_path)) == ['0000002b--abcdefghij']
+  assert latest_route_dir(str(tmp_path)) == '0000002b--abcdefghij'
+
+
+def test_bookmark_covers_every_segment(tmp_path):
+  # the on-road bookmark queues the route name the logger reports; the
+  # upload must reach every segment directory of that route
+  params = FakeParamsDict()
+  params.put('ZooS3Enabled', '1')
+  params.put('CurrentRoute', '0000002b--abcdefghij')
+  write_segment(tmp_path, '0000002b', {'qlog': b'one'}, part=1)
+  write_segment(tmp_path, '0000002b', {'qcamera.ts': b'two'}, part=2)
+
+  assert add_current_drive_request(params) == '0000002b--abcdefghij'
+  uploader = make_uploader(tmp_path, params=params)
+  keys = sorted(k for _, k, _ in uploader.list_upload_files(metered=False))
+  assert keys == ['0000002b--abcdefghij--1/qlog', '0000002b--abcdefghij--2/qcamera.ts']
+
+
+def test_window_counts_whole_routes(tmp_path):
+  # segments of one route count together in the window: with a 250-byte
+  # budget, the 100-byte newest route fits and the 200-byte older route
+  # stays out — a per-segment mistake would let one segment slip in
+  params = FakeParamsDict()
+  params.put('ZooS3ArchiveBudget', '250')
+  uploader = make_uploader(tmp_path, params=params)
+  write_segment(tmp_path, '0000001a', {'qlog': b'a' * 100}, part=1)
+  write_segment(tmp_path, '0000001a', {'qlog': b'a' * 100}, part=2)
+  write_segment(tmp_path, '0000001b', {'qlog': b'b' * 100})
+
+  keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
+  assert sorted({k.split('/')[0] for k in keys}) == ['0000001b--abcdefghij--1']
+
+
 def test_window_uploads_newest_budget_worth(tmp_path):
   # budget 250 bytes, scope counts 100 per route: the two newest routes fit,
   # the third would push the archive over and stays on the device. The epoch
@@ -571,7 +612,7 @@ def test_window_uploads_newest_budget_worth(tmp_path):
 
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
   dirs = sorted({k.split('/')[0] for k in keys})
-  assert dirs == ['00000014--abcdefghij', '00000015--abcdefghij']
+  assert dirs == ['00000014--abcdefghij--1', '00000015--abcdefghij--1']
 
 
 def test_window_current_drive_always_in(tmp_path):
@@ -583,7 +624,7 @@ def test_window_current_drive_always_in(tmp_path):
   write_segment(tmp_path, '0000002a', {'qlog': b'x' * 100})
 
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
-  assert [k.split('/')[0] for k in keys] == ['0000002a--abcdefghij']
+  assert [k.split('/')[0] for k in keys] == ['0000002a--abcdefghij--1']
 
 
 def test_window_slides_as_routes_record(tmp_path):
@@ -594,13 +635,13 @@ def test_window_slides_as_routes_record(tmp_path):
   write_segment(tmp_path, '0000001b', {'qlog': b'b' * 100})
 
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
-  assert sorted({k.split('/')[0] for k in keys}) == ['0000001a--abcdefghij', '0000001b--abcdefghij']
+  assert sorted({k.split('/')[0] for k in keys}) == ['0000001a--abcdefghij--1', '0000001b--abcdefghij--1']
 
   # a new route pushes the oldest one out of the window: it stays on the
   # device, uploaded files are never re-uploaded or un-uploaded
   write_segment(tmp_path, '0000001c', {'qlog': b'c' * 100})
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
-  assert sorted({k.split('/')[0] for k in keys}) == ['0000001b--abcdefghij', '0000001c--abcdefghij']
+  assert sorted({k.split('/')[0] for k in keys}) == ['0000001b--abcdefghij--1', '0000001c--abcdefghij--1']
 
 
 def test_window_counts_scope_masked(tmp_path):
@@ -615,13 +656,13 @@ def test_window_counts_scope_masked(tmp_path):
   write_segment(tmp_path, '0000001a', files)
   write_segment(tmp_path, '0000001b', {'qlog': b'b' * 100})
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
-  assert sorted({k.split('/')[0] for k in keys}) == ['0000001a--abcdefghij', '0000001b--abcdefghij']
+  assert sorted({k.split('/')[0] for k in keys}) == ['0000001a--abcdefghij--1', '0000001b--abcdefghij--1']
 
   uploader = make_uploader(tmp_path, params=params, scope='full')
   write_segment(tmp_path, '0000001a', files)
   write_segment(tmp_path, '0000001b', {'qlog': b'b' * 100})
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
-  assert [k.split('/')[0] for k in keys] == ['0000001b--abcdefghij']
+  assert [k.split('/')[0] for k in keys] == ['0000001b--abcdefghij--1']
 
 
 def test_window_requests_and_keeps_bypass(tmp_path):
@@ -660,7 +701,7 @@ def test_window_leaves_boot_epoch_gated(tmp_path):
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
   boots = [k for k in keys if k.startswith('boot/')]
   assert boots == ['boot/00000002--new.zst']
-  assert any(k.startswith('00000010--abcdefghij/') for k in keys)
+  assert any(k.startswith('00000010--abcdefghij--1/') for k in keys)
 
 
 def test_window_unset_keeps_epoch(tmp_path):
@@ -672,7 +713,7 @@ def test_window_unset_keeps_epoch(tmp_path):
   write_segment(tmp_path, '00000014', {'qlog': b'new'})
 
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
-  assert sorted({k.split('/')[0] for k in keys}) == ['00000014--abcdefghij']
+  assert sorted({k.split('/')[0] for k in keys}) == ['00000014--abcdefghij--1']
 
 
 def test_upload_request_bypasses_scope_and_epoch(tmp_path):
@@ -685,7 +726,7 @@ def test_upload_request_bypasses_scope_and_epoch(tmp_path):
 
   keys = [key for _, key, _ in uploader.list_upload_files(metered=False)]
   # minimal scope leaves 19 alone, but the request pulls the whole drive in
-  assert '00000019--abcdefghij/rlog' not in keys
+  assert '00000019--abcdefghij--1/rlog' not in keys
   assert sorted(k.rsplit('/', 1)[-1] for k in keys if k.startswith('00000013')) == ['fcamera.hevc', 'qlog', 'rlog']
 
 
@@ -775,11 +816,11 @@ def test_plaintext_upload_stores_readable_objects(tmp_path):
 
   seg = write_segment(tmp_path, '00000016', {'qcamera.ts': b'video-bytes'})
   fn = seg / 'qcamera.ts'
-  assert uploader.upload('qcamera.ts', '00000016--abcdefghij/qcamera.ts', str(fn), 1, False) is True
+  assert uploader.upload('qcamera.ts', '00000016--abcdefghij--1/qcamera.ts', str(fn), 1, False) is True
 
   # no .gpg suffix and the body is the raw file bytes
   path, body = RecordingStub.seen[-1]
-  assert path == '/bucket/zooprefix/00000016--abcdefghij/qcamera.ts'
+  assert path == '/bucket/zooprefix/00000016--abcdefghij--1/qcamera.ts'
   assert body == b'video-bytes'
   assert getxattr(str(fn), 'user.zoo_upload.s3') == uploader.upload_attr_value
   server.shutdown()

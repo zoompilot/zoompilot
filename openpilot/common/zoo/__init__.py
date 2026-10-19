@@ -16,13 +16,26 @@ UPLOAD_ROUTES_PARAM = 'ZooS3UploadRoutes'
 _COUNTER_SPLIT = re.compile(r'-+')
 
 
+def route_of_dir(name: str) -> str:
+  """The route behind one log-root directory name.
+
+  The logger writes one directory per segment, `<route>--<part>`; the
+  route drops the trailing part. Anything else (a bare route name, boot,
+  crash) passes through unchanged.
+  """
+  base, sep, tail = name.rpartition('--')
+  if sep and tail.isdigit():
+    return base
+  return name
+
+
 def list_route_dirs(root: str) -> list[str]:
-  """Route directory names in the log root, oldest first."""
-  dirs = []
+  """Route names in the log root, oldest first."""
+  routes: dict[str, None] = {}
   try:
-    entries = os.listdir(root)
+    entries = sorted(os.listdir(root))
   except OSError:
-    return dirs
+    return list(routes)
   for name in entries:
     if not os.path.isdir(os.path.join(root, name)):
       continue
@@ -30,8 +43,8 @@ def list_route_dirs(root: str) -> list[str]:
       int(name.split('--', 1)[0], 16)
     except ValueError:
       continue  # boot/, crash/, spool, and anything else that is not a route
-    dirs.append(name)
-  return sorted(dirs)
+    routes.setdefault(route_of_dir(name), None)
+  return list(routes)
 
 
 def latest_route_dir(root: str) -> str | None:
@@ -49,7 +62,7 @@ def normalize_route_request(text: str, route_dirs: list[str]) -> str | None:
   token = (text or '').strip()
   if not token:
     return None
-  token = re.split(r'[/|\s]', token)[-1].lower()
+  token = route_of_dir(re.split(r'[/|\s]', token)[-1].lower())
   parts = _COUNTER_SPLIT.split(token, maxsplit=1)
   counter_text = parts[0]
   suffix = parts[1] if len(parts) > 1 else None

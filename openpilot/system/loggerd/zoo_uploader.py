@@ -53,7 +53,7 @@ from openpilot.common.hardware.hw import Paths
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.loggerd.uploader import Uploader, clear_locks, listdir_by_creation
 from openpilot.system.loggerd.xattr_cache import getxattr
-from openpilot.common.zoo import pgp, load_upload_requests, save_upload_requests
+from openpilot.common.zoo import pgp, load_upload_requests, route_of_dir, save_upload_requests
 from openpilot.common.zoo.s3sig import S3Config, signed_put, signed_put_file, signed_request, parse_budget
 
 NetworkType = log.DeviceState.NetworkType
@@ -238,7 +238,9 @@ class ZooUploader(Uploader):
 
   @staticmethod
   def _route_of(key: str) -> str:
-    return key.split('/', 1)[0]
+    # files live in segment directories, `<route>--<part>/file`; requests,
+    # keep markers, the window, and the ring all speak route names
+    return route_of_dir(key.split('/', 1)[0])
 
   @staticmethod
   def _is_route_dir(name: str) -> bool:
@@ -252,15 +254,16 @@ class ZooUploader(Uploader):
       return False
     return True
 
-  def _window_bytes(self, route_dir: str) -> int:
-    # the files this scope would upload from one route; pending-route
-    # contents masks do not apply here, the window only gates the
-    # automatic path
+  def _window_bytes(self, segment_dirs: list[str]) -> int:
+    # the files this scope would upload from one route across its segment
+    # directories; pending-route contents masks do not apply here, the
+    # window only gates the automatic path
     total = 0
-    with os.scandir(route_dir) as entries:
-      for entry in entries:
-        if entry.is_file() and (self.scope == 'full' or entry.name in SCOPE_MINIMAL_FILES):
-          total += entry.stat(follow_symlinks=False).st_size
+    for segment_dir in segment_dirs:
+      with os.scandir(os.path.join(self.root, segment_dir)) as entries:
+        for entry in entries:
+          if entry.is_file() and (self.scope == 'full' or entry.name in SCOPE_MINIMAL_FILES):
+            total += entry.stat(follow_symlinks=False).st_size
     return total
 
   def _window_routes(self) -> frozenset:
@@ -279,10 +282,15 @@ class ZooUploader(Uploader):
       if cached_names == names and now - cached_at < WINDOW_RECOMPUTE_SECONDS:
         return cached_set
 
+    # group segment directories into whole routes, newest route first
+    segments: dict[str, list[str]] = {}
+    for name in names:
+      segments.setdefault(route_of_dir(name), []).append(name)
+
     remaining = self.budget
     in_window: list[str] = []
-    for route in reversed(names):  # newest first
-      used = self._window_bytes(os.path.join(self.root, route))
+    for route in reversed(segments):
+      used = self._window_bytes(segments[route])
       if in_window and remaining - used < 0:
         break  # this route would push the archive over the budget
       in_window.append(route)
@@ -388,10 +396,10 @@ class ZooUploader(Uploader):
         if route is not None and name != route:
           remaining.append(req)
           continue
-        dir_path = os.path.join(self.root, name)
-        if self._route_has_pending_files(name, dir_path):
+        segment_dirs = self._route_segment_dirs(name)
+        if self._route_has_pending_files(name, segment_dirs):
           remaining.append(req)
-        elif not os.path.isdir(dir_path) and not req.get('uploaded_any'):
+        elif not segment_dirs and not req.get('uploaded_any'):
           cloudlog.event('zoo_upload_request_abandoned', route=name)
           changed = True
         else:
@@ -403,18 +411,22 @@ class ZooUploader(Uploader):
       # a failed marker write keeps the entry; the next pass retries it
       cloudlog.exception('zoo_upload_request_service_failed')
 
-  def _route_has_pending_files(self, route: str, dir_path: str) -> bool:
-    if not os.path.isdir(dir_path):
-      return False
-    for segment in os.listdir(dir_path):
-      fn = os.path.join(dir_path, segment)
-      if not os.path.isfile(fn):
-        continue
-      key = f'{route}/{segment}'
-      if not self._in_scope(key, {route}):
-        continue
-      if getxattr(fn, self.upload_attr_name) != self.upload_attr_value:
-        return True
+  def _route_segment_dirs(self, route: str) -> list[str]:
+    """Segment directories of one route, oldest first."""
+    return [d for d in listdir_by_creation(self.root)
+            if self._is_route_dir(d) and route_of_dir(d) == route]
+
+  def _route_has_pending_files(self, route: str, segment_dirs: list[str]) -> bool:
+    for segment_dir in segment_dirs:
+      for segment in os.listdir(os.path.join(self.root, segment_dir)):
+        fn = os.path.join(self.root, segment_dir, segment)
+        if not os.path.isfile(fn):
+          continue
+        key = f'{segment_dir}/{segment}'
+        if not self._in_scope(key, {route}):
+          continue
+        if getxattr(fn, self.upload_attr_name) != self.upload_attr_value:
+          return True
     return False
 
   def _write_keep_marker(self, route: str) -> None:
@@ -471,7 +483,7 @@ class ZooUploader(Uploader):
     route_total = 0
     now = time.time()  # noqa: TID251 — compared against S3 wall-clock stamps
     for key, size, lastmod in objects:
-      group = key.split('/', 2)[1]  # the component after the prefix
+      group = route_of_dir(key.split('/', 2)[1])  # the route after the prefix
       if group == KEEP_MARKER_DIR:
         fixed += size
         name = key.removeprefix(keep_prefix).split('/', 1)[0]
