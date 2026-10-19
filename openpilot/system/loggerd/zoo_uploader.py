@@ -327,6 +327,8 @@ class ZooUploader(Uploader):
     return counter >= epoch
 
   def do_upload(self, key: str, fn: str):
+    # a failure before the PUT must not classify from the previous file's response
+    self._last_response = None
     compress = key.endswith('.zst') and not fn.endswith('.zst')
     plain_fd, plain_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.plain')
     gpg_fd, gpg_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.gpg')
@@ -630,7 +632,14 @@ def main(exit_event: threading.Event | None = None) -> None:
   params = Params()
   config = zoo_config_from_params(params)
   if config is None:
-    cloudlog.info('zoo uploader: missing configuration, not starting')
+    # enabled before configured, or a rejected key: wait instead of
+    # exiting, so the daemon picks the params up the moment they arrive —
+    # the manager never restarts a process that exited while it should run
+    cloudlog.info('zoo uploader: waiting for configuration')
+    while config is None and not exit_event.is_set():
+      exit_event.wait(30)
+      config = zoo_config_from_params(params)
+  if config is None:
     return
   s3, prefix, scope, contents, encrypt, recipients = config
   uploader = ZooUploader(Paths.log_root(), s3, prefix, scope, recipients, params, contents, encrypt)

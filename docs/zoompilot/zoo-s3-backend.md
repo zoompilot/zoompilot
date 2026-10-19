@@ -272,10 +272,11 @@ mistake.
 `cat /data/params/d/ZooS3LastError` over SSH names the last failure;
 it clears on each manager start.
 
-- Nothing uploads, error empty: the daemon may not be running. Was the
-  switch turned on before the params were applied? Apply the printed
-  configure.py lines, then toggle **Private S3 Archive** off and on, or
-  restart. Check that the device has network.
+- Nothing uploads, error empty: was the switch turned on before the
+  params were applied? Apply the printed configure.py lines and the
+  daemon picks them up within about half a minute; a toggle of
+  **Private S3 Archive**, or a restart, makes it immediate. Check that
+  the device has network.
 - `auth`: the credential was rejected. Check the secret, the key, that
   the credential may `PutObject` under your prefix, and that path-style
   matches the service (1 for MinIO/R2 and most S3-compatible services,

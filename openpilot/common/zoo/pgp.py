@@ -89,13 +89,19 @@ def _iter_packets(data: bytes):
     if first & 0x40:  # new format
       tag = first & 0x3F
       off += 1
+      if off >= len(data):
+        raise PgpError('truncated packet header')
       b1 = data[off]
       if b1 < 192:
         length, off = b1, off + 1
       elif b1 < 224:
+        if off + 1 >= len(data):
+          raise PgpError('truncated packet header')
         length = ((b1 - 192) << 8) + data[off + 1] + 192
         off += 2
       elif b1 == 255:
+        if off + 5 > len(data):
+          raise PgpError('truncated packet header')
         length = struct.unpack('>I', data[off + 1 : off + 5])[0]
         off += 5
       else:
@@ -105,10 +111,16 @@ def _iter_packets(data: bytes):
       ltype = first & 0x03
       off += 1
       if ltype == 0:
+        if off >= len(data):
+          raise PgpError('truncated packet header')
         length, off = data[off], off + 1
       elif ltype == 1:
+        if off + 2 > len(data):
+          raise PgpError('truncated packet header')
         length, off = struct.unpack('>H', data[off : off + 2])[0], off + 2
       elif ltype == 2:
+        if off + 4 > len(data):
+          raise PgpError('truncated packet header')
         length, off = struct.unpack('>I', data[off : off + 4])[0], off + 4
       else:
         raise PgpError('indeterminate packet length is not supported')
