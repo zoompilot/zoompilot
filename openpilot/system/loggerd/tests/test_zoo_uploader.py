@@ -951,6 +951,26 @@ def test_plaintext_upload_stores_readable_objects(tmp_path):
   server.shutdown()
 
 
+def test_plain_upload_never_touches_the_spool(tmp_path, monkeypatch):
+  # a plain, already-compressed file takes the direct path: any attempt
+  # to spool it turns into a failure, so a passing upload proves the
+  # original streamed straight out
+  from openpilot.system.loggerd import zoo_uploader as zoo_uploader_mod
+  monkeypatch.setattr(zoo_uploader_mod.tempfile, 'mkstemp',
+                      lambda *a, **k: (_ for _ in ()).throw(AssertionError('spool used')))
+
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader = make_uploader(tmp_path, encrypt=False)
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+
+  seg = write_segment(tmp_path, '00000016', {'qcamera.ts': b'video-bytes'})
+  ok = uploader.upload('qcamera.ts', '00000016--abcdefghij--1/qcamera.ts', str(seg / 'qcamera.ts'), 1, False)
+  assert ok is True
+  assert RecordingStub.seen[-1] == ('/bucket/zooprefix/00000016--abcdefghij--1/qcamera.ts', b'video-bytes')
+  server.shutdown()
+
+
 def test_config_encryption_needs_key(monkeypatch):
   monkeypatch.setattr(pgp, 'load_recipients', lambda armored, strict_expiry=True: ['fake-recipient'])
 

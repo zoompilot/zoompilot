@@ -349,11 +349,23 @@ class ZooUploader(Uploader):
     self._last_response = None
     self._last_upload_error = None
     compress = key.endswith('.zst') and not fn.endswith('.zst')
-    plain_fd, plain_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.plain')
-    gpg_fd, gpg_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.gpg')
-    os.close(plain_fd)
-    os.close(gpg_fd)
+    plain_path = gpg_path = None
     try:
+      if not self.encrypt and not compress:
+        # nothing transforms these bytes: stream the original straight to
+        # the bucket instead of copying a 72 MB camera segment into the
+        # spool first
+        url, headers = signed_put_file(self.s3, f'{self.dongle_id}/{key}', fn)
+        self._last_upload_bytes = os.path.getsize(fn)
+        with open(fn, 'rb') as body:
+          response = requests.put(url, headers=headers, data=body, timeout=30)
+        self._last_response = response
+        return response
+
+      plain_fd, plain_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.plain')
+      gpg_fd, gpg_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.gpg')
+      os.close(plain_fd)
+      os.close(gpg_fd)
       stream, _ = get_upload_stream(fn, compress)
       try:
         with open(plain_path, 'wb') as out:
@@ -384,10 +396,11 @@ class ZooUploader(Uploader):
       raise
     finally:
       for path in (plain_path, gpg_path):
-        try:
-          os.unlink(path)
-        except OSError:
-          pass
+        if path is not None:
+          try:
+            os.unlink(path)
+          except OSError:
+            pass
 
   def upload(self, name: str, key: str, fn: str, network_type: int, metered: bool) -> bool | None:
     # a zero-size shortcut success never reaches do_upload: stale byte
