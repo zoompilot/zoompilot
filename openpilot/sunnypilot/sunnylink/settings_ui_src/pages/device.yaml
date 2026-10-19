@@ -65,3 +65,37 @@ sections:
   - key: LanguageSetting
     widget: info
     title: Language
+- id: zoo_s3
+  title: zoo Private Archive
+  description: Encrypted driving-data archive in your own S3-compatible bucket
+  items:
+  - key: ZooS3Enabled
+    widget: toggle
+    title: Private S3 Archive
+    description: 'Uploads a copy of your driving data to your own S3-compatible bucket. Endpoint, bucket, and credentials are one-time setup with tools/zoo/configure.py.'
+  - key: ZooS3Encryption
+    widget: toggle
+    title: Encryption
+    description: 'Encrypt every uploaded file to your PGP key on the device. Needs the key from the configure.py setup. Off: files are readable to anyone with access to the bucket.'
+  - key: ZooS3Scope
+    widget: option
+    title: Upload Scope
+    description: 'Minimal uploads qlogs, compressed camera segments, and crash/boot logs. Full uploads everything. Selected uploads only routes you keep with tools/zoo/fetch.py keep.'
+    options:
+    - value: minimal
+      label: Minimal (qlog + qcam + crash/boot)
+    - value: full
+      label: Full archive
+    - value: selected
+      label: Selected routes only
+  - key: ZooS3UploadContents
+    widget: option
+    title: Uploaded Route Contents
+    description: 'What an upload request sends for its route. Default uploads qlog and the compressed camera. Road adds the road camera and rlog. Everything uploads rlog, all cameras (driver camera when available), and the default files.'
+    options:
+    - value: default
+      label: Default (qlog + qcam)
+    - value: road
+      label: Road cam + rlog
+    - value: everything
+      label: Everything (rlog + all cameras)
