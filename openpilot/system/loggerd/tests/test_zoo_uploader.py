@@ -954,6 +954,35 @@ def test_service_keeps_concurrent_additions(tmp_path, monkeypatch):
   server.shutdown()
 
 
+def test_encrypted_uncompressed_file_needs_one_spool_file(tmp_path, monkeypatch):
+  # flash accounting: encrypting fcamera.hevc spills only the ciphertext
+  # (one .gpg); the compress path still materializes both spool files
+  monkeypatch.setattr(pgp, 'encrypt_file', lambda src, out, recs, chunk_size=1 << 20: open(out, 'wb').write(b'G(' + open(src, 'rb').read() + b')'))
+  from openpilot.system.loggerd import zoo_uploader as zoo_uploader_mod
+  calls = []
+  real_mkstemp = zoo_uploader_mod.tempfile.mkstemp
+
+  def counting_mkstemp(*a, **k):
+    calls.append(k.get('suffix'))
+    return real_mkstemp(*a, **k)
+
+  monkeypatch.setattr(zoo_uploader_mod.tempfile, 'mkstemp', counting_mkstemp)
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader = make_uploader(tmp_path)  # encrypt=True
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+
+  seg = write_segment(tmp_path, '00000016', {'fcamera.hevc': b'video'})
+  assert uploader.upload('fcamera.hevc', '00000016--abcdefghij--1/fcamera.hevc', str(seg / 'fcamera.hevc'), 1, False) is True
+  assert calls == ['.gpg']
+
+  calls.clear()
+  seg = write_segment(tmp_path, '00000017', {'qlog': b'x'})
+  assert uploader.upload('qlog', '00000017--abcdefghij--1/qlog.zst', str(seg / 'qlog'), 1, False) is True
+  assert calls == ['.plain', '.gpg']
+  server.shutdown()
+
+
 def test_plaintext_upload_stores_readable_objects(tmp_path):
   uploader = make_uploader(tmp_path, encrypt=False)
   server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)

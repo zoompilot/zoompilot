@@ -362,25 +362,33 @@ class ZooUploader(Uploader):
         self._last_response = response
         return response
 
-      plain_fd, plain_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.plain')
-      gpg_fd, gpg_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.gpg')
-      os.close(plain_fd)
-      os.close(gpg_fd)
-      stream, _ = get_upload_stream(fn, compress)
-      try:
-        with open(plain_path, 'wb') as out:
-          shutil.copyfileobj(stream, out)
-      finally:
-        stream.close()
+      source_path = fn
+      if compress:
+        # the compressed bytes must exist somewhere before they can be
+        # hashed and signed: that is the one plain spool copy we keep
+        plain_fd, plain_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.plain')
+        os.close(plain_fd)
+        stream, _ = get_upload_stream(fn, True)
+        try:
+          with open(plain_path, 'wb') as out:
+            shutil.copyfileobj(stream, out)
+        finally:
+          stream.close()
+        source_path = plain_path
 
       if self.encrypt:
-        pgp.encrypt_file(plain_path, gpg_path, self.recipients)
-        os.unlink(plain_path)
+        gpg_fd, gpg_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.gpg')
+        os.close(gpg_fd)
+        # streams from the original when no compression happens: the
+        # plain copy of a 72 MB camera segment never lands on flash
+        pgp.encrypt_file(source_path, gpg_path, self.recipients)
+        if plain_path is not None:
+          os.unlink(plain_path)  # free the space before the upload reads
         object_key = f'{self.dongle_id}/{key}.gpg'
         upload_path = gpg_path
       else:
         object_key = f'{self.dongle_id}/{key}'
-        upload_path = plain_path
+        upload_path = source_path
 
       url, headers = signed_put_file(self.s3, object_key, upload_path)
       self._last_upload_bytes = os.path.getsize(upload_path)
