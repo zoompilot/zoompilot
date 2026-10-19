@@ -55,7 +55,8 @@ def listdir_by_creation(d: str) -> list[str]:
     return []
 
   try:
-    paths = [f for f in os.listdir(d) if os.path.isdir(os.path.join(d, f))]
+    # hidden directories are not route folders (the zoo spool lives in one)
+    paths = [f for f in os.listdir(d) if not f.startswith('.') and os.path.isdir(os.path.join(d, f))]
     paths = sorted(paths, key=get_directory_sort)
     return paths
   except OSError:
