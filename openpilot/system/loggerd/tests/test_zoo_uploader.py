@@ -349,6 +349,87 @@ def test_auth_failure_keeps_file_pending(tmp_path, monkeypatch):
   server.shutdown()
 
 
+def _fail_with_code(code: bytes, status: int):
+  def handler(self):
+    length = int(self.headers.get('Content-Length', 0))
+    self.rfile.read(length)
+    RecordingStub.seen.append((self.path, b''))
+    self.send_response(status)
+    self.send_header('Content-Type', 'application/xml')
+    self.end_headers()
+    self.wfile.write(b'<Error><Code>' + code + b'</Code></Error>')
+  return handler
+
+
+def test_permanent_failure_skips_file(tmp_path, monkeypatch):
+  monkeypatch.setattr(pgp, 'encrypt_file', lambda src, out, recs, chunk_size=1 << 20: open(out, 'wb').write(open(src, 'rb').read()))
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader = make_uploader(tmp_path)
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+  monkeypatch.setattr(RecordingStub, 'do_PUT', _fail_with_code(b'EntityTooLarge', 400))
+
+  seg = write_segment(tmp_path, '00000021', {'qlog': b'x'})
+  fn = seg / 'qlog'
+  for _ in range(10):
+    assert uploader.upload('qlog', '00000021--abcdefghij--1/qlog', str(fn), 1, False) is False
+
+  # ten file-specific failures: tagged skipped, reported, and enumeration
+  # moves on to the rest of the archive
+  assert getxattr(str(fn), 'user.zoo_upload.s3') == uploader.skip_attr_value
+  assert uploader.params.get('ZooS3LastError') == b'skipped_file'
+  assert [k for _, k, _ in uploader.list_upload_files(metered=False)] == []
+  server.shutdown()
+
+
+def test_auth_outage_never_skips(tmp_path, monkeypatch):
+  monkeypatch.setattr(pgp, 'encrypt_file', lambda src, out, recs, chunk_size=1 << 20: open(out, 'wb').write(open(src, 'rb').read()))
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader = make_uploader(tmp_path)
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+  monkeypatch.setattr(RecordingStub, 'do_PUT', _fail_with_code(b'SignatureDoesNotMatch', 403))
+
+  seg = write_segment(tmp_path, '00000021', {'qlog': b'x'})
+  fn = seg / 'qlog'
+  for _ in range(15):
+    assert uploader.upload('qlog', '00000021--abcdefghij--1/qlog', str(fn), 1, False) is False
+
+  # a credential problem fails every file equally: nothing gets skipped
+  assert getxattr(str(fn), 'user.zoo_upload.s3') is None
+  assert '00000021--abcdefghij--1/qlog' in [k for _, k, _ in uploader.list_upload_files(metered=False)]
+  server.shutdown()
+
+
+def test_transport_failure_never_skips(tmp_path, monkeypatch):
+  import requests
+
+  monkeypatch.setattr(pgp, 'encrypt_file', lambda src, out, recs, chunk_size=1 << 20: open(out, 'wb').write(open(src, 'rb').read()))
+  from openpilot.system.loggerd import zoo_uploader as zoo_uploader_mod
+  monkeypatch.setattr(zoo_uploader_mod.requests, 'put',
+                      lambda *a, **k: (_ for _ in ()).throw(requests.exceptions.ConnectionError('no wire')))
+
+  uploader = make_uploader(tmp_path)
+  seg = write_segment(tmp_path, '00000021', {'qlog': b'x'})
+  fn = seg / 'qlog'
+  for _ in range(15):
+    assert uploader.upload('qlog', '00000021--abcdefghij--1/qlog', str(fn), 1, False) is False
+
+  # an outage must never skip a file either
+  assert getxattr(str(fn), 'user.zoo_upload.s3') is None
+  assert uploader._fail_counts == {}
+
+
+def test_zero_size_upload_adds_no_stale_bytes(tmp_path):
+  uploader = make_uploader(tmp_path)
+  uploader._last_upload_bytes = 500  # stale from a previous file
+
+  seg = write_segment(tmp_path, '00000022', {'qlog': b''})
+  ok = uploader.upload('qlog', '00000022--abcdefghij--1/qlog', str(seg / 'qlog'), 1, False)
+  assert ok is True
+  assert uploader.bytes_since_prune == 0
+
+
 def test_destination_change_epochs_only_after_success(tmp_path):
   params = FakeParamsDict()
   params.put('RouteCount', '20')

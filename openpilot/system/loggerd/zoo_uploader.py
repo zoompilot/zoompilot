@@ -52,7 +52,7 @@ from openpilot.common.realtime import set_core_affinity
 from openpilot.common.hardware.hw import Paths
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.loggerd.uploader import Uploader, clear_locks, listdir_by_creation
-from openpilot.system.loggerd.xattr_cache import getxattr
+from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
 from openpilot.common.zoo import pgp, load_upload_requests, route_of_dir, save_upload_requests
 from openpilot.common.zoo.s3sig import S3Config, signed_put, signed_put_file, signed_request, parse_budget
 
@@ -94,12 +94,23 @@ ERROR_CLASSES = {
   'SlowDown': 'slowdown',
 }
 
+# a file fails this many times with a file-specific error before it is
+# tagged skipped: one impossible file (over the provider's object-size
+# cap, unreadable) must not hold the rest of the archive hostage
+SKIPPED_FILE_FAILURES = 10
+
+# failures that hit every file equally; they never advance the skip counter
+CONFIG_FAILURE_REASONS = {'auth', 'endpoint', 'clock_skew', 'slowdown'}
+
 
 class ZooUploader(Uploader):
   upload_attr_name = 'user.zoo_upload.s3'
   success_codes = (200, 201)
   # the archive promises everything; the comma per-file caps do not apply
   max_upload_sizes = {}
+  # xattr value for a file skipped after SKIPPED_FILE_FAILURES file-specific
+  # failures; clear it (xattr -d user.zoo_upload.s3 <file>) to retry one
+  skip_attr_value = b'zoo-skip'
 
   def __init__(self, root: str, s3: S3Config, prefix: str, scope: str, recipients: list, params: Params,
                contents: str = 'default', encrypt: bool = False):
@@ -149,6 +160,11 @@ class ZooUploader(Uploader):
     # recomputed when the route set changes or the cache goes stale
     self._window_cache = None
 
+    # consecutive file-specific failures per key, for the skip decision
+    self._fail_counts: dict[str, int] = {}
+    self._last_upload_bytes = 0
+    self._last_upload_error = None
+
     self._init_epoch()
 
   def _destination_fingerprint(self) -> str:
@@ -190,6 +206,8 @@ class ZooUploader(Uploader):
     self._refresh_keep_routes()
     pending_routes = {r['route'] for r in load_upload_requests(self.params)}
     for name, key, fn in super().list_upload_files(metered):
+      if getxattr(fn, self.upload_attr_name) == self.skip_attr_value:
+        continue  # skipped after repeated file-specific failures
       if not self._in_scope(key, pending_routes):
         continue
       # a requested route bypasses every age gate in every scope: the user
@@ -329,6 +347,7 @@ class ZooUploader(Uploader):
   def do_upload(self, key: str, fn: str):
     # a failure before the PUT must not classify from the previous file's response
     self._last_response = None
+    self._last_upload_error = None
     compress = key.endswith('.zst') and not fn.endswith('.zst')
     plain_fd, plain_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.plain')
     gpg_fd, gpg_path = tempfile.mkstemp(dir=self.spool_dir, suffix='.gpg')
@@ -357,6 +376,12 @@ class ZooUploader(Uploader):
         response = requests.put(url, headers=headers, data=body, timeout=30)
       self._last_response = response
       return response
+    except requests.exceptions.RequestException:
+      self._last_upload_error = 'transport'  # the wire failed, not the file
+      raise
+    except Exception:
+      self._last_upload_error = 'local'  # about this file; retrying cannot fix it
+      raise
     finally:
       for path in (plain_path, gpg_path):
         try:
@@ -365,12 +390,16 @@ class ZooUploader(Uploader):
           pass
 
   def upload(self, name: str, key: str, fn: str, network_type: int, metered: bool) -> bool | None:
+    # a zero-size shortcut success never reaches do_upload: stale byte
+    # counts must not ride into the prune trigger
+    self._last_upload_bytes = 0
     result = super().upload(name, key, fn, network_type, metered)
     if result:
+      self._fail_counts.pop(key, None)
       # a wall-clock stamp is what the status param means
       self.params.put('ZooS3LastUploadTime', str(int(time.time())))  # noqa: TID251
       self.params.put('ZooS3UploadsDone', str(self._counter('ZooS3UploadsDone') + 1))
-      self.bytes_since_prune += getattr(self, '_last_upload_bytes', 0)
+      self.bytes_since_prune += self._last_upload_bytes
       self.maybe_prune()
       route = self._route_of(key)
       if any(r['route'] == route for r in load_upload_requests(self.params)):
@@ -378,7 +407,37 @@ class ZooUploader(Uploader):
         self.service_upload_requests(route)
     else:
       self._record_error(key)
+      if self._counts_toward_skip():
+        self._fail_counts[key] = self._fail_counts.get(key, 0) + 1
+        if self._fail_counts[key] >= SKIPPED_FILE_FAILURES:
+          self._skip_file(key, fn)
     return result
+
+  def _counts_toward_skip(self) -> bool:
+    """Only file-specific failures advance the skip counter.
+
+    Credentials, endpoint, clock, and provider trouble fail every file
+    equally and must not get the archive tagged skipped. A 4xx those
+    classes do not explain (over the provider's object cap) or a local
+    error (an over-4-GiB PGP packet, an unreadable source) is about
+    this file.
+    """
+    reason = (self.params.get('ZooS3LastError') or b'').decode()
+    if reason in CONFIG_FAILURE_REASONS:
+      return False
+    response = getattr(self, '_last_response', None)
+    if response is not None:
+      return 400 <= response.status_code < 500
+    return getattr(self, '_last_upload_error', None) == 'local'
+
+  def _skip_file(self, key: str, fn: str) -> None:
+    self._fail_counts.pop(key, None)
+    try:
+      setxattr(fn, self.upload_attr_name, self.skip_attr_value)
+    except OSError:
+      cloudlog.event('zoo_upload_skip_setxattr_failed', key=key)
+    self.params.put('ZooS3LastError', 'skipped_file')
+    cloudlog.event('zoo_upload_skipped_file', key=key)
 
   def service_upload_requests(self, route: str | None = None) -> None:
     """Retire finished and impossible requests; never raises.
