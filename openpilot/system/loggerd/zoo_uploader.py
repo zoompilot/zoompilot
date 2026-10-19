@@ -463,6 +463,7 @@ class ZooUploader(Uploader):
     """
     try:
       requests = load_upload_requests(self.params)
+      read_routes = {r['route'] for r in requests}
       remaining = []
       changed = False
       for req in requests:
@@ -480,7 +481,11 @@ class ZooUploader(Uploader):
           self._write_keep_marker(name)
           changed = True
       if changed:
-        save_upload_requests(self.params, remaining)
+        # keep requests queued after our read: the UI writes this param
+        # with no shared lock, and a fresh button press must survive a
+        # daemon sweep
+        fresh = [r for r in load_upload_requests(self.params) if r['route'] not in read_routes]
+        save_upload_requests(self.params, remaining + fresh)
     except Exception:
       # a failed marker write keeps the entry; the next pass retries it
       cloudlog.exception('zoo_upload_request_service_failed')

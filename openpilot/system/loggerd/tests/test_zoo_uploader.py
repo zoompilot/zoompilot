@@ -933,6 +933,27 @@ def test_ring_spares_pending_requests(tmp_path):
   assert RecordingStub.deletions == ['/bucket/zooprefix/00000002--abcdefghij/qlog.gpg']
 
 
+def test_service_keeps_concurrent_additions(tmp_path, monkeypatch):
+  # a button press landing between the daemon's read and its write must
+  # survive the sweep
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader = make_uploader(tmp_path)
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+
+  from openpilot.system.loggerd import zoo_uploader as zoo_uploader_mod
+  reads = [
+    [{'route': '00000030--abcdefghij', 'uploaded_any': True}],  # the sweep's read: finished
+    [{'route': '00000030--abcdefghij', 'uploaded_any': True},   # the re-read: a press landed
+     {'route': '00000031--abcdefghij', 'uploaded_any': False}],
+  ]
+  monkeypatch.setattr(zoo_uploader_mod, 'load_upload_requests', lambda params: reads.pop(0))
+
+  uploader.service_upload_requests()
+  assert load_upload_requests(uploader.params) == [{'route': '00000031--abcdefghij', 'uploaded_any': False}]
+  server.shutdown()
+
+
 def test_plaintext_upload_stores_readable_objects(tmp_path):
   uploader = make_uploader(tmp_path, encrypt=False)
   server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
