@@ -10,6 +10,28 @@ only as far as your bucket access control goes.
 Validated on tizi. mici gets the same behavior through the sunnylink
 settings surface; mici hardware itself is untested.
 
+## What you need
+
+- A laptop with Python 3 and `requests`: `pip install requests`.
+  `fetch.py` also wants `zstandard` when you read `.zst` files back,
+  and `gpg` when the archive is encrypted.
+- An account on any S3-compatible service: AWS S3, Cloudflare R2,
+  Backblaze B2, MinIO.
+- SSH to the device for the one-time setup. Everyday control needs no
+  SSH: it lives in the settings panels.
+- Optional: a PGP key pair for encryption.
+
+## Install on the device
+
+The feature ships as the `zoo-s3-backend` branch of the mzdnick fork.
+Install it the way you normally switch builds: the on-device installer
+with the fork URL and the branch name, or over SSH with a
+`git checkout zoo-s3-backend` in `/data/openpilot` and a restart.
+
+Install first, configure second. The archive switch and the upload
+buttons appear once the branch runs. They do nothing until the setup
+below is applied.
+
 ## One-time setup (on a laptop)
 
 1. Create a bucket on any S3-compatible service (AWS S3, Cloudflare R2,
@@ -43,22 +65,55 @@ settings surface; mici hardware itself is untested.
    endpoints get a warning: contents stay safe (they are ciphertext), but
    the signed request is a short-lived bearer credential on that wire —
    fine for a trusted LAN, not for production.
-4. Apply the printed lines over SSH and restart the device. Without an
-   archive budget, uploads start from that moment and nothing older comes
-   along (the route/boot counters are the marker, not the clock). With a
-   budget set, the uploader also walks backward: the newest budget-worth
-   of routes on the device uploads as the starting archive.
+4. Apply the printed lines over SSH, in the printed order, and restart
+   the device after the last line. The enable line comes last on
+   purpose: the daemon starts only after the rest is in place. The
+   printed lines include the secret access key, so run this where
+   terminal scrollback and shell history are acceptable, and clear both
+   after.
+
+   Without an archive budget, uploads start from that moment and
+   nothing older comes along (the route/boot counters are the marker,
+   not the clock). With a budget set, the uploader also walks backward:
+   the newest budget-worth of routes on the device uploads as the
+   starting archive.
+
+## Turn it on and verify
+
+After the restart, Settings → Device in the sunnylink app shows the
+**zoo Private Archive** section on any device, mici included:
+
+- **Private S3 Archive** — the on/off switch.
+- **Encryption** — encrypt every upload to your PGP key. Needs the key
+  from the setup above.
+- **Upload Scope** — Minimal (qlog + compressed camera + crash/boot),
+  Full archive, or Selected routes only.
+- **Uploaded Route Contents** — what an upload request sends: Default
+  (qlog + qcam), Road cam + rlog, or Everything.
+
+Verify the first upload:
+
+1. Drive, or replay a drive already on the device when a budget is set.
+2. Offroad, with network up, wait a few minutes. Uploads run one file
+   at a time; a full-quality road-camera segment is about 72 MB, so
+   Full scope takes a while on a slow uplink.
+3. On the laptop: `python tools/zoo/fetch.py list` shows objects under
+   your prefix.
+4. Over SSH, `cat /data/params/d/ZooS3LastError`: empty means no error
+   was recorded since boot. Troubleshooting below maps the values.
+
+A short demo path: Minimal scope, no ring. Drive ten minutes, go
+offroad, `fetch.py list`, `fetch.py route <dir>`, and play the
+`qcamera.ts` file in any player.
 
 ## Everyday control
 
 Settings → Device in the sunnylink app shows the settings on any device,
 mici included: the archive on/off switch, the encryption toggle, the
-upload scope (minimal = qlog + compressed camera + crash/boot; full =
-everything; selected = marked routes only), and what an upload request
-sends. The device settings panels also carry the upload buttons; see
-Uploading a route below. String settings (endpoint, bucket, credentials,
-prefix, and the key when encrypting) are one-time entry through
-`configure.py` or SSH.
+upload scope, and what an upload request sends. The device settings
+panels also carry the upload buttons; see Uploading a route below.
+String settings (endpoint, bucket, credentials, prefix, and the key when
+encrypting) are one-time entry through `configure.py` or SSH.
 
 ## Uploading a route
 
@@ -146,6 +201,22 @@ the budget with that in mind.
 On Backblaze's 10 GB free tier, `8G` leaves room to grow between ring
 passes, so a no-card account never crosses into paid storage.
 
+## Sizing and cost
+
+Measured means on the development car (Mazda routes, one-minute
+segments): `qlog.zst` about 0.4 MB, `qcamera.ts` about 1.9 MB,
+`rlog.zst` about 10 MB, `fcamera.hevc` about 72 MB per minute. Your
+numbers move with scene detail and lead activity.
+
+Rough guide per hour of driving: Minimal scope writes about 150 MB;
+Road (adds rlog and the road camera) about 5 GB; Everything adds the
+driver camera on top. Size the ring budget for the scope you run, and
+keep headroom for versioned objects when bucket versioning is on.
+
+During an upload the device briefly holds one extra copy of the file in
+a hidden spool (`.zoo-spool`) next to the segments. Keep about 100 MB
+free on the data partition.
+
 ## Reading the archive back
 
 ```
@@ -187,9 +258,74 @@ mistake.
   starts from that moment; old files stay where they are.
 - Replacing the PGP key (encryption on): new files use the new key, old
   files stay readable with the old one. Keep old private keys as long as
-  their files must stay readable.
+  their files must stay readable. The daemon reads the key once at
+  start: after replacing it, toggle the archive switch off and on, or
+  restart.
 - Disabling and re-enabling: files recorded while off upload on
   re-enable.
 - Changing the budget: the next ring pass enforces the new number.
   Raising it deletes nothing by itself; lowering it prunes on the next
   pass.
+
+## Troubleshooting
+
+`cat /data/params/d/ZooS3LastError` over SSH names the last failure;
+it clears on each manager start.
+
+- Nothing uploads, error empty: the daemon may not be running. Was the
+  switch turned on before the params were applied? Apply the printed
+  configure.py lines, then toggle **Private S3 Archive** off and on, or
+  restart. Check that the device has network.
+- `auth`: the credential was rejected. Check the secret, the key, that
+  the credential may `PutObject` under your prefix, and that path-style
+  matches the service (1 for MinIO/R2 and most S3-compatible services,
+  0 for AWS virtual-host).
+- `endpoint`: the bucket is not where the request went. Check
+  `ZooS3Endpoint`, `ZooS3Region`, and `ZooS3PathStyle`.
+- `clock_skew`: the device clock is off. Request signing needs correct
+  time; GPS time on the road fixes it.
+- `bad_key`: `ZooS3PublicKey` is unreadable. Re-apply the key block from
+  configure.py and toggle the switch.
+- `upload_failed` that persists: check the uplink, then the provider's
+  status page. A single object over the provider's size limit fails the
+  same way; the file stays pending and other routes wait behind it.
+
+## Turning it off
+
+Toggle **Private S3 Archive** off. The daemon stops and nothing new
+uploads; the bucket is untouched. Files recorded while off upload on
+re-enable.
+
+To remove the feature: toggle off, delete the zoo params over SSH
+(`rm /data/params/d/ZooS3*`), and switch back to your normal branch.
+Re-installing later with a fresh `configure.py` run suggests a new
+prefix, which starts a new, empty archive while the old objects stay in
+the bucket and keep billing. Reuse the old prefix, or delete the old
+objects with your admin credentials first.
+
+## Params reference
+
+All zoo params are marked do-not-log: their values never appear in
+device logs or uploads.
+
+| Param | Meaning | Default |
+| --- | --- | --- |
+| `ZooS3Enabled` | Master switch | 0 |
+| `ZooS3Encryption` | Encrypt uploads to the PGP key | 0 |
+| `ZooS3Endpoint` | Service endpoint URL | — |
+| `ZooS3Region` | Region string | — |
+| `ZooS3Bucket` | Bucket name | — |
+| `ZooS3PathStyle` | 1 = path-style, 0 = virtual-host | 1 |
+| `ZooS3AccessKeyId` | Device credential id | — |
+| `ZooS3SecretAccessKey` | Device credential secret | — |
+| `ZooS3PublicKey` | Armored PGP public key | — |
+| `ZooS3Prefix` | Archive prefix in the bucket | `zoo` |
+| `ZooS3Scope` | `minimal` / `full` / `selected` | `minimal` |
+| `ZooS3UploadContents` | `default` / `road` / `everything` | `default` |
+| `ZooS3UploadRoutes` | Queued upload requests (managed by the buttons) | — |
+| `ZooS3ArchiveBudget` | Ring budget like `8G`; unset = ring off | — |
+
+Internal state, managed by the daemon, safe to delete but not to edit:
+`ZooS3DestinationFp`, `ZooS3EpochRouteCount`, `ZooS3EpochBootCount`,
+`ZooS3UploadsDone`, `ZooS3LastUploadTime`, `ZooS3LastError`,
+`ZooS3LastPruneTime`.

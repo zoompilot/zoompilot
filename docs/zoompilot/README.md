@@ -30,3 +30,5 @@ repo; a `tools/mazda_long/...` path in these notes is relative to that repo.
 - scc-curve-planning.md: the Mazda / upstream planner split, model curvature range bias, the
   whole-path horizon with a per-model near window, the commit hold below 50 mph,
   publish_ramp and the op-long budget, map retain logic and confirmation time
+- zoo-s3-backend.md: user guide (not a findings note) for the zoo private S3 archive:
+  install, one-time setup, upload requests, the archive ring, reading data back
