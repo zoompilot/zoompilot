@@ -26,6 +26,7 @@ Options: --endpoint --region --bucket --access-key-id --secret-access-key
 """
 
 import argparse
+import io
 import os
 import subprocess
 import sys
@@ -52,7 +53,9 @@ def maybe_decompress(data: bytes, name: str) -> tuple[bytes, str]:
       import zstandard
     except ImportError as e:
       raise RuntimeError('zstandard is required to decompress .zst files (pip install zstandard)') from e
-    return zstandard.ZstdDecompressor().decompress(data), name[:-4]
+    # device frames are streamed without a content size in the header
+    reader = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(data))
+    return reader.read(), name[:-4]
   return data, name
 
 
