@@ -87,7 +87,7 @@ from openpilot.common.zoo import add_upload_request, latest_route_dir, list_rout
 from openpilot.common.zoo import add_current_drive_request
 from openpilot.common.zoo.s3sig import S3Config
 from openpilot.system.loggerd.uploader import MAX_UPLOAD_SIZES, Uploader, listdir_by_creation
-from openpilot.system.loggerd.zoo_uploader import ZooUploader, PRUNE_TRIGGER_BYTES, zoo_config_from_params
+from openpilot.system.loggerd.zoo_uploader import ZooUploader, PRUNE_TRIGGER_BYTES, _clear_stale_locks, zoo_config_from_params
 from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
 
 
@@ -168,6 +168,50 @@ def list_result_xml(entries):
     for k, s, d in entries)
   head = '<?xml version="1.0"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated>'
   return (head + contents + '</ListBucketResult>').encode()
+
+
+def test_ring_never_prunes_non_route_groups(tmp_path):
+  # a stray object under the prefix (the configure.py self-test probe,
+  # anything another tool writes) is never a deletion candidate; it
+  # occupies the budget like boot/crash do, and the ring takes what it
+  # needs from real routes instead
+  params = FakeParamsDict()
+  params.put('ZooS3ArchiveBudget', '400')
+  uploader = make_uploader(tmp_path, params=params)
+
+  server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RecordingStub)
+  threading.Thread(target=server.serve_forever, daemon=True).start()
+  uploader.s3.endpoint = f'http://127.0.0.1:{server.server_address[1]}'
+  RecordingStub.list_xml = list_result_xml([
+    ('zooprefix/_selftest/123', 500, '2026-01-01T00:00:00.000Z'),
+    ('zooprefix/00000001--abcdefghij/qlog.gpg', 100, '2026-01-02T00:00:00.000Z'),
+    ('zooprefix/00000002--abcdefghij/qlog.gpg', 100, '2026-01-03T00:00:00.000Z'),
+  ])
+  RecordingStub.deletions = []
+  try:
+    uploader.maybe_prune(force=True)
+  finally:
+    server.shutdown()
+
+  assert sorted(RecordingStub.deletions) == [
+    '/bucket/zooprefix/00000001--abcdefghij/qlog.gpg',
+    '/bucket/zooprefix/00000002--abcdefghij/qlog.gpg',
+  ]
+  assert not any('_selftest' in d for d in RecordingStub.deletions)
+
+
+def test_stale_locks_clear_only_offroad(tmp_path):
+  write_segment(tmp_path, '00000010', {'qlog': b'x'})
+  (tmp_path / '00000010--abcdefghij--1' / 'qlog.lock').write_bytes(b'')
+
+  onroad = FakeParamsDict()  # IsOffroad absent = on-road
+  _clear_stale_locks(onroad, str(tmp_path))
+  assert (tmp_path / '00000010--abcdefghij--1' / 'qlog.lock').exists()
+
+  offroad = FakeParamsDict()
+  offroad.put('IsOffroad', '1')
+  _clear_stale_locks(offroad, str(tmp_path))
+  assert not (tmp_path / '00000010--abcdefghij--1' / 'qlog.lock').exists()
 
 
 def test_scope_filter(tmp_path):

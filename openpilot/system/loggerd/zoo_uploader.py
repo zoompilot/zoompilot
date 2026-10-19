@@ -467,12 +467,14 @@ class ZooUploader(Uploader):
   def _prune(self) -> int:
     """Delete whole oldest routes until the archive fits the budget.
 
-    boot/ and crash/ objects, keep-marked routes, and routes with objects
-    younger than a day are protected: a crash payload cannot be
-    regenerated, a kept route was picked on purpose, and the ring must
-    not fight the uploader for the same files. Protection still counts
-    toward the budget it occupies; when protected data alone is over the
-    budget, the ring deletes nothing further.
+    boot/ and crash/ objects, keep-marked routes, routes with objects
+    younger than a day, and anything not route-shaped (self-test probes,
+    objects another tool wrote under the prefix) are protected: a crash
+    payload cannot be regenerated, a kept route was picked on purpose,
+    the ring must not fight the uploader for the same files, and it only
+    deletes what it could have uploaded. Protection still counts
+    toward the budget it occupies; when protected data alone is over
+    the budget, the ring deletes nothing further.
     """
     objects = self._list_archive()
     keep_prefix = f'{self.dongle_id}/{KEEP_MARKER_DIR}/'
@@ -491,7 +493,8 @@ class ZooUploader(Uploader):
         name = key.removeprefix(keep_prefix).split('/', 1)[0]
         if name:
           protected.add(name)
-      elif group in ('boot', 'crash'):
+      elif group in ('boot', 'crash') or not self._is_route_dir(group):
+        # protected but budget-occupying: never a deletion candidate
         fixed += size
       else:
         route_total += size
@@ -618,6 +621,19 @@ def zoo_config_from_params(params: Params) -> tuple[S3Config, str, str, str, boo
   return s3, prefix, scope, contents, encrypt, recipients
 
 
+def _clear_stale_locks(params: Params, root: str) -> None:
+  """Remove crash-left locks, but only offroad.
+
+  zoo can start mid-drive from the remote toggle: the live segment's lock
+  keeps the stock uploader and the deleter away from the open segment,
+  so an on-road start leaves locks alone and the next offroad start
+  clears what is stale.
+  """
+  if not params.get_bool('IsOffroad'):
+    return
+  clear_locks(root)
+
+
 def main(exit_event: threading.Event | None = None) -> None:
   if exit_event is None:
     exit_event = threading.Event()
@@ -627,9 +643,8 @@ def main(exit_event: threading.Event | None = None) -> None:
   except Exception:
     cloudlog.exception('failed to set core affinity')
 
-  clear_locks(Paths.log_root())
-
   params = Params()
+  _clear_stale_locks(params, Paths.log_root())
   config = zoo_config_from_params(params)
   if config is None:
     # enabled before configured, or a rejected key: wait instead of
