@@ -42,6 +42,9 @@ dependencies = [
   # joystickd
   "inputs",
 
+  # zoo private archive
+  "cryptography",
+
   # these should be removed
   "pyzmq",
   "setproctitle",

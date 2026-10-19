@@ -19,6 +19,7 @@ Usage (from the repo root, with requests installed):
 """
 
 import argparse
+import base64
 import os
 import secrets
 import sys
@@ -37,6 +38,30 @@ def ask(prompt: str, default: str = '') -> str:
   return value or default
 
 
+STATE_DIR = os.path.expanduser('~/.config/zoo')
+
+
+def last_prefix() -> str:
+  """The prefix from the previous run, so a re-setup keeps the archive visible."""
+  try:
+    with open(os.path.join(STATE_DIR, 'last-prefix')) as f:
+      value = f.read().strip()
+    if value and '/' not in value:
+      return value
+  except OSError:
+    pass
+  return ''
+
+
+def remember_prefix(prefix: str) -> None:
+  try:
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(os.path.join(STATE_DIR, 'last-prefix'), 'w') as f:
+      f.write(prefix)
+  except OSError:
+    pass  # best effort: forgetting only costs a fresh suggestion
+
+
 def main() -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument('--self-test', action='store_true', help='PUT an encrypted probe object after validating')
@@ -53,7 +78,7 @@ def main() -> int:
   access_key_id = ask('Access key id')
   secret = ask('Secret access key')
   pubkey_path = os.path.expanduser(ask('Path to armored PGP public key, empty for no encryption (gpg --export -a KEYID > pubkey.asc)'))
-  prefix = ask('Archive prefix inside the bucket', secrets.token_hex(8))
+  prefix = ask('Archive prefix inside the bucket', last_prefix() or secrets.token_hex(8))
   scope = ask('Upload scope: minimal (qlog+qcam+crash+boot), full, or selected (kept routes only)', 'minimal')
   budget = ask('Archive ring budget, e.g. 8G: the device deletes oldest files to stay under it (empty = off)', '')
   if budget and parse_budget(budget) is None:
@@ -128,9 +153,13 @@ def main() -> int:
   ]
   if budget:
     values.append(('ZooS3ArchiveBudget', budget))
+  remember_prefix(prefix)
   for name, value in values:
-    if name == 'ZooS3PublicKey':
-      print(f"  cat > /data/params/d/{name} <<'EOF'\n{value}EOF")
+    if name in ('ZooS3PublicKey', 'ZooS3SecretAccessKey'):
+      # base64 round-trip: quoting inside the value stays inert, and no
+      # trailing newline sneaks into the param (a heredoc always adds one)
+      payload = base64.b64encode(value.encode()).decode()
+      print(f"  echo '{payload}' | base64 -d > /data/params/d/{name}")
     else:
       print(f"  printf '%s' '{value}' > /data/params/d/{name}")
   print()

@@ -213,9 +213,10 @@ Road (adds rlog and the road camera) about 5 GB; Everything adds the
 driver camera on top. Size the ring budget for the scope you run, and
 keep headroom for versioned objects when bucket versioning is on.
 
-During an upload the device briefly holds one extra copy of the file in
-a hidden spool (`.zoo-spool`) next to the segments. Keep about 100 MB
-free on the data partition.
+During an encrypted or compressed upload the device briefly holds one
+extra copy of the file in a hidden spool (`.zoo-spool`) next to the
+segments; plain camera files stream straight from the originals. Keep
+about 100 MB free on the data partition.
 
 ## Reading the archive back
 
@@ -287,9 +288,13 @@ it clears on each manager start.
   time; GPS time on the road fixes it.
 - `bad_key`: `ZooS3PublicKey` is unreadable. Re-apply the key block from
   configure.py and toggle the switch.
+- `skipped_file`: one file failed ten times with an error about that
+  file (for example over the provider's object-size limit) and was
+  tagged skipped so the rest of the archive could proceed. Retry it
+  with `xattr -d user.zoo_upload.s3 <file>` on the device.
 - `upload_failed` that persists: check the uplink, then the provider's
-  status page. A single object over the provider's size limit fails the
-  same way; the file stays pending and other routes wait behind it.
+  status page. A file over the provider's object-size limit ends as
+  `skipped_file` instead (see above).
 
 ## Turning it off
 
@@ -299,10 +304,11 @@ re-enable.
 
 To remove the feature: toggle off, delete the zoo params over SSH
 (`rm /data/params/d/ZooS3*`), and switch back to your normal branch.
-Re-installing later with a fresh `configure.py` run suggests a new
-prefix, which starts a new, empty archive while the old objects stay in
-the bucket and keep billing. Reuse the old prefix, or delete the old
-objects with your admin credentials first.
+Re-installing later: `configure.py` offers the last-used prefix as its
+default, so a re-setup normally continues the same archive. Choosing a
+new prefix starts a new, empty archive while the old objects stay in
+the bucket and keep billing; delete them with your admin credentials
+first.
 
 ## Params reference
 

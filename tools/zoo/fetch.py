@@ -59,6 +59,14 @@ def maybe_decompress(data: bytes, name: str) -> tuple[bytes, str]:
   return data, name
 
 
+def safe_relpath(name: str) -> str:
+  """Reject object keys that would write outside the target directory."""
+  parts = name.split('/')
+  if os.path.isabs(name) or '..' in parts or '' in parts:
+    raise SystemExit(f'unsafe object key: {name!r}')
+  return name
+
+
 def list_objects(cfg: S3Config, archive_prefix: str, cli_prefix: str) -> list[str]:
   params = {'list-type': '2', 'prefix': f'{archive_prefix}/{cli_prefix}'.rstrip('/'), 'max-keys': '1000'}
   objects = []
@@ -173,7 +181,7 @@ def main() -> int:
     return 0
 
   for obj in list_objects(cfg, archive_prefix, args.target):
-    name = obj.removeprefix(f'{archive_prefix}/')
+    name = safe_relpath(obj.removeprefix(f'{archive_prefix}/'))
     parent = os.path.dirname(name)
     if parent:
       os.makedirs(parent, exist_ok=True)

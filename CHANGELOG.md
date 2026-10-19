@@ -9,6 +9,7 @@ zoompilot v2026.10.16-16
 * Fixes bugs
   * Fixes "sunnypilot unavailable" for AUS/NZ Mazdas.
   * comma 3X: plugging a laptop in for jetlink no longer reboots the comma.
+
 zoompilot v2026.10.15-15
 ========================
 * jetlink support <3
