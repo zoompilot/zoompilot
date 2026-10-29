@@ -193,6 +193,35 @@ to the budget (`publish_ramp`).
 apex on it instead of over it. Swept against the corpus: at 1.0 the sim leaves 13% of
 fair apexes above 2.2 m/s^2; at 0.95 that drops to 5% for 1.4% of speed given up.
 
+## Per-car lateral ceiling (`lat_limit_learner.py`)
+
+`_A_LAT_CURVE` is one table for every car, but how much lateral acceleration a car can hold
+through a curve is its EPS torque, and that differs by model: a ceiling one car takes easily
+saturates another's steering and raises "Turn Exceeds Steering Limit". So the table is only the
+starting point. Each car learns its own ceiling at the same three breakpoints, from the test
+selfdrived alerts on (lateral active, no steering input in the last 2 s, the model asking over
+1 m/s^2 and the controller's `saturated`). selfdrived also wants the car 1.2x short of the
+model's demand before it warns; the learner does not wait for that, since a ceiling held just
+under it leaves the EPS at full torque and the car up to 20% wide of its line:
+
+- **A saturated curve** drops the ceiling at that speed to what the car was delivering at full
+  torque less 0.1 m/s^2, by 0.05 to 0.2 m/s^2 per curve (a crosswind or crown can saturate a
+  curve the torque would hold), and halves the raise step there. A car carried more than 10%
+  past the ceiling (gas, a bend the planner never saw) is not the ceiling's curve and is skipped.
+- **A clean curve** that reached 85% of the ceiling (the plan puts the apex at 95%) for at
+  least 1 s raises the ceiling by the step, which starts at 0.05 m/s^2 and never drops below
+  0.002 m/s^2, so a ceiling lowered by a one-off keeps recovering.
+
+Both are split between the two breakpoints around the curve's speed. The step halves with each
+saturation, so the ceiling closes in on the torque limit from below and the warning, which needs 20% past
+it, stays clear; once converged a probe past the limit saturates about one near-limit curve in
+75 (synthetic EPS, `test_zp_lat_limit_learner.py`). The ceiling stays in 1.2 to 3.0 m/s^2; the top
+is ISO 11270's lateral limit, which openpilot enforces anyway. It learns whenever lateral is
+engaged, the curve planner on or off, and persists in `CurveLatAccelLimit`, keyed on the
+fingerprint and the breakpoints; another car, or a `VERSION` bump, starts on the shared table.
+A car that has not moved off the table plans on it unchanged. Map targets come from mapd's own
+velocities and are not capped by it.
+
 ## Commit, hold, release
 
 Commit when `a_required >= COMMIT_FRAC * a_budget`. Once braking, hold while the near
@@ -407,6 +436,7 @@ for every brand with a measured plant (`icbm.md`).
 |---|---|---|---|
 | `TUNED_BRANDS` | `('mazda',)` | brands with a measured stock ACC response | n/a |
 | `_A_LAT_CURVE_BP` / `_A_LAT_CURVE` | 15.6 / 24.6 / 31.3 m/s curve speed -> 2.2 / 2.1 / 2.2 m/s^2 | lateral ceiling (v^2 * curvature) at the curve's own speed (`curve_speed`, the table re-keyed on curvature). Driver-limited curves (129, corpus) p75 2.3 below 45 mph, 2.0 at 45-55; logged interstate curves are banked 2.5-4 deg (0.4-0.65 m/s^2 not felt). History: 2.0 flat until 09-30; 1.8 after route 260; set-keyed 2.0 -> 1.8 (40 -> 60 mph set) from 10-04 until 10-13, when 55+ was too slow and back roads a tad slow | 10-13 route sim, user reports |
+| `A_LAT_MIN` / `A_LAT_MAX` (`lat_limit_learner.py`) | 1.2 / 3.0 m/s^2 | bounds of the learned per-car ceiling; 3.0 is ISO 11270's lateral limit | n/a |
 | `_KAPPA_DEPTH_SET_BP` | 20.1 to 24.6 m/s set speed | the range gain stops setting the dash target from a 55 mph set (timing keeps it) | route 2c0, 10-13 route sim |
 | `_IN_CURVE_MARGIN` | 1.0 m/s | the plan holds while the near field limits the car below `vEgo` plus this | user reports |
 | `_PLAN_MARGIN` | 0.95 | 13% -> 5% of fair apexes above 2.2 for 1.4% speed | corpus sim |
