@@ -47,14 +47,18 @@ sessions 0x01 and 0x02. Flashing services stay blocked.
 
 ### FSC settle gate
 
-Silencing the radar too early after a cold boot latches an i-ACTIVSENSE fault that only a
-roughly 15 min power-down clears. The camera (FSC) runs a radar-presence check in the seconds
-after its boot settles. On the setup/teardown drives the check faulted when the radar went quiet
-1.9 s after the camera's boot-settle broadcast and passed from 5.8 s; waiting about 8 s was
-proven clean. `FSC_SETTLE_T` was 10 s until 2026-10-05 and is now 7 s, which takes about 3 s off
-alpha long's readiness after ignition (the radar takeover is the last thing it waits on); on-car
-pending. The check's verdict is invisible until first motion, so
-the gate is a timer on the camera's settle signal, not any fault bit.
+The radar takeover waits for the camera (FSC) to finish booting, then `FSC_SETTLE_T` (1 s, two
+CAM_LANEINFO frames) of settled frames. It is the last thing alpha long's readiness waits on.
+
+The gate used to be 10 s, then 7 s, for a supposed camera radar-presence check: one setup drive
+(route 1a) latched an i-ACTIVSENSE fault after the radar went quiet 1.9 s past the camera's
+settle. The camera firmware (GSH7-67XK2-K) has no such check. It receives only 0x21B and the
+tracks 0x361-0x366 from the radar, sends no diagnostics to it, and their ~5 s timeouts reach
+only the AEB monitors, never the LKA fail-safe latch, which is rebuilt in RAM every boot. Route
+1a's fault was the EPS: 0x241 LKAS_FAULT rose 0.3 s after openpilot's first crawl-speed steer
+request, and the camera latched 5.55 s later on its "EPS fault held 5 s" rule (the first-activation
+crawl fault). The ~15 min persistence is the EPS's. The 1 s gate is on-car pending: validate on
+cold boots (15 min or more powered down) logging 0x241 bit 53 and 0x243 ERR_BIT_1/2.
 
 The settle signal is CAM_LANEINFO.NO_ERR_BIT, a pure boot marker that clears at 2.8 to 6.0 s
 after boot and is never set again while driving. A latched fault (ERR_BIT) also shows the boot
@@ -216,6 +220,10 @@ Ownership is established by the silence guard and then held on the controller's 
 witnesses (PEDALS 200 ms, ENGINE_DATA 100 ms, the CANParser's own ten-period validity) decide
 whether radar silence is evidence at all, a dead or blipping bus is never adopted as a silenced
 radar, and a blip while owned neither revokes availability nor re-runs the guard on recovery.
+A radar that positively acknowledged this episode's programming request has left its application
+for the bootloader, so its guard is `STOCK_RADAR_ACK_GUARD_T`; any stock CRZ_INFO after the
+acknowledgement voids it and the full guard applies. The first programming request goes out on
+entering the takeover, retries at the UDS cadence after it.
 
 ### Tried and rejected: gating availability alone
 
@@ -597,10 +605,11 @@ command with a gain of 1.07 and about 0.6 s of lag whoever sends it.
   m/s3 pull-away from a stop. Our plan reached the same peaks with p90 rising jerk of 1.2 to 1.7
   m/s3, and the driver reads that as aggressive throttle. `ACCEL_BUILD_V` over `ACCEL_BUILD_BP`
   applies that shape to the positive part of the command: 1.25 m/s3 below 3 m/s (stock's own
-  pull-away ramp) and 0.8 m/s3 from 6 m/s up, a third quicker than stock on purpose. Stock's
-  slowness on a lead pulling away is mostly its dash walk and radar lag, which the plan does
-  not have, and 0.8 is the largest rate that still sits inside stock's rising-jerk
-  distribution (p99 0.65 to 0.93 by bin); every other openpilot port builds at 2 m/s3 or more.
+  pull-away ramp), 0.8 m/s3 from 6 to 12 m/s, a third quicker than stock on purpose, and
+  stock's own 0.6 from 20 m/s up. In town stock's slowness on a lead pulling away is mostly its
+  dash walk and radar lag, which the plan does not have, and 0.8 is the largest rate that still
+  sits inside stock's rising-jerk distribution (p99 0.65 to 0.93 by bin). At highway speed the
+  quicker build only reached a kickdown sooner (2026-10-30 drives), so it is stock's there.
   It governs only the region above zero: brake release below zero keeps the 4.0 m/s3 windup,
   because stock's own brake release has a p99 tail near 2 m/s3 and holding the brake longer
   than the plan asks is the wrong failure.
@@ -616,6 +625,21 @@ command with a gain of 1.07 and about 0.6 s of lag whoever sends it.
   `ACCEL_MAX` (2.0) and our wire reached 2.0 below 5 m/s and 1.06 at 15 to 20 m/s.
   `ACCEL_CEILING_V` over `ACCEL_CEILING_BP` caps the wire at stock's envelope. It is a tuning
   cap inside the panda's +2000 raw safety limit, not a replacement for it.
+- **Gap to the set speed.** Stock's command also depends on how far under the set speed the car
+  is. With no lead at 20 to 24 m/s its p50 / p90 is 0.31 / 0.37 m/s2 for a 0.5 to 1.5 m/s
+  shortfall, 0.41 / 0.44 for 1.5 to 3, 0.51 / 0.55 for 3 to 5 and 0.64 / 0.76 for 5 to 10
+  (1.94M stock frames); 16 to 20 m/s is within a few hundredths. Upstream's cruise candidate is
+  `clip(v_cruise - v_ego, -0.5, 2.0)` since chill mode was removed (#39097), so any shortfall of
+  2 m/s asks for 2.0, and Set Speed Assist lifts experimental mode to the same answer. On the
+  four 2026-10-30 drives the wire sat on the 0.8 speed ceiling closing 1.5 to 3 m/s gaps and the
+  car kicked down 24 times in 13.7 engaged minutes, mostly 6>5>4 at 18 to 21 m/s; 23 of them came
+  from the lift toward chill's answer, none from the model. This car's kickdowns (CAN 0x202 RPM,
+  0x228 GEAR_BOX) sit at about 0.35 m/s2 in sixth and 0.42 in fifth from 14 to 24 m/s.
+  `get_pid_accel_limits` caps the command at the speed ceiling scaled by `ACCEL_GAP_FRACTION`
+  over the gap, which lands between stock's p50 and p90 from 9 to 24 m/s; a launch or a large
+  gap keeps the whole ceiling. It is Ford's and Honda Nidec's pattern (their PCM refuses accel
+  near the set speed) and binds every candidate in both modes: chill, the lift, the lead MPC and
+  the model.
 
 Replaying all three over the logged plans of our 17 alpha-long routes moves the p90 rising jerk
 from 1.0 to 1.7 m/s3 onto the 0.8 line in every bin from 5 m/s up and trims the peaks by 0.05 to
@@ -747,10 +771,11 @@ the dash lane indicators, so those two stay zeroed.
 | `LONG_STEP` | 2 frames (50 Hz) | stock CRZ_INFO / CRZ_CTRL rate | corpus |
 | `RADAR_STEP` | 10 frames (10 Hz) | stock radar static and track rate | corpus |
 | `RADAR_UDS_STEP` | 50 frames (2 Hz) | tester present cadence, well inside S3 = 5 s | 000000fe |
-| `FSC_SETTLE_T` | 7.0 s | radar-presence check faulted at 1.9 s, passed from 5.8 s (10 s until 2026-10-05) | setup/teardown drives |
+| `FSC_SETTLE_T` | 1.0 s | two CAM_LANEINFO frames past the boot marker; no camera radar check exists (10 s, then 7 s, until 2026-10-30) | FSC firmware, route 1a |
 | `CAM_LANEINFO_FRESH_T` | 1.5 s | 2.7x the longest CAM_LANEINFO period, 0.563 s over 26+ segments, two cars | corpus |
 | `STOCK_RADAR_ALIVE_T` | 0.05 s | stock gap p99.99 31.0 ms | 7.25M frames, 166 routes |
 | `STOCK_RADAR_GUARD_T` | 1.27 s | about 12x the longest stock gap (105.7 ms); the value every engaged drive ran on | 0000002d seg 28 |
+| `STOCK_RADAR_ACK_GUARD_T` | 0.25 s | the guard after the radar's `06 50 02` to our request (7 ms after it, 0x21B stops with it); 2.4x the longest stock gap | 0000001a, 00000025 |
 | `RADAR_SESSION_LIMIT_FRAMES` | 10.0 s | per-episode UDS budget | design |
 | `MAZDA_ENGAGE_BTN_WINDOW` | 10 CRZ_BTNS frames | press 30 to 70 ms before ACC_ACTIVE, 104 engagements | corpus |
 | `MAIN_OFF_DEBOUNCE_SAMPLES` | 10 PEDALS samples (0.1 s) | no self-recovering both-low run in 4026 segments; main-off lands 0.1 s late | corpus |
@@ -769,7 +794,7 @@ the dash lane indicators, so those two stay zeroed.
 | `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3; brake region only | reporter's route |
 | `ACCEL_BUILD_V` | 1.22 to 0.8 m/s3 over 3 to 6 m/s | stock +12 raw per 50 Hz frame (0.59) in 99.3% of rising frames, taken a third quicker; the release ramp pulling away | 158 stock routes |
 | `ACCEL_LIFT_LIMIT` | -2.0 m/s3 | stock throttle lift <= 40 raw per frame in 99.98% of falling positive frames | 158 stock routes |
-| `ACCEL_CEILING_V` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s2 at 0, 4, 9, 14, 18, 25 m/s | stock accelerating command p99 by speed, no lead | 158 stock routes |
+| `ACCEL_CEILING_V` | 1.5, 1.75, 1.45, 0.95, 0.85, 0.65 m/s2 at 0, 4, 9, 14, 18, 25 m/s | stock accelerating command p99 by speed, no lead; 14 m/s eased from 1.05 after 4>3 kickdowns near 3000 rpm (2026-10-31) | 158 stock routes |
 | `ACCEL_WINDDOWN_LIMIT` | -10.0 m/s3 | clips only p99.9+ steps | reporter's route |
 | `stopAccel` | -1.0 m/s2 | stock hold raw -1024 | corpus |
 | `longitudinalActuatorDelay` | 0.36 s | 0.3 s dead time + 0.3 s lag | corpus |

@@ -94,8 +94,9 @@ that radar. Once a moving handover is on record, the firmware rule can replace t
 
 Upstream precedent: comma's `disable_ecu()` runs at `CI.init()` at whatever speed the car is at
 after a manager restart; no upstream port gates the radar disable on standstill. The reason this
-port did was the FSC's boot-time radar-presence check, which the FSC settle timer already
-covers, and the unattended S3 recovery on the way out, which the ordered hand-back covers.
+port did was a supposed FSC boot-time radar-presence check (since ruled out, see
+mazda-longitudinal.md "FSC settle gate"), and the unattended S3 recovery on the way out, which the
+ordered hand-back covers.
 
 ### Lifecycle records
 
