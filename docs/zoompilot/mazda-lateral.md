@@ -26,8 +26,8 @@ availability rule (see mazda-longitudinal.md). The panda's torque envelope follo
 instead: the interface sets `MazdaSafetyFlags.EPS_HW` on every Mazda, and the panda enforces the
 1200/10/10 the controller commands. Without the bit it enforces upstream's 800/10/25.
 
-`steerActuatorDelay` is 0.05 s: lagd starts from it plus 0.2 s, and CX-5 drives learn 0.23 to
-0.26 s request-to-yaw. Of that, 10 ms is our 0x243 to the EPS's echo and 60 ms (p75 110) the echo
+`steerActuatorDelay` is 0.14 s: lagd starts from it plus 0.2 s, and CX-5 drives learn 0.30 to
+0.34 s (30 routes, 2026-10-10 to 10-30). Of that, 10 ms is our 0x243 to the EPS's echo and 60 ms (p75 110) the echo
 to LKAS_EFFECTIVE (96 windows, 60 dynamic segments, 2026-10-20). The CX-5 2022 `steerRatio` of 18.1 comes from the paramsd
 learner over 2.9M samples; 15.5 is the factory spec.
 
@@ -670,7 +670,7 @@ logs cannot record it, and the four mapped alerts were all under cruise.
 | `STEER_UNDELIVERED_ALERT_FRAMES` | 80 (0.8 s on top of the latch) | benign runs above 10 mph max 30 frames, faults 315 | corpus |
 | `STEER_UNDELIVERED_ALERT_MIN_SPEED` | 12 mph (5.36 m/s) | block release median 3.13, p90 4.97, max 5.39 m/s (38 episodes); fault began at 5.9 | 00000148 |
 | `STEER_UNDELIVERED_ALERT_ORIGIN_SPEED` | 1.0 m/s | 1660 of 1915 blocks begin below 0.5 m/s; every latched block that began above and armed was a fault, slowest 4.6 | corpus, replay_undelivered_alert.py |
-| `steerActuatorDelay` | 0.05 s | lagd starts at 0.25; CX-5 drives learn 0.23 to 0.26 | four CX-5 routes |
+| `steerActuatorDelay` | 0.14 s | lagd starts at 0.34; CX-5 drives learn 0.30 to 0.34 | 30 CX-5 routes, 10-10 to 10-30 |
 | `steerRatio` (CX-5 2022) | 18.1 | paramsd learner, 2.9M samples | corpus |
 | `LKAS_LIMITS.DISABLE_SPEED` / `ENABLE_SPEED` | 45 / 52 kph | pre-2022 EPS lockout hysteresis | upstream |
 | `DASH_STEER_WARNING_QUIET_FRAMES` | 200 (2 s) | the EPS-standby banner at engagement lasts 1.8 s; 38 of 65 warning windows with a state change inside were it | corpus, 264 windows |
