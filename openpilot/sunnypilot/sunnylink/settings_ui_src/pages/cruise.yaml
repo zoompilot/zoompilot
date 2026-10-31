@@ -15,29 +15,29 @@ sections:
     widget: toggle
     needs_onroad_cycle: true
     blocked: true
-    title: sunnypilot Longitudinal Control (Alpha)
-    description: 'WARNING: sunnypilot longitudinal control is in alpha for this car and will disable Automatic Emergency Braking
-      (AEB). On this car, sunnypilot defaults to the car''s built-in ACC instead of sunnypilot''s longitudinal control. Enable
-      this to switch to sunnypilot longitudinal control. Enabling Experimental mode is recommended when enabling sunnypilot
-      longitudinal control alpha. Changing this setting will restart sunnypilot if the car is powered on.'
+    title: zoompilot Longitudinal Control (Alpha)
+    description: 'WARNING: zoompilot longitudinal control is in alpha for this car and may disable Automatic Emergency Braking
+      (AEB). On this car, zoompilot defaults to the car''s built-in ACC instead of zoompilot''s longitudinal control. Enable
+      this to switch to zoompilot longitudinal control. Changing this setting will restart zoompilot if the car is powered on.'
     visibility:
     - type: capability
       field: alpha_long_available
       equals: true
     enablement:
     - $ref: '#/macros/not_engaged'
-  - key: ExperimentalMode
-    widget: toggle
-    title: Experimental Mode
-    description: Let the driving model control the gas and brakes. Off is chill mode.
-    enablement:
-    - $ref: '#/macros/longitudinal'
   - key: ExperimentalModeSetSpeed
     widget: toggle
     title: Set Speed Assist
-    description: In Experimental Mode, drive toward your set speed and following distance as chill mode does whenever the model holds back. The model still makes every slowdown.
+    description: Drive toward your set speed and following distance as legacy chill mode does whenever the driving model holds back. The model still makes every slowdown.
     visibility:
     - $ref: '#/macros/longitudinal'
+    enablement:
+    - $ref: '#/macros/longitudinal'
+  # the device shows this inverted, as Legacy Chill Mode; sunnylink toggles cannot invert a param
+  - key: ExperimentalMode
+    widget: toggle
+    title: Driving Model Gas and Brakes
+    description: On by default. The driving model drives the gas and brakes as it thinks a human would, including stopping for red lights and stop signs. Off is legacy chill mode, which holds your set speed and follows the car ahead.
     enablement:
     - $ref: '#/macros/longitudinal'
 - id: core_cruise_features

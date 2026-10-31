@@ -9,7 +9,6 @@ control. Developer drops its copy of the alpha switch (DeveloperLayoutMiciSP) so
 """
 from openpilot.selfdrive.ui.mici.layouts.settings.developer import AlphaLongConfirmPage
 from openpilot.selfdrive.ui.mici.widgets.button import BigToggle
-from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import EXPERIMENTAL_ICON
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
@@ -24,25 +23,21 @@ class AlphaLongitudinalLayoutMici(NavScroller):
     self._alpha_long_toggle = BigToggle(tr("alpha longitudinal"), toggle_callback=self._on_alpha_long,
                                         description=tr("Lets zoompilot control the gas and brakes instead of stock cruise.\n" +
                                                        "This may turn off Automatic Emergency Braking (AEB)."))
-    # upstream's row from before it retired chill mode (TogglesLayoutMici), text and icon
-    self._experimental_toggle = BigToggle(tr("experimental mode"), toggle_callback=ui_state.set_experimental_mode,
-                                          description_icon=gui_app.texture(EXPERIMENTAL_ICON, 64, 64),
-                                          description=tr("Let the driving model control gas and brakes.\n" +
-                                                         "Includes stopping for red lights and stop signs.\n" +
-                                                         "Set speed is a maximum, not a target.\n" +
-                                                         "These are alpha features. Expect mistakes.\n" +
-                                                         "The path colors show acceleration and braking."))
     self._set_speed_toggle = BigParamControlSP(tr("set speed assist"), "ExperimentalModeSetSpeed",
-                                               description=tr("Experimental Mode often cruises below your set speed and follows farther back.\n" +
-                                                              "This drives as chill mode does whenever the model holds back.\n" +
+                                               description=tr("The driving model often cruises below your set speed and follows farther back.\n" +
+                                                              "This drives as legacy chill mode does whenever the model holds back.\n" +
                                                               "The model still makes every slowdown."))
+    # the opt-out from the driving model (UIStateZP.legacy_chill)
+    self._chill_toggle = BigToggle(tr("legacy chill mode"), toggle_callback=ui_state.set_legacy_chill,
+                                   description=tr("The older way to drive the gas and brakes: hold your set speed and follow the car ahead.\n" +
+                                                    "It won't stop for red lights or stop signs.\n" +
+                                                    "Off, the default, lets the driving model drive them."))
 
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
-      ("ExperimentalMode", self._experimental_toggle),
       ("ExperimentalModeSetSpeed", self._set_speed_toggle),
     )
-    self._scroller.add_widgets([item for _, item in self._refresh_toggles])
+    self._scroller.add_widgets([item for _, item in self._refresh_toggles] + [self._chill_toggle])
 
     # onroad too, for devices powered only with the car on; never mid-engagement
     self._alpha_long_toggle.set_enabled(lambda: not ui_state.engaged)
@@ -59,13 +54,14 @@ class AlphaLongitudinalLayoutMici(NavScroller):
     CP = ui_state.CP
     has_long = CP is not None and ui_state.has_longitudinal_control
     self._alpha_long_toggle.set_visible(CP is not None and CP.alphaLongitudinalAvailable and not ui_state.is_release)
-    self._experimental_toggle.set_enabled(CP is None or has_long)
-    # only acts in experimental mode: locked without it, keeping its value
-    self._set_speed_toggle.set_superseded(not has_long or not self._experimental_toggle._checked)
+    self._chill_toggle.set_enabled(CP is None or has_long)
+    # only acts on the driving model's gas and brakes: locked in chill, keeping its value
+    self._set_speed_toggle.set_superseded(not has_long or ui_state.legacy_chill)
 
   def _refresh(self):
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
+    self._chill_toggle.set_checked(ui_state.legacy_chill)
 
   def _on_alpha_long(self, state: bool):
     if state:
