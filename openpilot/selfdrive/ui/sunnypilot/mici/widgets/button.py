@@ -186,7 +186,7 @@ class SubPanelSP(NavScroller):
 
 class SupersededPill:
   """BigToggle mixin: another setting overrides this one. Locked, and an on pill draws grey.
-  A lock from set_enabled, like onroad, keeps it green."""
+  A lock from set_enabled, like onroad, keeps it green. A multi toggle's off option also draws grey (off_index)."""
   _superseded: bool | Callable[[], bool] = False
 
   def _load_images(self):

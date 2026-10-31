@@ -16,40 +16,7 @@ from openpilot.system.ui.lib.shader_polygon import draw_polygon
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 
 BLENDFUL_COLOR = (0, 200, 255)
-IDLE_COLOR = (150, 160, 168)  # the line with no nudge: thin and grey, so a nudge stands out
-IDLE_ALPHA = 0.45
 FULL_BAR = 1.0
-LINE_HALF_WIDTH = 0.08  # m
-COLOR_FULL = 0.2  # m of push for full color; sqrt, so a 5 cm push is already halfway
-# chevrons on the line near the car, where the lane is widest on screen, point the way it nudges
-CHEVRON_X = (7.0, 11.0, 15.0)  # m ahead
-CHEVRON_LENGTH = 1.2  # m, half the forward extent of each arm pair
-CHEVRON_SPAN = 0.4  # m, apex to arm end sideways, at full nudge
-CHEVRON_THICKNESS = 0.14  # m
-CHEVRON_MIN = 0.3  # nudge (0 to 1) below which they stay hidden, about 2 cm
-
-
-def chevron_quads(center: np.ndarray, side: float, nudge: float) -> list[np.ndarray]:
-  """Road-space quads, two arms per chevron, apex toward side (+1 right, -1 left)."""
-  span = CHEVRON_SPAN * (0.6 + 0.4 * nudge)
-  quads = []
-  for x0 in CHEVRON_X:
-    if not center[0, 0] <= x0 <= center[-1, 0]:
-      continue
-    y0, z0 = np.interp(x0, center[:, 0], center[:, 1]), np.interp(x0, center[:, 0], center[:, 2])
-    apex = np.array([x0, y0 + side * span / 2, z0])
-    for end_x in (x0 - CHEVRON_LENGTH, x0 + CHEVRON_LENGTH):
-      end = np.array([end_x, y0 - side * span / 2, np.interp(end_x, center[:, 0], center[:, 2])])
-      back = np.array([0.0, -side * CHEVRON_THICKNESS, 0.0])
-      quads.append(np.array([apex, end, end + back, apex + back]))
-  return quads
-
-
-def _draw_triangle(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, color: rl.Color) -> None:
-  # raylib culls clockwise triangles; the winding flips with the chevron's side
-  if (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) > 0:
-    b, c = c, b
-  rl.draw_triangle(a, b, c, color)
 
 
 class BlendfulRenderer:
@@ -57,8 +24,6 @@ class BlendfulRenderer:
     self._readout = readout
     self._rect_relative = rect_relative
     self._center_points = np.empty((0, 2), dtype=np.float32)
-    self._chevrons: list[np.ndarray] = []
-    self._nudge = 0.0  # 0 to 1: how far the color has gone from idle toward full
     self._trust = 0.0
     self._font = gui_app.font(FontWeight.BOLD)
     self._pull_display = FirstOrderFilter(0.0, 0.5, DT_MDL)
@@ -71,15 +36,15 @@ class BlendfulRenderer:
       self._alpha.update(float(blendful.blendfulTrust > 0.0))
       if blendful.blendfulTrust > 0.0:
         self._trust = blendful.blendfulTrust
-      lookahead = max(ui_state.sm['carState'].vEgo * LOOKAHEAD_TIME, MIN_LOOKAHEAD)
-      self._pull_display.update(blendful.blendfulCurvature * lookahead ** 2 / 2)
-      self._trust_display.update(self._trust)
+      if self._readout:
+        lookahead = max(ui_state.sm['carState'].vEgo * LOOKAHEAD_TIME, MIN_LOOKAHEAD)
+        self._pull_display.update(blendful.blendfulCurvature * lookahead ** 2 / 2)
+        self._trust_display.update(self._trust)
 
     left, right = renderer._lane_lines[1].raw_points, renderer._lane_lines[2].raw_points
     stds = list(ui_state.sm['modelV2'].laneLineStds)
     if self._alpha.x < 0.01 or len(left) == 0 or len(right) != len(left) or len(stds) < 3:
       self._center_points = np.empty((0, 2), dtype=np.float32)
-      self._chevrons = []
       return
 
     l_prob, r_prob = blendful.blendfulLeftProb, blendful.blendfulRightProb
@@ -89,33 +54,18 @@ class BlendfulRenderer:
       r_var = stds[2] ** 2 / max(r_prob, 1e-4)
       center = left.copy()
       center[:, 1] = (r_var * (left[:, 1] + half_width) + l_var * (right[:, 1] - half_width)) / (l_var + r_var)
-      self._center_points = renderer._map_line_to_polygon(center, LINE_HALF_WIDTH, 0.0, max_idx, *map_args)
-      pull = self._pull_display.x  # +y is right
-      self._nudge = float(np.sqrt(np.clip(abs(pull) / COLOR_FULL, 0.0, 1.0)))
-      self._chevrons = []
-      if self._nudge > CHEVRON_MIN:
-        for quad in chevron_quads(center, float(np.sign(pull)), self._nudge):
-          proj = renderer._car_space_transform @ quad.T
-          if np.all(proj[2] > 1e-6):
-            self._chevrons.append((proj[:2] / proj[2]).T)
+      self._center_points = renderer._map_line_to_polygon(center, 0.15, 0.0, max_idx, *map_args)
 
   def _color(self, rgb, alpha: float) -> rl.Color:
-    # rl.Color is unsigned char: a value outside 0-255 raises
-    return rl.Color(*rgb, int(np.clip(alpha * self._alpha.x, 0, 255)))
+    return rl.Color(*rgb, int(alpha * self._alpha.x))
 
   def draw(self, rect: rl.Rectangle) -> None:
     if not UIStateSP.lateral_active(ui_state):
       return
     if self._center_points.size and self._trust > 0.05:
-      offset = (rect.x, rect.y) if self._rect_relative else (0, 0)
-      rgb = tuple(int(i + (b - i) * self._nudge) for i, b in zip(IDLE_COLOR, BLENDFUL_COLOR, strict=True))
-      draw_polygon(rect, self._center_points + offset, self._color(rgb, np.clip(self._trust, 0.2, 1.0) * (IDLE_ALPHA + (1 - IDLE_ALPHA) * self._nudge) * 255))
-      chevron = self._color((255, 255, 255), self._trust * max(self._nudge - CHEVRON_MIN, 0.0) / (1 - CHEVRON_MIN) * 255)
-      for quad in self._chevrons:
-        a, b, c, d = (rl.Vector2(float(x + offset[0]), float(y + offset[1])) for x, y in quad)
-        _draw_triangle(a, b, c, chevron)
-        _draw_triangle(a, c, d, chevron)
-    if self._center_points.size and self._readout and ui_state.blendful_readout:
+      points = self._center_points + (rect.x, rect.y) if self._rect_relative else self._center_points
+      draw_polygon(rect, points, self._color(BLENDFUL_COLOR, np.clip(self._trust, 0.2, 1.0) * 255))
+    if self._center_points.size and self._readout:
       self._draw_readout(rect)
 
   def _draw_readout(self, rect: rl.Rectangle) -> None:
