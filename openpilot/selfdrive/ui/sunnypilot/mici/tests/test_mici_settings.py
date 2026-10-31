@@ -1012,7 +1012,7 @@ class TestAlphaLongSwitchMici:
 
 
 class TestAlphaLongitudinalPanelMici:
-  """The alpha switch, experimental mode and the e2e assists live under Cruise, once."""
+  """The alpha switch, the e2e assists and legacy chill mode live under Cruise, once."""
 
   def test_moved_switches_appear_once(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
@@ -1022,8 +1022,8 @@ class TestAlphaLongitudinalPanelMici:
     assert developer._alpha_long_toggle not in developer._scroller.items
 
     alpha = AlphaLongitudinalLayoutMici()
-    assert [key for key, _ in alpha._refresh_toggles] == [
-      "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed"]
+    assert [key for key, _ in alpha._refresh_toggles] == ["AlphaLongitudinalEnabled", "ExperimentalModeSetSpeed"]
+    assert alpha._scroller.items[-1] is alpha._chill_toggle
 
   def test_settings_opens_the_sp_panels(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
@@ -1039,11 +1039,12 @@ class TestAlphaLongitudinalPanelMici:
       buttons[label]._click_callback()
       assert type(pushed[-1]) is cls
 
-  @pytest.mark.parametrize(("has_long", "badges"), [
-    (True, ["exp.", "speed"]),
-    (False, None),  # alpha off: a grey "disabled" pill
+  @pytest.mark.parametrize(("has_long", "experimental", "badges"), [
+    (True, True, ["speed assist"]),
+    (True, False, ["legacy chill"]),
+    (False, True, None),  # alpha off: a grey "disabled" pill
   ])
-  def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, badges):
+  def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, experimental, badges):
     from opendbc.car.structs import car
     from openpilot.cereal import custom
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
@@ -1056,7 +1057,7 @@ class TestAlphaLongitudinalPanelMici:
     monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=has_long))
     monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
     monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
-    monkeypatch.setattr(ui_state, "experimental_mode", True)
+    monkeypatch.setattr(ui_state, "experimental_mode", experimental)
     for param, _ in E2E_ASSISTS:
       params.put_bool(param, True, block=True)
     try:
@@ -1076,16 +1077,16 @@ class TestAlphaLongitudinalPanelMici:
       for param, _ in E2E_ASSISTS:
         params.remove(param)
 
-  def test_experimental_mode_needs_no_confirm(self, params, monkeypatch):
+  def test_legacy_chill_mode_needs_no_confirm(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts import alpha_longitudinal
     from openpilot.system.ui.lib.application import gui_app
 
     pushed = []
     monkeypatch.setattr(gui_app, "push_widget", pushed.append)
     layout = alpha_longitudinal.AlphaLongitudinalLayoutMici()
-    for state in (False, True):
-      layout._experimental_toggle._toggle_callback(state)
-      assert params.get_bool("ExperimentalMode") is state
+    for chill in (False, True):
+      layout._chill_toggle._toggle_callback(chill)
+      assert params.get_bool("ExperimentalMode") is not chill  # chill is the param's off
     assert not pushed
 
 
@@ -1093,7 +1094,7 @@ class TestOverriddenToggles:
   """A toggle another setting overrides draws a grey pill; one only locked onroad keeps its green one."""
 
   @pytest.mark.parametrize("experimental", [False, True])
-  def test_e2e_toggles_lock_without_experimental(self, params, monkeypatch, experimental):
+  def test_e2e_toggles_lock_in_legacy_chill(self, params, monkeypatch, experimental):
     from opendbc.car.structs import car
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
     from openpilot.selfdrive.ui.ui_state import ui_state
@@ -1102,6 +1103,7 @@ class TestOverriddenToggles:
     monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
     params.put_bool("ExperimentalModeSetSpeed", True, block=True)
     params.put_bool("ExperimentalMode", experimental, block=True)
+    ui_state.update_params()  # the UI's params tick, which legacy_chill reads
     try:
       layout = AlphaLongitudinalLayoutMici()
       layout._refresh()

@@ -30,8 +30,9 @@ IS_MICI = HARDWARE.get_device_type() == 'mici'
 
 
 def experimental_mode_switched_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
-  state = "On" if SelfdrivedZP.switched_to else "Off"
-  return NormalPermanentAlert(f"Experimental {state}", duration=1.5)
+  # switched_to is the driving model's state; the switch is named for legacy chill, its opposite
+  state = "Off" if SelfdrivedZP.switched_to else "On"
+  return NormalPermanentAlert(f"Legacy Chill {state}", duration=1.5)
 
 
 def speed_limit_adjust_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:

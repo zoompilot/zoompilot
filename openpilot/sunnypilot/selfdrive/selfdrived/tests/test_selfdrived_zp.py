@@ -125,7 +125,7 @@ class TestExperimentalSwitch:
   def test_alert_names_the_new_mode(self):
     alert = EVENTS_SP[EventNameSP.experimentalModeSwitchedDEPRECATED][ET.WARNING]
     sd = Selfdrived()
-    for text in ("Experimental Off", "Experimental On"):
+    for text in ("Legacy Chill On", "Legacy Chill Off"):
       sd.hold_gap(DISTANCE_LONG_PRESS + 5)
       assert alert(None, None, None, False, 0, None).alert_text_1 == text
 

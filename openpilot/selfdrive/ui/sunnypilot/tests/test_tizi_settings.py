@@ -34,8 +34,8 @@ def test_moved_switches_appear_once(params):
   assert developer._alpha_long_toggle not in developer._scroller._items
 
   alpha = AlphaLongitudinalToggles()
-  assert [key for key, _ in alpha._refresh_toggles] == [
-    "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed"]
+  assert [key for key, _ in alpha._refresh_toggles] == ["AlphaLongitudinalEnabled", "ExperimentalModeSetSpeed"]
+  assert alpha.items[-1] is alpha._chill_toggle
 
 
 def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
@@ -58,20 +58,20 @@ def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
   params.remove("ExperimentalModeSetSpeed")
 
 
-def test_experimental_toggle_needs_no_confirm(params, monkeypatch):
+def test_legacy_chill_toggle_needs_no_confirm(params, monkeypatch):
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
   from openpilot.system.ui.lib.application import gui_app
 
   pushed = []
   monkeypatch.setattr(gui_app, "push_widget", pushed.append)
   layout = AlphaLongitudinalToggles()
-  for state in (False, True):
-    layout._experimental_toggle.action_item.toggle._callback(state)
-    assert params.get_bool("ExperimentalMode") is state
+  for chill in (False, True):
+    layout._chill_toggle.action_item.toggle._callback(chill)
+    assert params.get_bool("ExperimentalMode") is not chill  # chill is the param's off
   assert not pushed
 
 
-def test_assists_grey_out_without_long_or_experimental(params, monkeypatch):
+def test_assists_grey_out_without_long_or_in_chill(params, monkeypatch):
   from opendbc.car.structs import car
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
   from openpilot.selfdrive.ui.ui_state import ui_state
@@ -79,11 +79,11 @@ def test_assists_grey_out_without_long_or_experimental(params, monkeypatch):
   monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=True))
   params.put_bool("ExperimentalModeSetSpeed", True, block=True)
   layout = AlphaLongitudinalToggles()
-  for has_long, experimental in itertools.product((True, False), repeat=2):
+  for has_long, chill in itertools.product((True, False), repeat=2):
     monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
-    layout._experimental_toggle.action_item.set_state(experimental)
+    layout._chill_toggle.action_item.set_state(chill)
     layout.update_state()
-    assert layout._set_speed_toggle.action_item.enabled == (has_long and experimental)
+    assert layout._set_speed_toggle.action_item.enabled == (has_long and not chill)
   assert params.get_bool("ExperimentalModeSetSpeed")  # locked, not cleared
   params.remove("ExperimentalModeSetSpeed")
 

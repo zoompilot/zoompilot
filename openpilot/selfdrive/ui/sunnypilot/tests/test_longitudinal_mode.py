@@ -15,9 +15,9 @@ from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 
 @pytest.mark.parametrize(("has_long", "experimental", "speed", "labels"), [
   (False, True, True, []),
-  (True, False, True, ["chill"]),
-  (True, True, False, ["experimental"]),
-  (True, True, True, ["exp.", "speed"]),
+  (True, False, True, ["legacy chill"]),
+  (True, True, False, ["default"]),
+  (True, True, True, ["speed assist"]),
 ])
 def test_cruise_shows_the_mode_that_drives(has_long, experimental, speed, labels):
   ui_state = SimpleNamespace(has_longitudinal_control=has_long, experimental_mode=experimental,

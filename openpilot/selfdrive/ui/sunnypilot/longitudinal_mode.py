@@ -11,8 +11,8 @@ from openpilot.system.ui.lib.multilang import tr
 # mici's experimental mode icon; upstream retired its copy with chill mode
 EXPERIMENTAL_ICON = "../../sunnypilot/selfdrive/assets/icons_mici/experimental_mode.png"
 
-# the e2e assists, each named by one badge word
-E2E_ASSISTS = (("ExperimentalModeSetSpeed", "speed"),)
+# the e2e assists, each named by its badge
+E2E_ASSISTS = (("ExperimentalModeSetSpeed", "speed assist"),)
 
 
 def alpha_longitudinal_reachable(ui_state) -> bool:
@@ -22,13 +22,13 @@ def alpha_longitudinal_reachable(ui_state) -> bool:
 
 
 def longitudinal_mode_labels(ui_state) -> list[str]:
-  """The mode that drives, then the e2e assists where they act. Empty without openpilot
-  longitudinal control."""
+  """Legacy chill, or the e2e assists that act ("default" without one). Empty without openpilot
+  longitudinal control. Each state fits one row under the two-line card title
+  (test_cruise_entry_shows_the_mode)."""
   if not ui_state.has_longitudinal_control:
     return []
   if not ui_state.experimental_mode:
-    return [tr("chill")]
-  # beside the assist's badge experimental is "exp.", so the widest state still fits one row under
-  # the two-line card title (test_cruise_entry_shows_the_mode)
+    return [tr("legacy chill")]
+  # the driving model is the default, so it shows as its assists, or as "default" without one
   assists = [tr(label) for param, label in E2E_ASSISTS if ui_state.params.get_bool(param)]
-  return [tr("exp."), *assists] if assists else [tr("experimental")]
+  return assists or [tr("default")]

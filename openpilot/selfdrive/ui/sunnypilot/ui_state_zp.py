@@ -65,6 +65,16 @@ class UIStateZP:
     self.params.put_bool("ExperimentalMode", on, block=True)
     self._experimental_mode_setting = on
 
+  # Upstream retired the experimental/chill switch with chill itself, so the driving model drives the
+  # gas and brakes. zoompilot keeps chill as the opt-out, "legacy chill mode": the off of the same
+  # ExperimentalMode param, so nobody's setting moved. The settings show it as legacy chill.
+  @property
+  def legacy_chill(self) -> bool:
+    return not self._experimental_mode_setting
+
+  def set_legacy_chill(self, on: bool) -> None:
+    self.set_experimental_mode(not on)
+
   def set_alpha_longitudinal(self, on: bool) -> None:
     """The setting, offroad or disengaged onroad. card reads it at fingerprint, so onroad it
     cycles the onroad state; hardwared holds that cycle for any stock ECU hand-back first."""
