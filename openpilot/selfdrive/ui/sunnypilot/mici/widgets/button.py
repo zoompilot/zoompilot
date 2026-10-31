@@ -186,7 +186,7 @@ class SubPanelSP(NavScroller):
 
 class SupersededPill:
   """BigToggle mixin: another setting overrides this one. Locked, and an on pill draws grey.
-  A lock from set_enabled, like onroad, keeps it green."""
+  A lock from set_enabled, like onroad, keeps it green. A multi toggle's off option also draws grey (off_index)."""
   _superseded: bool | Callable[[], bool] = False
 
   def _load_images(self):
@@ -207,9 +207,12 @@ class SupersededPill:
 
   def _draw_pill(self, x: float, y: float, checked: bool):
     if checked and self.superseded:
-      rl.draw_texture_ex(self._txt_inactive_toggle, (x, y), 0, 1.0, rl.Color(255, 255, 255, int(255 * 0.6)))
+      self._draw_grey_pill(x, y)
     else:
       super()._draw_pill(x, y, checked)
+
+  def _draw_grey_pill(self, x: float, y: float):
+    rl.draw_texture_ex(self._txt_inactive_toggle, (x, y), 0, 1.0, rl.Color(255, 255, 255, int(255 * 0.6)))
 
 
 class BigParamControlSP(SupersededPill, BigParamControl):
@@ -230,11 +233,13 @@ class BigMultiParamToggleSP(SupersededPill, BigMultiParamToggle):
   """BigMultiParamToggle with bounded reads, refresh, and dynamic pill spacing.
 
   When supplied, `values` maps each option to its stored value instead of its list index.
+  `off_index` names the option that leaves the feature off; its pill draws grey when selected.
   """
 
-  def __init__(self, text: str, param: str, options: list[str], values: list | None = None, **kwargs):
+  def __init__(self, text: str, param: str, options: list[str], values: list | None = None, off_index: int | None = None, **kwargs):
     assert values is None or len(values) == len(options)
     self._values = values  # BigMultiParamToggle.__init__ calls _load_value
+    self._off_index = off_index
     super().__init__(text, param, options, **kwargs)
     self._blocked_options: Callable[[], set[int]] | None = None
 
@@ -251,7 +256,10 @@ class BigMultiParamToggleSP(SupersededPill, BigMultiParamToggle):
     x = self._rect.x + self._rect.width - self._txt_enabled_toggle.width
     y = btn_y
     for i in range(n):
-      self._draw_pill(x, y, checked_idx == i)
+      if checked_idx == i == self._off_index:
+        self._draw_grey_pill(x, y)
+      else:
+        self._draw_pill(x, y, checked_idx == i)
       y += step
 
   def _get_param_index(self) -> int:
@@ -285,7 +293,9 @@ class BigMultiParamToggleSP(SupersededPill, BigMultiParamToggle):
     # Cycle the label; the base class's own write is not synchronous.
     BigMultiToggle._handle_mouse_release(self, mouse_pos)
     # refresh reads this value every frame, so commit it synchronously.
-    idx = self._options.index(self.value)
+    self._store(self._options.index(self.value))
+
+  def _store(self, idx: int):
     self._params.put(self._param, self._values[idx] if self._values is not None else idx, block=True)
 
   def _select_skipping(self, mouse_pos, blocked: set[int]):
@@ -296,7 +306,7 @@ class BigMultiParamToggleSP(SupersededPill, BigMultiParamToggle):
     self.set_value(self._options[new])
     if self._select_callback:
       self._select_callback(self.value)
-    self._params.put(self._param, self._values[new] if self._values is not None else new, block=True)
+    self._store(new)
 
   def refresh(self):
     new_value = self._options[self._get_param_index()]

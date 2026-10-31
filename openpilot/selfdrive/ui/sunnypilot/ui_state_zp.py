@@ -12,6 +12,17 @@ from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.dem
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
 
 
+def lane_center_mode(params) -> int:
+  """Lane center assist: 0 off, 1 on, 2 debug ui. Blendful stays the bool modeld and sunnylink read;
+  BlendfulReadout only counts while it is on."""
+  return params.get_bool("BlendfulReadout") + 1 if params.get_bool("Blendful") else 0
+
+
+def set_lane_center_mode(params, mode: int) -> None:
+  params.put_bool("Blendful", mode > 0, block=True)
+  params.put_bool("BlendfulReadout", mode == 2, block=True)
+
+
 class UIStateZP:
   """zoompilot's additions to UIStateSP: jetlink's snapshot and the USB port it holds, the
   torque bar's rail scale, the ICBM start lock, the brand the settings gate on and experimental
@@ -35,6 +46,8 @@ class UIStateZP:
     self._experimental_mode_setting: bool = False
     # the carrying model's short name for the home screens; None with HomeShowActiveModel off
     self.home_model_name: str | None = None
+    # lane center assist's debug readout on the comma 4
+    self.blendful_readout: bool = False
 
   def update(self) -> None:
     # read where sm is updated, so the params thread never touches a message
@@ -48,6 +61,7 @@ class UIStateZP:
 
   def update_params(self) -> None:
     self._experimental_mode_setting = self.params.get_bool("ExperimentalMode")
+    self.blendful_readout = lane_center_mode(self.params) == 2
     self._steer_rail_schedule = get_steer_rail_schedule(self.CP) if self.CP is not None else None
     # on the 5 Hz params pass, not per frame in a layout; a fitted chestnut owns chestnut_state
     self.jetlink = None if self.sm['deviceState'].chestnutPresent else jetlink_adapter.status()

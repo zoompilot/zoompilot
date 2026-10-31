@@ -8,7 +8,7 @@ import pyray as rl
 
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui import UI_BORDER_SIZE
-from openpilot.selfdrive.ui.mici.onroad.torque_bar import TorqueBar
+from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import TorqueBarZP
 from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui import DeveloperUiRenderer, DeveloperUiState, get_bottom_dev_ui_offset
 from openpilot.selfdrive.ui.sunnypilot.onroad.exp_button import ExpButton
 from openpilot.selfdrive.ui.sunnypilot.onroad.road_name import RoadNameRenderer
@@ -42,7 +42,7 @@ class HudRendererSP(HudRenderer):
     self.turn_signal_controller = TurnSignalController()
     self.circular_alerts_renderer = CircularAlertsRenderer()
     self.speed_renderer = SpeedRenderer()
-    self._torque_bar = TorqueBar(scale=3.0, always=True)
+    self._torque_bar = TorqueBarZP(scale=3.0, always=True, show_bar=lambda: ui_state.torque_bar)
     self._exp_button = ExpButton(EXP_BUTTON_SIZE, EXP_BUTTON_ICON_SIZE)
 
     self.pcm_cruise_speed: bool = True
@@ -143,11 +143,11 @@ class HudRendererSP(HudRenderer):
       button_y = rect.y + UI_BORDER_SIZE
       self._exp_button.render(rl.Rectangle(button_x, button_y, EXP_BUTTON_SIZE, EXP_BUTTON_SIZE))
 
-    if ui_state.torque_bar:
-      torque_rect = rect
-      if ui_state.developer_ui in (DeveloperUiState.BOTTOM, DeveloperUiState.BOTH):
-        torque_rect = rl.Rectangle(rect.x, rect.y, rect.width, rect.height - get_bottom_dev_ui_offset())
-      self._torque_bar.render(torque_rect)
+    # always rendered: lane center's gauge shows under it even with the bar itself off
+    torque_rect = rect
+    if ui_state.developer_ui in (DeveloperUiState.BOTTOM, DeveloperUiState.BOTH):
+      torque_rect = rl.Rectangle(rect.x, rect.y, rect.width, rect.height - get_bottom_dev_ui_offset())
+    self._torque_bar.render(torque_rect)
 
     self.developer_ui.render(rect)
     self.road_name_renderer.render(rect)

@@ -115,7 +115,7 @@ class ModelsLayoutMici(NavScroller):
 
     # the pills follow the param; locked onroad like the model buttons beside it: jetlink switches the link only parked
     self.link_toggle = BigMultiParamToggleSP(tr("jetlink"), KEYS.link, [tr(LINK_MODE_LABELS[m]) for m in MODES],
-                                             values=list(range(len(MODES))),
+                                             values=list(range(len(MODES))), off_index=0,
                                              description=tr("Runs big models on a computer or phone plugged into the comma.\n" +
                                                             "USB for a Mac, Jetson, Linux PC or Android. iOS for an iPhone or iPad.\n" +
                                                             "Turns off ADB. The small model drives until the big model is ready."))

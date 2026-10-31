@@ -12,6 +12,7 @@ from openpilot.cereal import custom
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_selected_bundle, resolve_bundle_by_ref
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.ui_state import device, ui_state
+from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import lane_center_mode, set_lane_center_mode
 from openpilot.selfdrive.ui.sunnypilot.accelerator_link import LINK_MODE_TITLES, big_model_note, link_mode, link_status, \
   link_toggle_meaningful, standin_model
 from openpilot.selfdrive.ui.sunnypilot.model_info import (big_model_state, bundles_for_source, carrying_model, default_model_name,
@@ -27,7 +28,7 @@ from openpilot.system.ui.widgets.toggle import ON_COLOR
 from openpilot.system.ui.sunnypilot.lib.styles import style
 from openpilot.system.ui.sunnypilot.lib.switch import Switch
 from openpilot.system.ui.sunnypilot.lib.utils import NoElideButtonAction, ScrollingButtonAction
-from openpilot.system.ui.sunnypilot.widgets.list_view import ListItemSP, toggle_item_sp, option_item_sp, multiple_button_item_sp
+from openpilot.system.ui.sunnypilot.widgets.list_view import ListItemSP, option_item_sp, multiple_button_item_sp
 from openpilot.system.ui.sunnypilot.widgets.download_status import download_status_item
 from openpilot.system.ui.sunnypilot.widgets.tree_dialog import TreeOptionDialog, TreeNode, TreeFolder
 
@@ -110,8 +111,11 @@ class ModelsLayout(Widget):
                                         switch=Switch("LagdToggle", True, tr("Live")))
 
     self._blendful_desc = tr("Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear." +
-                             " Yields around obstacles. Not available with the Default model.")
-    self.blendful_toggle = toggle_item_sp(tr("Lane Center Assist (Alpha)"), self._blendful_desc, param="Blendful")
+                             " Yields around obstacles. The blue line and the gauge under the torque bar show the strength and direction of" +
+                             " correction. Debug UI shows the exact adjustment in cm. Not available with the Default model.")
+    self.blendful_toggle = multiple_button_item_sp(tr("Lane Center Assist (Alpha)"), self._blendful_desc,
+                                                   buttons=[tr("Off"), tr("On"), tr("Debug UI")], button_width=300,
+                                                   callback=lambda i: set_lane_center_mode(ui_state.params, i), inline=False)
 
     # stored in m/s, stepped by whole display units
     self.small_steering_control = option_item_sp(tr("Small Model Steering"), "SmallModelSteering", 0, 900,
@@ -387,12 +391,8 @@ class ModelsLayout(Widget):
     camera_offset: bool = ui_state.active_bundle is not None
 
     blendful_allowed = ui_state.active_runner_tinygrad
-    if blendful_allowed:
-      self.blendful_toggle.action_item.set_state(ui_state.params.get_bool("Blendful"))
-      self.blendful_toggle.action_item.set_enabled(True)
-    else:
-      self.blendful_toggle.action_item.set_state(False)
-      self.blendful_toggle.action_item.set_enabled(False)
+    self.blendful_toggle.action_item.set_selected_button(lane_center_mode(ui_state.params) if blendful_allowed else 0)
+    self.blendful_toggle.action_item.set_enabled(blendful_allowed)
 
     blendful_desc = self._blendful_desc if blendful_allowed else \
       f"<b>{tr('Select a non-Default model to use Lane Center Assist.')}</b><br><br>{self._blendful_desc}"

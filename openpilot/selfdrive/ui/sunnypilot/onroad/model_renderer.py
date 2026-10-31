@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.selfdrive.ui.sunnypilot.onroad.blendful import BlendfulRenderer
+from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import BlendfulRendererZP
 from openpilot.selfdrive.ui.sunnypilot.onroad.chevron_metrics import ChevronMetrics
 from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
 from openpilot.selfdrive.ui.sunnypilot.ui_state import UIStateSP
@@ -17,7 +17,8 @@ class ModelRendererSP:
   def __init__(self):
     self.rainbow_path = RainbowPath()
     self.chevron_metrics = ChevronMetrics()
-    self.blendful = BlendfulRenderer(readout=False)
+    # debug ui's box larger and under the speed; it keeps its own bar while the torque bar, beside the gauge, is off
+    self.blendful = BlendfulRendererZP(readout_scale=2.0, readout_top=330, readout_bar=lambda: not ui_state.torque_bar)
     self._width_filter = FirstOrderFilter(0.9, 0.1, 1 / gui_app.target_fps)
 
   @property
