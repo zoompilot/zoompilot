@@ -16,9 +16,10 @@ from openpilot.system.ui.lib.shader_polygon import draw_polygon
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 
 BLENDFUL_COLOR = (0, 200, 255)
+IDLE_COLOR = (140, 175, 190)  # the line with no nudge: thin and muted, so the nudge stands out
 FULL_BAR = 1.0
-LINE_HALF_WIDTH = 0.15  # m
-GLOW_FULL = 0.5  # m of push for the widest glow
+LINE_HALF_WIDTH = 0.08  # m
+GLOW_FULL = 0.5  # m of push for the widest, most saturated glow
 GLOW_WIDTH = 1.0  # m
 GLOW_LAYERS = 6
 GLOW_ALPHA = 0.9  # at the inner edge, where every layer overlaps
@@ -30,6 +31,7 @@ class BlendfulRenderer:
     self._rect_relative = rect_relative
     self._center_points = np.empty((0, 2), dtype=np.float32)
     self._glow_points: list[np.ndarray] = []
+    self._nudge = 0.0  # 0 to 1 of GLOW_FULL
     self._trust = 0.0
     self._font = gui_app.font(FontWeight.BOLD)
     self._pull_display = FirstOrderFilter(0.0, 0.5, DT_MDL)
@@ -63,7 +65,8 @@ class BlendfulRenderer:
       self._center_points = renderer._map_line_to_polygon(center, LINE_HALF_WIDTH, 0.0, max_idx, *map_args)
       # the glow hangs off the side the pull is toward (+y is right); layers share an inner edge so it fades outward
       pull = self._pull_display.x
-      width = GLOW_WIDTH * float(np.clip(abs(pull) / GLOW_FULL, 0.0, 1.0))
+      self._nudge = float(np.clip(abs(pull) / GLOW_FULL, 0.0, 1.0))
+      width = GLOW_WIDTH * self._nudge
       self._glow_points = []
       if width > 0.02:
         for k in range(1, GLOW_LAYERS + 1):
@@ -80,10 +83,12 @@ class BlendfulRenderer:
       return
     if self._center_points.size and self._trust > 0.05:
       offset = (rect.x, rect.y) if self._rect_relative else (0, 0)
+      rgb = tuple(int(i + (b - i) * self._nudge) for i, b in zip(IDLE_COLOR, BLENDFUL_COLOR, strict=True))
+      glow_alpha = self._trust * GLOW_ALPHA * (0.4 + 0.6 * self._nudge) / GLOW_LAYERS * 255
       for glow in self._glow_points:
         if glow.size:
-          draw_polygon(rect, glow + offset, self._color(BLENDFUL_COLOR, self._trust * GLOW_ALPHA / GLOW_LAYERS * 255))
-      draw_polygon(rect, self._center_points + offset, self._color(BLENDFUL_COLOR, np.clip(self._trust, 0.2, 1.0) * 255))
+          draw_polygon(rect, glow + offset, self._color(rgb, glow_alpha))
+      draw_polygon(rect, self._center_points + offset, self._color(rgb, np.clip(self._trust, 0.2, 1.0) * (0.6 + 0.4 * self._nudge) * 255))
     if self._center_points.size and self._readout and ui_state.blendful_readout:
       self._draw_readout(rect)
 
