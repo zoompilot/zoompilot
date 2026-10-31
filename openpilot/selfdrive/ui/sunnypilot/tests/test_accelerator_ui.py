@@ -20,7 +20,7 @@ os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
 from openpilot.common.test import OpenpilotTestCase
-from openpilot.selfdrive.ui.sunnypilot.tests.helpers import jetlink_status
+from openpilot.selfdrive.ui.sunnypilot.tests.helpers import jetlink_status, wait_until
 
 # conftest's window, once for the module; every test then runs under its own prefix
 pytestmark = pytest.mark.usefixtures("gui")
@@ -498,6 +498,42 @@ class TestTiciModelsPanel(UITest):
     layout = self._layout()
     assert layout.items[-4:] == [layout.accelerator_link_item, layout.small_steering_control, layout.refresh_item, layout.clear_cache_item]
 
+  @staticmethod
+  def _press(item, button: str):
+    """A tap on the item's - or + button, laid out as the panel draws it."""
+    import pyray as rl
+    item.set_parent_rect(rl.Rectangle(0, 0, 1700, 2000))
+    item.render(rl.Rectangle(0, 0, 1700, item.get_item_height(item._font, 1700)))
+    action = item.action_item
+    rect = action.minus_btn_rect if button == "-" else action.plus_btn_rect
+    action._handle_mouse_release(rl.Vector2(rect.x + rect.width / 2, rect.y + rect.height / 2))
+
+  def test_lane_turn_and_steer_delay_fold_their_toggles_in(self):
+    self.ui_state.is_metric = False
+    self.params.put_bool("LaneTurnDesire", False, block=True)
+    self.params.put("LaneTurnValue", 19.0, block=True)
+    self.params.put_bool("LagdToggle", True, block=True)
+    layout = self._layout()
+    layout._update_state()
+    lane_turn, delay = layout.lane_turn_value_control, layout.delay_control
+    assert (lane_turn.action_item.get_displayed_value(), delay.action_item.get_displayed_value()) == ("Off", "Live")
+    # + from off comes back on at the stored speed
+    self._press(lane_turn, "+")
+    wait_until(lambda: self.params.get_bool("LaneTurnDesire"))
+    assert lane_turn.action_item.get_displayed_value() == "19 mph"
+    # - down to the slowest speed, then once more is off, keeping the speed
+    for _ in range(15):
+      self._press(lane_turn, "-")
+    wait_until(lambda: not self.params.get_bool("LaneTurnDesire") and self.params.get("LaneTurnValue") == 5.0)
+    assert lane_turn.action_item.get_displayed_value() == "Off"
+    self._press(delay, "+")
+    wait_until(lambda: not self.params.get_bool("LagdToggle") and self.params.get("LagdToggleDelay") == 0.2)
+    assert delay.action_item.get_displayed_value() == "0.20s"
+    # a switch flipped elsewhere (sunnylink) shows on the next frame
+    self.params.put_bool("LaneTurnDesire", True, block=True)
+    layout._update_state()
+    assert lane_turn.action_item.get_displayed_value() == "5 mph"
+
   def test_small_model_steering_reads_ms_in_either_unit(self):
     saved = self.ui_state.is_metric, self.ui_state.active_runner_tinygrad
     self.addCleanup(lambda: setattr(self.ui_state, 'is_metric', saved[0]) or setattr(self.ui_state, 'active_runner_tinygrad', saved[1]))
@@ -511,15 +547,6 @@ class TestTiciModelsPanel(UITest):
     for runner_tinygrad in (False, True):
       self.ui_state.active_runner_tinygrad = runner_tinygrad
       assert control.enabled is runner_tinygrad
-
-
-def wait_until(condition, timeout=2.0):
-  """The panels write with a non-blocking put(), which lands on a background thread."""
-  import time
-  deadline = time.monotonic() + timeout
-  while not condition():
-    assert time.monotonic() < deadline, "timed out"
-    time.sleep(0.005)
 
 
 def ui_state_module():

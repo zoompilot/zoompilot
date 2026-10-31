@@ -4,6 +4,7 @@ from openpilot.common.params import Params
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.sunnypilot.lib.styles import style
+from openpilot.system.ui.sunnypilot.lib.switch import SWITCH_VALUE, Switch, reads_switched, write_switch
 from openpilot.system.ui.widgets.list_view import ItemAction
 
 # Dimensions and styling constants
@@ -22,7 +23,8 @@ class OptionControlSP(ItemAction):
                on_value_changed: Callable[[int], None] | None = None,
                value_map: dict[int, int] | None = None,
                label_width: int = LABEL_WIDTH,
-               use_float_scaling: bool = False, label_callback: Callable[[int], str] | None = None):
+               use_float_scaling: bool = False, label_callback: Callable[[int], str] | None = None,
+               switch: Switch | None = None):
 
     super().__init__(enabled=enabled)
     self.params = Params()
@@ -38,7 +40,13 @@ class OptionControlSP(ItemAction):
     self.use_float_scaling = use_float_scaling
     self.current_value = min_value
     self.label_callback = label_callback
-    if self.value_map:
+    # zoompilot: a bool param as the step below min_value
+    self.switch = switch
+    if reads_switched(self.params, switch):
+      self.current_value = SWITCH_VALUE
+    elif switch is not None:
+      self.current_value = self._stored_value()
+    elif self.value_map:
       for key in self.value_map:
         if self.value_map[key] == self.params.get(self.param_key, return_default=True):
           self.current_value = int(key)
@@ -58,13 +66,32 @@ class OptionControlSP(ItemAction):
     """Get the current value of the control"""
     return self.current_value
 
+  def _stored_value(self) -> int:
+    value = float(self.params.get(self.param_key, return_default=True))
+    return min(max(round(value * 100) if self.use_float_scaling else int(value), self.min_value), self.max_value)
+
+  @property
+  def switched(self) -> bool:
+    """On the switch step: the feature is off (or live)."""
+    return self.switch is not None and self.current_value == SWITCH_VALUE
+
+  def refresh(self):
+    """Follow a switch changed elsewhere (sunnylink, the other UI)."""
+    if self.switch is not None and reads_switched(self.params, self.switch) != self.switched:
+      self.current_value = SWITCH_VALUE if not self.switched else self._stored_value()
+
   def set_value(self, value: int):
     """Set the control to a specific value"""
-    if not (self.min_value <= value <= self.max_value):
-      return
     if value == self.current_value:
       return
+    if self.switch is not None and value == SWITCH_VALUE:
+      self.current_value = value
+      write_switch(self.params, self.switch, value)
+      return
+    if not (self.min_value <= value <= self.max_value):
+      return
     self.current_value = value
+    write_switch(self.params, self.switch, value)
     if self.value_map:
       self.params.put(self.param_key, self.value_map[value])
     elif self.use_float_scaling:
@@ -77,6 +104,8 @@ class OptionControlSP(ItemAction):
   def get_displayed_value(self) -> str:
     """Get the displayed value, handling value mapping if present"""
     value = self.current_value
+    if self.switch is not None and value == SWITCH_VALUE:
+      return self.switch.label
 
     if callable(self.label_callback):
       if self.value_map:
@@ -122,7 +151,8 @@ class OptionControlSP(ItemAction):
     plus_x = label_x + self.label_width + BUTTON_SPACING
     self.plus_btn_rect = rl.Rectangle(plus_x, component_y, BUTTON_WIDTH + CONTAINER_PADDING, BUTTON_HEIGHT)
 
-    self._minus_enabled = self.enabled and self.current_value > self.min_value
+    floor = SWITCH_VALUE if self.switch is not None else self.min_value
+    self._minus_enabled = self.enabled and self.current_value > floor
     self._plus_enabled = self.enabled and self.current_value < self.max_value
 
     self._render_button(self.minus_btn_rect, "-", self._minus_enabled)
@@ -159,10 +189,17 @@ class OptionControlSP(ItemAction):
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     if self._minus_enabled and rl.check_collision_point_rec(mouse_pos, self.minus_btn_rect):
+      if self.switch is not None and self.current_value <= self.min_value:
+        self.set_value(SWITCH_VALUE)
+        return
       new_value = self.current_value - self.value_change_step
       new_value = max(self.min_value, new_value)
       self.set_value(new_value)
     elif self._plus_enabled and rl.check_collision_point_rec(mouse_pos, self.plus_btn_rect):
+      if self.switched:
+        # back on at the value it was switched off with
+        self.set_value(self._stored_value())
+        return
       new_value = self.current_value + self.value_change_step
       new_value = min(self.max_value, new_value)
       self.set_value(new_value)

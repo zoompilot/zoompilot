@@ -9,6 +9,7 @@ from enum import IntEnum
 
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.sunnypilot.lib.switch import Switch
 from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, simple_button_item_sp, option_item_sp, LineSeparatorSP
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
@@ -58,19 +59,16 @@ class SteeringLayout(Widget):
       button_width=800,
       callback=lambda: self._set_current_panel(PanelType.LANE_CHANGE)
     )
-    self._blinker_control_toggle = toggle_item_sp(
-      param="BlinkerPauseLateralControl",
-      description=lambda: tr("Pause lateral control with blinker when traveling below the desired speed selected."),
-      title=lambda: tr("Pause Lateral Control with Blinker"),
-    )
+    # zoompilot: BlinkerPauseLateralControl is the step below the slowest speed
     self._blinker_control_options = option_item_sp(
       param="BlinkerMinLateralControlSpeed",
-      title=lambda: tr("Minimum Speed to Pause Lateral Control"),
-      min_value=0,
+      title=lambda: tr("Pause Lateral Control with Blinker"),
+      min_value=5,
       max_value=255,
       value_change_step=5,
-      description="",
+      description=lambda: tr("Pause lateral control with blinker when traveling below the desired speed selected."),
       label_callback=lambda speed: f'{speed} {"km/h" if ui_state.is_metric else "mph"}',
+      switch=Switch("BlinkerPauseLateralControl", False, tr("Off")),
     )
     self._blinker_reengage_delay = option_item_sp(
       param="BlinkerLateralReengageDelay",
@@ -103,7 +101,6 @@ class SteeringLayout(Widget):
       LineSeparatorSP(40),
       self._lane_change_settings_button,
       LineSeparatorSP(40),
-      self._blinker_control_toggle,
       self._blinker_control_options,
       self._blinker_reengage_delay,
       LineSeparatorSP(40),
@@ -129,8 +126,8 @@ class SteeringLayout(Widget):
 
     self._mads_toggle.action_item.set_enabled(ui_state.is_offroad())
     self._mads_settings_button.action_item.set_enabled(ui_state.is_offroad() and self._mads_toggle.action_item.get_state())
-    self._blinker_control_options.set_visible(self._blinker_control_toggle.action_item.get_state())
-    self._blinker_reengage_delay.set_visible(self._blinker_control_toggle.action_item.get_state())
+    self._blinker_control_options.action_item.refresh()
+    self._blinker_reengage_delay.set_visible(not self._blinker_control_options.action_item.switched)
 
     enforce_torque_enabled = self._torque_control_toggle.action_item.get_state()
     nnlc_enabled = self._nnlc_toggle.action_item.get_state()

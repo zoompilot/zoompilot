@@ -7,13 +7,18 @@ See the LICENSE.md file in the root directory for more details.
 import pyray as rl
 from collections.abc import Callable
 
+from openpilot.system.ui.sunnypilot.lib.switch import SWITCH_VALUE, Switch, reads_switched, write_switch
 
-def read_scaled_param(params, param: str, float_param: bool, min_value: int) -> int:
+
+def read_scaled_param(params, param: str, float_param: bool, min_value: int, switch: Switch | None = None) -> int:
   """Read a param in the picker's integer domain.
 
   Float params use the TICI control's x100 scaling. Rounding prevents binary float
   representation from reducing the value on each open and commit cycle.
+  A switch that reads its `at` state reads as SWITCH_VALUE.
   """
+  if reads_switched(params, switch):
+    return SWITCH_VALUE
   val = params.get(param, return_default=True)
   try:
     return round(float(val) * (100 if float_param else 1)) if val is not None else min_value
@@ -180,9 +185,10 @@ class NumberPickerScreen(Widget):
   def __init__(self, title: str, param: str, min_value: int, max_value: int,
                step: int = 1, label_callback: Callable | None = None,
                value_map: dict[int, int] | None = None, float_param: bool = False,
-               unit: str | Callable[[], str] = "", item_width: int = ITEM_WIDTH):
+               unit: str | Callable[[], str] = "", item_width: int = ITEM_WIDTH, switch: Switch | None = None):
     super().__init__()
     self._title = title
+    self._switch = switch
     self._param = param
     self._min_value = min_value
     self._float_param = float_param
@@ -194,6 +200,8 @@ class NumberPickerScreen(Widget):
     self._was_settled = True
 
     self._picker_items: list[PickerItem] = []
+    if switch is not None:
+      self._picker_items.append(PickerItem(SWITCH_VALUE, switch.label, on_tap=self._on_item_tap, item_width=item_width))
     val = min_value
     while val <= max_value:
       display_val = value_map[val] if value_map and val in value_map else val
@@ -243,7 +251,7 @@ class NumberPickerScreen(Widget):
         break
 
   def _read_value(self) -> int:
-    return read_scaled_param(self._params, self._param, self._float_param, self._min_value)
+    return read_scaled_param(self._params, self._param, self._float_param, self._min_value, self._switch)
 
   def show_event(self):
     super().show_event()  # propagates to _scroller via _child()
@@ -261,7 +269,9 @@ class NumberPickerScreen(Widget):
     if center.raw_value != self._last_center_value:
       self._last_center_value = center.raw_value
       # Params.put is non-blocking by default.
-      self._params.put(self._param, center.raw_value / 100.0 if self._float_param else center.raw_value)
+      if center.raw_value != SWITCH_VALUE:
+        self._params.put(self._param, center.raw_value / 100.0 if self._float_param else center.raw_value)
+      write_switch(self._params, self._switch, center.raw_value)
 
   def _update_state(self):
     super()._update_state()
