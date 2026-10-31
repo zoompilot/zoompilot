@@ -2,41 +2,41 @@ zoompilot vUNRELEASED
 ========================
 * Synced with sunnypilot of 2026-10-29, through openpilot of 2026-10-16.
 * Cruise
-  * Experimental Mode is on by default with alpha longitudinal.
-  * Turn it off: hold the distance button, long press home, or in sunnylink.
+  * Experimental is now the default with alpha longitudinal (openpilot).
+  * Legacy chill mode replaces the Experimental Mode toggle.
+  * Toggle chill: hold the distance button, or long press home.
   * Dynamic Experimental Control is removed.
-  * Alpha longitudinal coasts more. Curves and speed limits still brake.
-  * Set Speed Assist reaches your set speed and follow distance like chill.
-  * The model still makes every slowdown. No more gas-brake pumping.
-  * Lead Follow Assist is now part of Set Speed Assist.
-  * Set Speed Assist is on by default.
-  * Alpha longitudinal can be switched onroad while disengaged.
-  * If stock cruise can't be handed back, the next drive says to restart the car.
-  * Slow for Curves Map keeps its targets between GPS fixes.
+  * Set Speed Assist toggle reaches set speed and follow distance (on by default).
+  * Alpha longitudinal coasts more.
+  * Alpha longitudinal can be toggled onroad while disengaged.
+* Settings
+  * On/off toggles folded into their numerical value pickers.
+  * Off options show a grey pill.
 * Steering
-  * New Lane Center Assist (alpha) in Models. Custom models only.
-  * Road edge lane change block: off, audible or silent.
+  * New Lane Center Assist (alpha) in Models.
+  * Road edge lane change block: new silent option.
 * comma 4
-  * Experimental Mode shows in the confidence ball.
+  * Confidence ball indicates experimental/chill mode.
   * Models adds lane turn desires, steer delay and camera offset.
-  * Home can show the driving model's name (Display).
-* Toyota TSS2: Smooth Longitudinal (alpha).
+  * Home can show the active model (Display).
 * Mazda
-  * Steering tuning from reverse engineering work.
-  * CX-5: steering delay learning starts at 0.25 s.
-  * Blind spot monitoring uses upstream's new BSM flag.
-  * 2017 Mazda 3 2.5 L is recognized automatically.
-  * 2026 CX-5 outside North America is recognized automatically.
+  * Steering tuning from reverse engineering work. thx @braind84
+  * CX-5: steering delay learning starts at 0.34 s.
+  * Easier steering override, same feel at every speed.
+  * Alpha longitudinal: smoother acceleration, fewer downshifts.
+  * Alpha longitudinal is ready sooner after starting the car.
+  * 2017 Mazda 3 2.5 L and non-US 2026 CX-5 recognized automatically.
   * A camera fault no longer shows as LKAS off.
 * jetlink
-  * A model picked in the jetlink app drives on the comma too.
-  * The Jetson downloads new models, not the comma.
+  * Pick models on either the comma or jetlink.
+  * The comma no longer downloads models jetlink already has.
   * Jetlink-only models can be picked in sunnylink.
-  * Flip Flop and Mountain Dew v3 are listed separately.
-  * Your big model pick is kept when the model list changes.
+  * Big model pick kept when the model list changes.
   * The jetlink app no longer keeps a CPU core busy between drives.
   * The jetlink port draws less power at boot.
   * comma 3X: no reboot when a laptop is plugged in.
+  * With a big model, the small model steers below 11 mph (Models).
+* Toyota TSS2: Smooth Longitudinal (alpha).
 
 zoompilot v2026.10.16-16
 ========================
