@@ -11,6 +11,7 @@ from collections.abc import Callable
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP, BigParamOption, speed_unit
 from openpilot.system.ui.sunnypilot.lib.switch import Switch
+from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import lane_center_mode, set_lane_center_mode
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr
 
@@ -42,19 +43,17 @@ def _option(title: str, param: str, fmt: Callable[[int], str], unit: str | Calla
 
 
 class LaneCenterToggle(BigMultiParamToggleSP):
-  """Off, on, or on with the onroad readout. Blendful stays the bool modeld and sunnylink read;
-  BlendfulReadout only matters while it is on."""
+  """Off, on, or on with the onroad readout; see lane_center_mode."""
 
   def __init__(self, **kwargs):
     super().__init__(tr("lane center assist"), "Blendful", [tr("off"), tr("on"), tr("debug ui")],
                      off_index=0, **kwargs)
 
   def _get_param_index(self) -> int:
-    return self._params.get_bool("BlendfulReadout") + 1 if self._params.get_bool("Blendful") else 0
+    return lane_center_mode(self._params)
 
   def _store(self, idx: int):
-    self._params.put_bool("Blendful", idx > 0, block=True)
-    self._params.put_bool("BlendfulReadout", idx == 2, block=True)
+    set_lane_center_mode(self._params, idx)
 
 
 class ModelOptions:
