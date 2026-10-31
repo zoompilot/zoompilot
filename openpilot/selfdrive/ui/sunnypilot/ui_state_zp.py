@@ -35,6 +35,8 @@ class UIStateZP:
     self._experimental_mode_setting: bool = False
     # the carrying model's short name for the home screens; None with HomeShowActiveModel off
     self.home_model_name: str | None = None
+    # lane center assist's debug readout on the comma 4
+    self.blendful_readout: bool = False
 
   def update(self) -> None:
     # read where sm is updated, so the params thread never touches a message
@@ -48,6 +50,7 @@ class UIStateZP:
 
   def update_params(self) -> None:
     self._experimental_mode_setting = self.params.get_bool("ExperimentalMode")
+    self.blendful_readout = self.params.get_bool("BlendfulReadout")
     self._steer_rail_schedule = get_steer_rail_schedule(self.CP) if self.CP is not None else None
     # on the 5 Hz params pass, not per frame in a layout; a fitted chestnut owns chestnut_state
     self.jetlink = None if self.sm['deviceState'].chestnutPresent else jetlink_adapter.status()

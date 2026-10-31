@@ -17,6 +17,11 @@ from openpilot.system.ui.lib.text_measure import measure_text_cached
 
 BLENDFUL_COLOR = (0, 200, 255)
 FULL_BAR = 1.0
+LINE_HALF_WIDTH = 0.15  # m
+GLOW_FULL = 0.5  # m of push for the widest glow
+GLOW_WIDTH = 1.0  # m
+GLOW_LAYERS = 6
+GLOW_ALPHA = 0.9  # at the inner edge, where every layer overlaps
 
 
 class BlendfulRenderer:
@@ -24,6 +29,7 @@ class BlendfulRenderer:
     self._readout = readout
     self._rect_relative = rect_relative
     self._center_points = np.empty((0, 2), dtype=np.float32)
+    self._glow_points: list[np.ndarray] = []
     self._trust = 0.0
     self._font = gui_app.font(FontWeight.BOLD)
     self._pull_display = FirstOrderFilter(0.0, 0.5, DT_MDL)
@@ -36,15 +42,15 @@ class BlendfulRenderer:
       self._alpha.update(float(blendful.blendfulTrust > 0.0))
       if blendful.blendfulTrust > 0.0:
         self._trust = blendful.blendfulTrust
-      if self._readout:
-        lookahead = max(ui_state.sm['carState'].vEgo * LOOKAHEAD_TIME, MIN_LOOKAHEAD)
-        self._pull_display.update(blendful.blendfulCurvature * lookahead ** 2 / 2)
-        self._trust_display.update(self._trust)
+      lookahead = max(ui_state.sm['carState'].vEgo * LOOKAHEAD_TIME, MIN_LOOKAHEAD)
+      self._pull_display.update(blendful.blendfulCurvature * lookahead ** 2 / 2)
+      self._trust_display.update(self._trust)
 
     left, right = renderer._lane_lines[1].raw_points, renderer._lane_lines[2].raw_points
     stds = list(ui_state.sm['modelV2'].laneLineStds)
     if self._alpha.x < 0.01 or len(left) == 0 or len(right) != len(left) or len(stds) < 3:
       self._center_points = np.empty((0, 2), dtype=np.float32)
+      self._glow_points = []
       return
 
     l_prob, r_prob = blendful.blendfulLeftProb, blendful.blendfulRightProb
@@ -54,7 +60,17 @@ class BlendfulRenderer:
       r_var = stds[2] ** 2 / max(r_prob, 1e-4)
       center = left.copy()
       center[:, 1] = (r_var * (left[:, 1] + half_width) + l_var * (right[:, 1] - half_width)) / (l_var + r_var)
-      self._center_points = renderer._map_line_to_polygon(center, 0.15, 0.0, max_idx, *map_args)
+      self._center_points = renderer._map_line_to_polygon(center, LINE_HALF_WIDTH, 0.0, max_idx, *map_args)
+      # the glow hangs off the side the pull is toward (+y is right); layers share an inner edge so it fades outward
+      pull = self._pull_display.x
+      width = GLOW_WIDTH * float(np.clip(abs(pull) / GLOW_FULL, 0.0, 1.0))
+      self._glow_points = []
+      if width > 0.02:
+        for k in range(1, GLOW_LAYERS + 1):
+          half = width * k / GLOW_LAYERS / 2
+          strip = center.copy()
+          strip[:, 1] += np.sign(pull) * (LINE_HALF_WIDTH + half)
+          self._glow_points.append(renderer._map_line_to_polygon(strip, half, 0.0, max_idx, *map_args))
 
   def _color(self, rgb, alpha: float) -> rl.Color:
     return rl.Color(*rgb, int(alpha * self._alpha.x))
@@ -63,9 +79,12 @@ class BlendfulRenderer:
     if not UIStateSP.lateral_active(ui_state):
       return
     if self._center_points.size and self._trust > 0.05:
-      points = self._center_points + (rect.x, rect.y) if self._rect_relative else self._center_points
-      draw_polygon(rect, points, self._color(BLENDFUL_COLOR, np.clip(self._trust, 0.2, 1.0) * 255))
-    if self._center_points.size and self._readout:
+      offset = (rect.x, rect.y) if self._rect_relative else (0, 0)
+      for glow in self._glow_points:
+        if glow.size:
+          draw_polygon(rect, glow + offset, self._color(BLENDFUL_COLOR, self._trust * GLOW_ALPHA / GLOW_LAYERS * 255))
+      draw_polygon(rect, self._center_points + offset, self._color(BLENDFUL_COLOR, np.clip(self._trust, 0.2, 1.0) * 255))
+    if self._center_points.size and self._readout and ui_state.blendful_readout:
       self._draw_readout(rect)
 
   def _draw_readout(self, rect: rl.Rectangle) -> None:

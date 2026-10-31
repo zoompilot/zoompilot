@@ -114,18 +114,18 @@ class SteeringLayoutMici(NavScroller):
 
     # AutoLaneChangeTimer stores a mode from -1 through 5, not a boolean.
     self._lc_timer = BigMultiParamToggleSP(tr("auto lane change"), "AutoLaneChangeTimer",
-                                           list(ALC_LABELS.values()), values=list(ALC_LABELS),
+                                           list(ALC_LABELS.values()), values=list(ALC_LABELS), off_index=0,
                                            description=tr("Nudge: signal, then nudge the wheel to change lanes.\n" +
                                                           "Nudgeless changes lanes as soon as you signal. A time waits that long first.\n" +
                                                           "Off: zoompilot never changes lanes."))
     self._lc_bsm = BigParamControlSP(tr("bsm delay"), "AutoLaneChangeBsmDelay",
                                      depends_on=lambda: self._bsm_applies(self._alc_val) and self._car_has_bsm(),
                                      description=tr("Waits an extra second after the blind spot clears."))
-    self._lc_road_edge = BigMultiParamToggleSP(tr("road edge block"), "RoadEdgeLaneChangeEnabled", ROAD_EDGE_LABELS,
+    self._lc_road_edge = BigMultiParamToggleSP(tr("road edge block"), "RoadEdgeLaneChangeEnabled", ROAD_EDGE_LABELS, off_index=0,
                                                description=tr("Blocks a lane change toward a road edge the model sees.\n" +
                                                               "Silent shows the alert without the chime."))
     # off = stock; every level is a slower lane change than stock
-    self._lc_level = BigMultiParamToggleSP(tr("lane change") + "\n" + tr("smoothing"), "LaneChangeSmoothing", LC_LEVEL_LABELS,
+    self._lc_level = BigMultiParamToggleSP(tr("lane change") + "\n" + tr("smoothing"), "LaneChangeSmoothing", LC_LEVEL_LABELS, off_index=0,
                                            description=tr("Makes lane changes slower and smoother.\n" +
                                                           "Off is stock. Every other pace is slower."))
     self._lc_view = self._lane_change_btn.link_sub_panel([self._lc_timer, self._lc_bsm, self._lc_road_edge,

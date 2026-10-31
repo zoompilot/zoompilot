@@ -9,7 +9,7 @@ The tici models panel's driving options, for the comma 4 models panel.
 from collections.abc import Callable
 
 from openpilot.common.constants import CV
-from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP, BigParamOption, speed_unit
+from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP, BigParamOption, speed_unit
 from openpilot.system.ui.sunnypilot.lib.switch import Switch
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr
@@ -41,12 +41,31 @@ def _option(title: str, param: str, fmt: Callable[[int], str], unit: str | Calla
                         picker_label_callback=fmt, picker_unit=unit, **kwargs)
 
 
+class LaneCenterToggle(BigMultiParamToggleSP):
+  """Off, on, or on with the onroad readout. Blendful stays the bool modeld and sunnylink read;
+  BlendfulReadout only matters while it is on."""
+
+  def __init__(self, **kwargs):
+    super().__init__(tr("lane center assist"), "Blendful", [tr("off"), tr("on"), tr("debug ui")],
+                     off_index=0, **kwargs)
+
+  def _get_param_index(self) -> int:
+    return self._params.get_bool("BlendfulReadout") + 1 if self._params.get_bool("Blendful") else 0
+
+  def _store(self, idx: int):
+    self._params.put_bool("Blendful", idx > 0, block=True)
+    self._params.put_bool("BlendfulReadout", idx == 2, block=True)
+
+
 class ModelOptions:
   def __init__(self):
     # modeld_v2 runs Blendful and the camera offset; stock modeld, which runs the Default model, does neither
-    self.lane_center = BigParamControlSP(tr("lane center assist"), "Blendful", depends_on=lambda: ui_state.active_runner_tinygrad,
-                                         description=tr("Alpha. Nudges the car toward the middle of the lane, more when the lines are clear.\n" +
-                                                        "Yields around obstacles. Not with the Default model."))
+    self.lane_center = LaneCenterToggle(description=tr("Alpha. Nudges the car toward the middle of the lane.\n" +
+                                                       "Stronger when the lane lines are clear. Yields around obstacles.\n" +
+                                                       "The blue line shows the strength and direction of correction.\n" +
+                                                       "Debug UI shows the exact adjustment in cm.\n" +
+                                                       "Not with the Default model."))
+    self.lane_center.set_superseded(lambda: not ui_state.active_runner_tinygrad)
 
     # LaneTurnDesire is the picker's off. A metric step of 0.62 mph lands on each whole km/h, as the tici panel steps it
     self.lane_turn = _option(tr("lane turn desires"), "LaneTurnValue", lambda v: str(round(v / 100 * _per_mph())), speed_unit,
