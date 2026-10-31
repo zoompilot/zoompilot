@@ -4,7 +4,7 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Lane center assist on the comma 4: a thin, muted center line that turns blue as the nudge grows, and the
+Lane center assist on the comma 4: a muted center line that turns blue as the nudge grows, and the
 torque bar's track painted blue from its middle toward the side it nudges. The track is drawn in screen
 space, so it stays readable where road-space marks shrink to a few pixels; TorqueBar draws its own
 track and fill over it after this. The cm readout only shows with BlendfulReadout (debug ui).
@@ -15,13 +15,11 @@ from openpilot.selfdrive.ui.mici.onroad.torque_bar import TORQUE_ANGLE_SPAN, arc
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.sunnypilot.onroad.blendful import BlendfulRenderer
 from openpilot.selfdrive.ui.sunnypilot.ui_state import UIStateSP
-from openpilot.sunnypilot.modeld_v2.blendful import LANE_WIDTH_CLIP
 from openpilot.system.ui.lib.shader_polygon import draw_polygon
 
 BLUE = rl.Color(0, 200, 255, 255)
-IDLE = rl.Color(150, 160, 168, 255)  # the line with no nudge: thin and grey, so a nudge stands out
+IDLE = rl.Color(150, 160, 168, 255)  # the line with no nudge: grey, so a nudge stands out
 IDLE_ALPHA = 0.45
-LINE_HALF_WIDTH = 0.08  # m
 COLOR_FULL = 0.2  # m of push for full color; sqrt, so a 5 cm push is already halfway
 # TorqueBar's track at rest: radius 1200, inner edge 22 px above the bottom of the view, 14 px tall, 7 px caps
 TORQUE_RADIUS = 1200
@@ -32,17 +30,6 @@ ARC_ALPHA = 0.9  # solid once shown; trust already decides whether it shows
 ARC_MIN = 0.3  # nudge (0 to 1) below which the track stays plain, about 2 cm
 
 
-def center_line(left: np.ndarray, right: np.ndarray, stds, blendful) -> np.ndarray:
-  """The lane center Blendful steers toward, weighted by each line's confidence, as BlendfulRenderer draws it."""
-  l_prob, r_prob = blendful.blendfulLeftProb, blendful.blendfulRightProb
-  half_width = np.clip(right[:, 1] - left[:, 1], *LANE_WIDTH_CLIP) / 2 if l_prob * r_prob > 0.5 else blendful.blendfulLaneWidth / 2
-  l_var = stds[1] ** 2 / max(l_prob, 1e-4)
-  r_var = stds[2] ** 2 / max(r_prob, 1e-4)
-  center = left.copy()
-  center[:, 1] = (r_var * (left[:, 1] + half_width) + l_var * (right[:, 1] - half_width)) / (l_var + r_var)
-  return center
-
-
 class BlendfulRendererZP(BlendfulRenderer):
   def __init__(self, rect_relative: bool = False):
     super().__init__(readout=True, rect_relative=rect_relative)
@@ -50,18 +37,10 @@ class BlendfulRendererZP(BlendfulRenderer):
     self._arc_extent = 0.0  # -1 to 1 of the half span, + is right
 
   def update(self, renderer, max_idx: int, *map_args) -> None:
-    super().update(renderer, max_idx, *map_args)  # filters, trust and the fade; its wide line is redrawn thin below
+    super().update(renderer, max_idx, *map_args)  # the line, filters, trust and the fade
     if not self._center_points.size:
       self._arc_extent = 0.0
       return
-    blendful = ui_state.sm['modelDataV2SP']
-    if blendful.blendfulTrust <= 0.0 or blendful.blendfulLeftProb + blendful.blendfulRightProb <= 0.0:
-      return  # the base kept the last line too
-
-    left, right = renderer._lane_lines[1].raw_points, renderer._lane_lines[2].raw_points
-    center = center_line(left, right, list(ui_state.sm['modelV2'].laneLineStds), blendful)
-    self._center_points = renderer._map_line_to_polygon(center, LINE_HALF_WIDTH, 0.0, max_idx, *map_args)
-
     pull = self._pull_display.x  # +y is right
     nudge = float(np.sqrt(np.clip(abs(pull) / COLOR_FULL, 0.0, 1.0)))
     line_alpha = np.clip(self._trust, 0.2, 1.0) * (IDLE_ALPHA + (1 - IDLE_ALPHA) * nudge)
