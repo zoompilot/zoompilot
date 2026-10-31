@@ -9,6 +9,15 @@ fixtures are in ../conftest.py.
 """
 
 
+def wait_until(condition, timeout: float = 2.0):
+  """The panels write with a non-blocking put(), which lands on a background thread."""
+  import time
+  deadline = time.monotonic() + timeout
+  while not condition():
+    assert time.monotonic() < deadline, "timed out"
+    time.sleep(0.005)
+
+
 def render(widget, width: int = 800, height: int = 600):
   """Drive one frame through Widget.render, which calls _update_state."""
   import pyray as rl

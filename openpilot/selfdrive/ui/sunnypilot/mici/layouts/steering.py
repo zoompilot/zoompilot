@@ -14,6 +14,7 @@ from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import (
   BigParamOption,
   speed_unit,
 )
+from openpilot.system.ui.sunnypilot.lib.switch import Switch
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.ui_state import ui_state
@@ -130,19 +131,18 @@ class SteeringLayoutMici(NavScroller):
     self._lc_view = self._lane_change_btn.link_sub_panel([self._lc_timer, self._lc_bsm, self._lc_road_edge,
                                                           self._lc_level])
 
-    self._blinker_toggle = BigParamControlSP(tr("enable blinker pause"), "BlinkerPauseLateralControl",
-                                             description=tr("Pauses steering while you signal at low speed, so you can turn by hand."))
-    self._blinker_speed = BigParamOption(tr("blinker speed"), "BlinkerMinLateralControlSpeed",
-                                         min_value=0, max_value=255, value_change_step=5,
-                                         label_callback=lambda v: f"{v} {speed_unit()}", picker_unit=speed_unit,
-                                         description=tr("Below this speed, the blinker pauses steering."))
+    # BlinkerPauseLateralControl is the picker's off; the speed is stored in the display unit
+    self._blinker_speed = BigParamOption(tr("blinker pauses steering"), "BlinkerMinLateralControlSpeed",
+                                         min_value=5, max_value=255, value_change_step=5,
+                                         label_callback=lambda v: tr("under {} {}").format(v, speed_unit()), picker_unit=speed_unit,
+                                         switch=Switch("BlinkerPauseLateralControl", False, tr("off")),
+                                         description=tr("Pauses steering while you signal below this speed, so you can turn by hand."))
     self._blinker_delay = BigParamOption(tr("blinker delay"), "BlinkerLateralReengageDelay",
                                          min_value=0, max_value=10,
                                          label_callback=lambda v: f"{v} " + tr("seconds"), picker_unit=tr("seconds"),
                                          description=tr("How long steering waits to resume after the blinker turns off."))
-    for opt in (self._blinker_speed, self._blinker_delay):
-      opt.set_enabled(lambda: self._blinker_toggle._checked)
-    self._blinker_view = self._blinker_settings_btn.link_sub_panel([self._blinker_toggle, self._blinker_speed, self._blinker_delay])
+    self._blinker_delay.set_enabled(lambda: not self._blinker_speed.switched)
+    self._blinker_view = self._blinker_settings_btn.link_sub_panel([self._blinker_speed, self._blinker_delay])
 
     self._torque_toggle = BigParamControlSP(tr("enable torque control"), "EnforceTorqueControl",
                                             description=tr("Steers with torque control, using zoompilot's tunes.\n" +

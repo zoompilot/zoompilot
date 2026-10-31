@@ -17,7 +17,7 @@ from opendbc.car.mazda.values import MazdaFlags
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
-from openpilot.selfdrive.ui.sunnypilot.tests.helpers import jetlink_status, render
+from openpilot.selfdrive.ui.sunnypilot.tests.helpers import jetlink_status, render, wait_until
 
 
 def wait_for_param(params, key, timeout=2.0):
@@ -252,6 +252,22 @@ class TestSteeringLayoutBadges:
       shown = "bsm-delay" in (layout._lane_change_btn._badge_labels or [])
       assert shown is expected, f"mode {mode}: badge shown={shown}"
       assert params.get_bool("AutoLaneChangeBsmDelay"), "badge suppression must not clear the param"
+
+
+class TestBlinkerPauseMici:
+  def test_blinker_pauses_steering_is_off_in_its_picker(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    monkeypatch.setattr(ui_state, "is_metric", False)
+    params.put_bool("BlinkerPauseLateralControl", False, block=True)
+    params.put("BlinkerMinLateralControlSpeed", 20, block=True)
+    layout = SteeringLayoutMici()
+    speed, delay = layout._blinker_speed, layout._blinker_delay
+    assert speed.value == "off" and not delay.enabled
+    params.put_bool("BlinkerPauseLateralControl", True, block=True)
+    speed.refresh()
+    assert speed.value == "under 20 mph" and delay.enabled
+    assert [item.display_label for item in speed.create_picker_screen()._picker_items[:3]] == ["off", "5", "10"]
 
 
 class TestRoadEdgeLaneChange:
@@ -1214,7 +1230,7 @@ class TestModelsPanelMici:
     layout = ModelsLayoutMici()
     items = [item for item in layout.main_items[1:] if item is not layout.cancel_download_btn]
     assert [item.text for item in items] == ["select model", "lane center assist",
-                                             "lane turn desires", "lane turn speed", "live steer delay", "manual steer delay",
+                                             "lane turn desires", "steer delay",
                                              "camera offset", "jetlink", "small model steer", "refresh models", "clear cache"]
     assert {item._get_label_font_size() for item in items} == {BigButton("t")._get_label_font_size()}, "a long title shrinks its font"
 
@@ -1229,22 +1245,38 @@ class TestModelsPanelMici:
       assert options.camera_offset.enabled is runner_tinygrad
       assert options.small_steering.enabled is runner_tinygrad
 
-  def test_dependent_options_follow_their_toggles(self, params):
-    params.put_bool("LaneTurnDesire", False, block=True)
+  def test_live_steer_delay_is_live_in_its_picker(self, params):
     params.put_bool("LagdToggle", True, block=True)
-    options = self._options()
-    assert not options.lane_turn_speed.enabled and not options.steer_delay.enabled
-    params.put_bool("LaneTurnDesire", True, block=True)
-    params.put_bool("LagdToggle", False, block=True)
-    options.refresh()
-    assert options.lane_turn_speed.enabled and options.steer_delay.enabled
+    steer_delay = self._options().steer_delay
+    assert steer_delay.value == "live"
+    picker = steer_delay.create_picker_screen()
+    assert self._centered(picker) == "live"
+    assert [item.display_label for item in picker._picker_items[:2]] == ["live", "0.05"]
+
+  def test_lane_turn_desires_is_off_in_its_picker(self, params):
+    params.put_bool("LaneTurnDesire", False, block=True)
+    params.put("LaneTurnValue", 19.0, block=True)
+    lane_turn = self._options().lane_turn
+    assert lane_turn.value == "off"
+    picker = lane_turn.create_picker_screen()
+    assert self._centered(picker) == "off"
+    assert [item.display_label for item in picker._picker_items[:3]] == ["off", "5", "6"]
+    # picking a speed turns the desires on; picking off keeps the speed
+    for idx, desire, speed in ((15, True, 19.0), (0, False, 19.0)):
+      picker._scroll_to_index(idx)
+      render(picker)  # the centre item is read off the laid-out positions
+      picker._commit_value()
+      wait_until(lambda want=(desire, speed): (params.get_bool("LaneTurnDesire"), params.get("LaneTurnValue")) == want)
+      lane_turn.refresh()
+      assert lane_turn.value == ("19 mph" if desire else "off")
 
   @pytest.mark.parametrize(("metric", "label", "centered"), [(False, "19 mph", "19"), (True, "31 km/h", "31")])
   def test_lane_turn_speed_reads_mph_in_either_unit(self, params, monkeypatch, metric, label, centered):
     from openpilot.selfdrive.ui.ui_state import ui_state
     monkeypatch.setattr(ui_state, "is_metric", metric)
+    params.put_bool("LaneTurnDesire", True, block=True)
     params.put("LaneTurnValue", 19.0, block=True)
-    speed = self._options().lane_turn_speed
+    speed = self._options().lane_turn
     assert speed.value == label
     # 19 mph is off the whole-km/h grid: the picker opens on the nearest
     assert self._centered(speed.create_picker_screen()) == centered
@@ -1263,6 +1295,7 @@ class TestModelsPanelMici:
     assert picker._picker_items[-1].display_label == ("32" if metric else "20")
 
   def test_steer_delay_and_camera_offset_labels(self, params):
+    params.put_bool("LagdToggle", False, block=True)
     params.put("LagdToggleDelay", 0.2, block=True)
     params.put("CameraOffset", -0.05, block=True)
     options = self._options()

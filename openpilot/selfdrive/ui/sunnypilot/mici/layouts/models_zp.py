@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP, BigParamOption, speed_unit
+from openpilot.system.ui.sunnypilot.lib.switch import Switch
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr
 
@@ -47,14 +48,12 @@ class ModelOptions:
                                          description=tr("Alpha. Nudges the car toward the middle of the lane, more when the lines are clear.\n" +
                                                         "Yields around obstacles. Not with the Default model."))
 
-    self.lane_turn = BigParamControlSP(tr("lane turn desires"), "LaneTurnDesire",
-                                       description=tr("With the blinker on below the lane turn speed, plans the turn that way.\n" +
-                                                      "Stops the car picking the wrong turn at a red light."))
-    # a metric step of 0.62 mph lands on each whole km/h, as the tici panel steps it
-    self.lane_turn_speed = _option(tr("lane turn speed"), "LaneTurnValue", lambda v: str(round(v / 100 * _per_mph())), speed_unit,
-                                   min_value=500, max_value=2000, value_change_step=lambda: round(100 / _per_mph()),
-                                   description=tr("Lane turn desires work at or below this speed."))
-    self.lane_turn_speed.set_enabled(lambda: self.lane_turn._checked)
+    # LaneTurnDesire is the picker's off. A metric step of 0.62 mph lands on each whole km/h, as the tici panel steps it
+    self.lane_turn = _option(tr("lane turn desires"), "LaneTurnValue", lambda v: str(round(v / 100 * _per_mph())), speed_unit,
+                             min_value=500, max_value=2000, value_change_step=lambda: round(100 / _per_mph()),
+                             switch=Switch("LaneTurnDesire", False, tr("off")),
+                             description=tr("With the blinker on below this speed, plans the turn that way.\n" +
+                                            "Stops the car picking the wrong turn at a red light."))
 
     # off, then every whole display unit up to 20 mph (32 km/h)
     self.small_steering = BigParamOption(tr("small model steer"), "SmallModelSteering", float_param=True, min_value=0, max_value=900,
@@ -65,12 +64,11 @@ class ModelOptions:
                                                         "Default is 11 mph (18 km/h). Not with the Default model."))
     self.small_steering.set_enabled(lambda: ui_state.active_runner_tinygrad)
 
-    self.live_delay = BigParamControlSP(tr("live steer delay"), "LagdToggle",
-                                        description=tr("Learns how long your car takes to respond to steering as you drive.\n" +
-                                                       "On is stock openpilot."))
-    self.steer_delay = _option(tr("manual steer delay"), "LagdToggleDelay", _hundredths, "s", min_value=5, max_value=50,
-                               description=tr("The software delay used while live steer delay is off.\nDefault is 0.20 s."))
-    self.steer_delay.set_enabled(lambda: not self.live_delay._checked)
+    # LagdToggle is the picker's live
+    self.steer_delay = _option(tr("steer delay"), "LagdToggleDelay", _hundredths, "s", min_value=5, max_value=50,
+                               switch=Switch("LagdToggle", True, tr("live")),
+                               description=tr("Live learns how long your car takes to respond to steering, as stock openpilot does.\n" +
+                                              "A number is a fixed software delay instead. Default is live."))
 
     self.camera_offset = _option(tr("camera offset"), "CameraOffset", _hundredths, "m", min_value=-35, max_value=35,
                                  description=tr("Shifts where the model thinks the camera sits.\n" +
@@ -78,7 +76,7 @@ class ModelOptions:
     self.camera_offset.set_enabled(lambda: ui_state.active_runner_tinygrad)
 
     # between the panel's lane center and jetlink rows; small_steering sits after jetlink
-    self.items = [self.lane_turn, self.lane_turn_speed, self.live_delay, self.steer_delay, self.camera_offset]
+    self.items = [self.lane_turn, self.steer_delay, self.camera_offset]
 
   def refresh(self):
     for item in (*self.items, self.small_steering):
