@@ -100,7 +100,8 @@ class BlendfulRenderer:
             self._chevrons.append((proj[:2] / proj[2]).T)
 
   def _color(self, rgb, alpha: float) -> rl.Color:
-    return rl.Color(*rgb, int(alpha * self._alpha.x))
+    # rl.Color is unsigned char: a value outside 0-255 raises
+    return rl.Color(*rgb, int(np.clip(alpha * self._alpha.x, 0, 255)))
 
   def draw(self, rect: rl.Rectangle) -> None:
     if not UIStateSP.lateral_active(ui_state):
@@ -109,7 +110,7 @@ class BlendfulRenderer:
       offset = (rect.x, rect.y) if self._rect_relative else (0, 0)
       rgb = tuple(int(i + (b - i) * self._nudge) for i, b in zip(IDLE_COLOR, BLENDFUL_COLOR, strict=True))
       draw_polygon(rect, self._center_points + offset, self._color(rgb, np.clip(self._trust, 0.2, 1.0) * (IDLE_ALPHA + (1 - IDLE_ALPHA) * self._nudge) * 255))
-      chevron = self._color((255, 255, 255), self._trust * (self._nudge - CHEVRON_MIN) / (1 - CHEVRON_MIN) * 255)
+      chevron = self._color((255, 255, 255), self._trust * max(self._nudge - CHEVRON_MIN, 0.0) / (1 - CHEVRON_MIN) * 255)
       for quad in self._chevrons:
         a, b, c, d = (rl.Vector2(float(x + offset[0]), float(y + offset[1])) for x, y in quad)
         _draw_triangle(a, b, c, chevron)
