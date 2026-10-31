@@ -55,6 +55,7 @@ from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.modeld_v2.helpers import load_model
 from openpilot.sunnypilot.modeld_v2.frame_fusion import fused_with_warp
 from openpilot.sunnypilot.modeld_v2.model_adapters import get_model_adapter
+from openpilot.sunnypilot.modeld_v2.small_lateral import SmallLateral
 from openpilot.sunnypilot.models.helpers import get_active_bundle
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeController
 from openpilot.sunnypilot import jetlink_adapter
@@ -337,6 +338,8 @@ def main(demo=False):
   small_model = ModelState(cam_w=vipc_client_main.width, cam_h=vipc_client_main.height, chestnut=False) if model is None or CHESTNUT else None
   if model is None:
     model = small_model
+  elif small_model is not None:
+    small_model.warmup()  # it steers beside the chestnut at low speed: its first run is ~1.3 s
   model = jetlink_adapter.attach(model, small_model, vipc_client_main.width, vipc_client_main.height)
   params.put_bool("ChestnutLoading", False)
   assert model is not None
@@ -386,6 +389,7 @@ def main(demo=False):
   RELC = RoadEdgeLaneChangeController()
   blendful = Blendful()
   blendful_enabled = False
+  small_lateral = SmallLateral(small_model)
 
   while True:
     # Keep receiving frames until we are at least 1 frame ahead of previous extra frame
@@ -430,6 +434,7 @@ def main(demo=False):
       model.PLANPLUS_CONTROL = params.get("PlanplusControl", return_default=True)
       camera_offset_helper.set_offset(params.get("CameraOffset", return_default=True))
       blendful_enabled = params.get_bool("Blendful")
+      small_lateral.speed = params.get("SmallModelSteering", return_default=True)
     lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
     long_delay = CP.longitudinalActuatorDelay + model.LONG_SMOOTH_SECONDS
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
@@ -482,7 +487,9 @@ def main(demo=False):
     try:
       send_chestnut = (chestnut_state is not None and
                        run_count % round(model.constants.MODEL_FREQ / SERVICE_LIST['chestnutGpuState'].frequency) == 0)
-      model_output = model.run(bufs, transforms, inputs, chestnut_state.send if send_chestnut else None)
+      model_output = model.run(bufs, transforms, inputs, small_lateral.after_enqueue(
+        model, chestnut_state.send if send_chestnut else None, desire, (buf_main, buf_extra),
+        (model_transform_main, model_transform_extra), inputs, v_ego))
     except Exception:
       if not model.chestnut:
         raise
@@ -511,6 +518,7 @@ def main(demo=False):
       blendful_active = desire == log.Desire.none and DH.lane_change_state == log.LaneChangeState.off
       action = model.get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego,
                                            partial(blendful.update, model_output, v_ego, blendful_active, enabled=blendful_enabled))
+      small_lateral.curvature(action, prev_action, v_ego)
       prev_action = action
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,

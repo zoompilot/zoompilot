@@ -118,15 +118,24 @@ class ModelsLayout(Widget):
                              " Yields around obstacles. Not available with the Default model.")
     self.blendful_toggle = toggle_item_sp(tr("Lane Center Assist (Alpha)"), self._blendful_desc, param="Blendful")
 
+    # stored in m/s, stepped by whole display units
+    self.small_steering_control = option_item_sp(tr("Small Model Steering"), "SmallModelSteering", 0, 900,
+                                                 tr("With a big model, the small model steers below this speed. It is steadier when slow. " +
+                                                    "Default is 11 mph (18 km/h). Not available with the Default model."),
+                                                 int(round(100 * CV.MPH_TO_MS)), None, lambda: ui_state.active_runner_tinygrad, "",
+                                                 style.BUTTON_ACTION_WIDTH, None, True,
+                                                 lambda v: f"{round(v / 100 * (CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH))}" +
+                                                           f" {'km/h' if ui_state.is_metric else 'mph'}" if v else tr("Off"))
+
     self.camera_offset = option_item_sp(tr("Adjust Camera Offset"), "CameraOffset", -35, 35,
                                         tr("Virtually shift camera's perspective to move model's center to Left(+ values) or Right (- values)"),
                                         1, None, True, "", style.BUTTON_ACTION_WIDTH, None, True,
                                         lambda v: f"{v / 100:.2f} m")
 
-    self.items = [self.small_model_item, self.big_model_item, self.accelerator_link_item, self.cancel_download_item,
-                  self.download_item, self.refresh_item, self.clear_cache_item,
+    # as the comma 4 panel: jetlink and small model steering just before refresh
+    self.items = [self.small_model_item, self.big_model_item, self.cancel_download_item, self.download_item,
                   self.blendful_toggle, self.lane_turn_desire_toggle, self.lane_turn_value_control, self.lagd_toggle, self.delay_control,
-                  self.camera_offset]
+                  self.camera_offset, self.accelerator_link_item, self.small_steering_control, self.refresh_item, self.clear_cache_item]
     self._refresh_accelerator_items()
 
   @staticmethod
@@ -404,6 +413,7 @@ class ModelsLayout(Widget):
     new_step = int(round(100 / CV.MPH_TO_KPH)) if ui_state.is_metric else 100
     if self.lane_turn_value_control.action_item is not None and self.lane_turn_value_control.action_item.value_change_step != new_step:
       self.lane_turn_value_control.action_item.value_change_step = new_step
+    self.small_steering_control.action_item.value_change_step = int(round(100 * (CV.KPH_TO_MS if ui_state.is_metric else CV.MPH_TO_MS)))
     self.camera_offset.set_visible(camera_offset)
 
     self._update_lagd_description(live_delay)

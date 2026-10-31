@@ -494,6 +494,24 @@ class TestTiciModelsPanel(UITest):
     stamped = tuple(ModelCache(self.params, suffix=suffix)._LAST_SYNC_KEY for _, suffix in ModelFetcher.MODEL_SOURCES.values())
     assert MODEL_SYNC_KEYS == stamped
 
+  def test_jetlink_and_small_model_steering_sit_before_refresh(self):
+    layout = self._layout()
+    assert layout.items[-4:] == [layout.accelerator_link_item, layout.small_steering_control, layout.refresh_item, layout.clear_cache_item]
+
+  def test_small_model_steering_reads_ms_in_either_unit(self):
+    saved = self.ui_state.is_metric, self.ui_state.active_runner_tinygrad
+    self.addCleanup(lambda: setattr(self.ui_state, 'is_metric', saved[0]) or setattr(self.ui_state, 'active_runner_tinygrad', saved[1]))
+    for speed, metric, label, step in ((5.0, False, "11 mph", 45), (5.0, True, "18 km/h", 28), (0.0, False, "Off", 45)):
+      self.params.put("SmallModelSteering", speed, block=True)
+      self.ui_state.is_metric = metric
+      layout = self._layout()
+      layout._update_state()
+      control = layout.small_steering_control.action_item
+      assert (control.get_displayed_value(), control.value_change_step) == (label, step)
+    for runner_tinygrad in (False, True):
+      self.ui_state.active_runner_tinygrad = runner_tinygrad
+      assert control.enabled is runner_tinygrad
+
 
 def wait_until(condition, timeout=2.0):
   """The panels write with a non-blocking put(), which lands on a background thread."""

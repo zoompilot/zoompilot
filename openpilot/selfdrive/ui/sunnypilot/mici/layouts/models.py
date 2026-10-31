@@ -131,8 +131,8 @@ class ModelsLayoutMici(NavScroller):
     self._options = ModelOptions()
     self.blendful_toggle = self._options.lane_center
 
-    self.main_items = [self.current_model_info, self.select_model_btn, self.cancel_download_btn, self.blendful_toggle, self.link_toggle,
-                       *self._options.items, self.refresh_btn, self.clear_cache_btn]
+    self.main_items = [self.current_model_info, self.select_model_btn, self.cancel_download_btn, self.blendful_toggle,
+                       *self._options.items, self.link_toggle, self._options.small_steering, self.refresh_btn, self.clear_cache_btn]
     self._scroller.add_widgets(self.main_items)
 
   @property

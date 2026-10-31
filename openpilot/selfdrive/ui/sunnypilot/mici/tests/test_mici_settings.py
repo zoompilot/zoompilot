@@ -1202,14 +1202,20 @@ class TestModelsPanelMici:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models_zp import ModelOptions
     return ModelOptions()
 
+  @staticmethod
+  def _centered(picker) -> str:
+    """The label the picker opens on."""
+    picker.show_event()
+    return picker._picker_items[round(-picker._scroll_panel.get_offset() / picker._item_width)].display_label
+
   def test_order(self, params):
     from openpilot.selfdrive.ui.mici.widgets.button import BigButton
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
     layout = ModelsLayoutMici()
     items = [item for item in layout.main_items[1:] if item is not layout.cancel_download_btn]
-    assert [item.text for item in items] == ["select model", "lane center assist", "jetlink",
+    assert [item.text for item in items] == ["select model", "lane center assist",
                                              "lane turn desires", "lane turn speed", "live steer delay", "manual steer delay",
-                                             "camera offset", "refresh models", "clear cache"]
+                                             "camera offset", "jetlink", "small model steer", "refresh models", "clear cache"]
     assert {item._get_label_font_size() for item in items} == {BigButton("t")._get_label_font_size()}, "a long title shrinks its font"
 
   def test_the_default_model_locks_model_options_showing_their_value(self, params, monkeypatch):
@@ -1221,6 +1227,7 @@ class TestModelsPanelMici:
       monkeypatch.setattr(ui_state, "active_runner_tinygrad", runner_tinygrad)
       assert options.lane_center.superseded is not runner_tinygrad
       assert options.camera_offset.enabled is runner_tinygrad
+      assert options.small_steering.enabled is runner_tinygrad
 
   def test_dependent_options_follow_their_toggles(self, params):
     params.put_bool("LaneTurnDesire", False, block=True)
@@ -1239,11 +1246,21 @@ class TestModelsPanelMici:
     params.put("LaneTurnValue", 19.0, block=True)
     speed = self._options().lane_turn_speed
     assert speed.value == label
-    picker = speed.create_picker_screen()
-    picker.show_event()
     # 19 mph is off the whole-km/h grid: the picker opens on the nearest
-    idx = round(-picker._scroll_panel.get_offset() / picker._item_width)
-    assert picker._picker_items[idx].display_label == centered
+    assert self._centered(speed.create_picker_screen()) == centered
+
+  @pytest.mark.parametrize(("metric", "speed", "label", "centered"), [(False, 5.0, "under 11 mph", "11"),
+                                                                      (True, 5.0, "under 18 km/h", "18"),
+                                                                      (False, 0.0, "off", "off")])
+  def test_small_model_steer_reads_ms_in_either_unit(self, params, monkeypatch, metric, speed, label, centered):
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    monkeypatch.setattr(ui_state, "is_metric", metric)
+    params.put("SmallModelSteering", speed, block=True)
+    steer = self._options().small_steering
+    assert steer.value == label
+    picker = steer.create_picker_screen()
+    assert self._centered(picker) == centered
+    assert picker._picker_items[-1].display_label == ("32" if metric else "20")
 
   def test_steer_delay_and_camera_offset_labels(self, params):
     params.put("LagdToggleDelay", 0.2, block=True)

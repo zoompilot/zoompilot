@@ -23,6 +23,16 @@ def _hundredths(v: int) -> str:
   return f"{v / 100:.2f}"
 
 
+def _per_ms() -> float:
+  """Display units per m/s."""
+  return CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
+
+
+def _speed(v: int) -> str:
+  """A speed stored in m/s, x100 in the picker, in the display unit; 0 is off."""
+  return str(round(v / 100 * _per_ms())) if v else tr("off")
+
+
 def _option(title: str, param: str, fmt: Callable[[int], str], unit: str | Callable[[], str], **kwargs) -> BigParamOption:
   """A float param, x100 in the picker, whose button reads the picker label and the unit."""
   unit_text = unit if callable(unit) else lambda: unit
@@ -46,6 +56,15 @@ class ModelOptions:
                                    description=tr("Lane turn desires work at or below this speed."))
     self.lane_turn_speed.set_enabled(lambda: self.lane_turn._checked)
 
+    # off, then every whole display unit up to 20 mph (32 km/h)
+    self.small_steering = BigParamOption(tr("small model steer"), "SmallModelSteering", float_param=True, min_value=0, max_value=900,
+                                         value_change_step=lambda: round(100 / _per_ms()), picker_label_callback=_speed,
+                                         picker_unit=speed_unit,
+                                         label_callback=lambda v: tr("under {} {}").format(_speed(v), speed_unit()) if v else tr("off"),
+                                         description=tr("With a big model, the small model steers below this speed. It is steadier when slow.\n" +
+                                                        "Default is 11 mph (18 km/h). Not with the Default model."))
+    self.small_steering.set_enabled(lambda: ui_state.active_runner_tinygrad)
+
     self.live_delay = BigParamControlSP(tr("live steer delay"), "LagdToggle",
                                         description=tr("Learns how long your car takes to respond to steering as you drive.\n" +
                                                        "On is stock openpilot."))
@@ -58,9 +77,9 @@ class ModelOptions:
                                                 "Positive moves the car left, negative right. Not with the Default model."))
     self.camera_offset.set_enabled(lambda: ui_state.active_runner_tinygrad)
 
-    # between the panel's jetlink and refresh models rows; lane_center sits above them
+    # between the panel's lane center and jetlink rows; small_steering sits after jetlink
     self.items = [self.lane_turn, self.lane_turn_speed, self.live_delay, self.steer_delay, self.camera_offset]
 
   def refresh(self):
-    for item in self.items:
+    for item in (*self.items, self.small_steering):
       item.refresh()

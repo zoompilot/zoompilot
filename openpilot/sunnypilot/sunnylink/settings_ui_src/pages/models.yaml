@@ -17,6 +17,17 @@ sections:
     description: Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear. Yields around obstacles. Not available with the Default model.
     enablement:
       - $ref: '#/macros/custom_model'
+  - key: SmallModelSteering
+    widget: option
+    title: Small Model Steering
+    description: With a big model, the small model steers below this speed. It is steadier when slow. 0 is off. Default is
+      5 m/s (11 mph, 18 km/h). Not available with the Default model.
+    min: 0
+    max: 9
+    step: 0.5
+    unit: m/s
+    enablement:
+      - $ref: '#/macros/custom_model'
   - key: LaneTurnDesire
     widget: toggle
     title: Use Lane Turn Desires
