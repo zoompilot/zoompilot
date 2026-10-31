@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 # The steer-limit classifier (lib/steer_limit.py): the unit table at two slew steps (the CX-5
-# 2022's 12 counts over its 1200 and over upstream's 800), the controls_lateral_zp wiring that replaces controlsd's flag with the
+# 2022's 10 counts over its 1200 and over upstream's 800), the controls_lateral_zp wiring that replaces controlsd's flag with the
 # classifier's driver_limited, and the integrator-level consequence run through the real v0
 # controller against a simulated slew-limited actuator.
 
@@ -24,10 +24,10 @@ from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import Lat
 from openpilot.sunnypilot.selfdrive.controls.lib.steer_limit import CLEAN, SteerLimit, classify
 from openpilot.sunnypilot.selfdrive.controls.lib.tests.torque_harness import DT, LAT_DELAY, LP, VM, make_cp, make_cs, make_lac
 
-# 12 counts/frame with the CX-5 2022's EPS ceiling at 14.2 m/s, over its 1200-count STEER_MAX and
+# 10 counts/frame with the CX-5 2022's EPS ceiling at 14.2 m/s, over its 1200-count STEER_MAX and
 # over an 800-count one, where a step is wider than controlsd's 0.01 mismatch threshold
-STEP_1200 = {'slew_up': 12.0 / 1200.0, 'slew_down': 12.0 / 1200.0, 'rail_scale': 648.0 / 1200.0}
-STEP_800 = {'slew_up': 12.0 / 800.0, 'slew_down': 12.0 / 800.0, 'rail_scale': 648.0 / 800.0}
+STEP_1200 = {'slew_up': 10.0 / 1200.0, 'slew_down': 10.0 / 1200.0, 'rail_scale': 648.0 / 1200.0}
+STEP_800 = {'slew_up': 10.0 / 800.0, 'slew_down': 10.0 / 800.0, 'rail_scale': 648.0 / 800.0}
 SIDES = [pytest.param(STEP_1200, id='scale_1200'), pytest.param(STEP_800, id='scale_800')]
 
 CX5_SLEW = get_steer_slew_schedule(make_cp(mazda=True))
@@ -56,7 +56,7 @@ class TestClassifyTable:
     assert lim == SteerLimit(limited=True, driver_limited=False, rate_limited=True, at_rail=False)
 
   def test_command_walking_under_the_rate_limit_is_lag_not_a_driver(self):
-    # on an 800 scale a step is 0.015: a command moving 0.012 per frame is tracked exactly, one
+    # on an 800 scale a step is 0.0125: a command moving 0.012 per frame is tracked exactly, one
     # carOutput frame late, and the 0.012 gap clears the 0.01 threshold every frame
     lim = cl(0.312, 0.300, 0.288, STEP_800)
     assert (lim.rate_limited, lim.driver_limited) == (True, False)

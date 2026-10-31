@@ -393,6 +393,18 @@ higher. The offline fit reads friction 4 to 25% above the device's filtered valu
 cross-validation found for a 3 to 5 m/s bin, and is left for the learner to settle. The new
 centers retire every cache whatever the version; the bins restart at these values at MIN decay.
 
+Learned values (2026-10-30, seed_version stays 3). The six bins from 6.5 to 28 m/s take the test
+car's filtered values (device on 2bf16e0a7, 3,500 to 10,500 points per bin, decay 68 to 250).
+34.5 and 37 m/s have had no points since the 10-13 reset, and the 3.5 m/s bin (1,486 points) is
+not learned yet, so they keep their values:
+
+| center (m/s) | 6.5 | 9.5 | 12.0 | 16.4 | 21.0 | 28.0 |
+|---|---|---|---|---|---|---|
+| LAF | 2.08 (was 2.16) | 2.37 (2.37) | 2.07 (1.94) | 1.71 (1.69) | 1.75 (1.80) | 2.04 (1.96) |
+| friction | 0.147 (0.125) | 0.150 (0.151) | 0.132 (0.143) | 0.121 (0.140) | 0.108 (0.122) | 0.095 (0.105) |
+
+The 6.5 m/s friction had been cut to 0.125 by hand on 10-21; the learner took it back to 0.147.
+
 ## Constants
 
 | name | value | measurement | route |
