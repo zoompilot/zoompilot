@@ -35,9 +35,9 @@ TORQUE_VIEW_W = 476  # px, the camera view width its span is laid out for
 TORQUE_CENTER_SHIFT = 8  # px right of the view's middle
 TORQUE_OFFSET = 22  # px, its track's inner edge above the bottom of the view at rest; it only grows upward
 # the gauge, just under that track
-GAUGE_GAP = 4  # px
-GAUGE_THICKNESS = 6  # px
-GAUGE_DOT = 4  # px radius, a touch wider than the gauge like TorqueBar's dot on its track
+GAUGE_GAP = 2  # px
+GAUGE_THICKNESS = 10  # px, a bit under the track's 14 at rest
+GAUGE_DOT = 6  # px radius, a touch wider than the gauge like TorqueBar's dot on its track
 
 
 def pull_at_lookahead(curvature: float, v_ego: float) -> float:
