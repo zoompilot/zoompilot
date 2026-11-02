@@ -41,7 +41,7 @@ from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_drivi
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_present, chestnut_compiled, modeld_pkl_path, load_oob, wait_for_chestnut
 from openpilot.sunnypilot import jetlink_adapter
-from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
+from openpilot.sunnypilot.modeld_v2.model_settings import ModelSettings, with_blendful
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeController
 
@@ -342,6 +342,8 @@ def main(demo=False):
 
   DH = DesireHelper()
   RELC = RoadEdgeLaneChangeController()
+  settings = ModelSettings()
+  action_from_model = with_blendful(get_action_from_model, MIN_LAT_CONTROL_SPEED)
 
   while True:
     # Keep receiving frames until we are at least 1 frame ahead of previous extra frame
@@ -381,8 +383,8 @@ def main(demo=False):
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["narrowRoadCameraState"].frameId
     v_ego = max(sm["carState"].vEgo, 0.)
-    model.lat_delay = get_lat_delay(params, sm["lateralDelay"].lateralDelay)
-    lat_delay = sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+    settings.refresh(sm, params, model)
+    lat_delay = model.lat_delay + LAT_SMOOTH_SECONDS
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["extrinsicsCalibration"].rpyCalib, dtype=np.float32)
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['narrowRoadCameraState'].sensor))]
@@ -391,6 +393,8 @@ def main(demo=False):
       has_wide_camera = use_extra_client or main_wide_camera
       extra_intrinsics = dc.wide_road.intrinsics if has_wide_camera else dc.narrow_road.intrinsics
       model_transform_extra = get_warp_matrix(device_from_calib_euler, extra_intrinsics, True).astype(np.float32)
+      model_transform_main, model_transform_extra = settings.camera_offset.update(model_transform_main, model_transform_extra, sm,
+                                                                                  main_wide_camera, has_wide_camera)
       extrinsics_calibration_seen = True
 
     traffic_convention = np.zeros(2)
@@ -453,7 +457,8 @@ def main(demo=False):
 
       if not sm['carControl'].latActive:
         prev_action.desiredCurvature = sm['controlsState'].curvature
-      action = get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego)
+      action = action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego,
+                                 settings.blendful_callback(model_output, v_ego, desire, DH.lane_change_state))
       prev_action = action
       fill_model_msg(modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
@@ -471,6 +476,7 @@ def main(demo=False):
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
       mdv2sp_send.valid = modelv2_send.valid
       mdv2sp_send.modelDataV2SP.laneTurnDirection = DH.lane_turn_direction
+      settings.blendful.fill(mdv2sp_send.modelDataV2SP)
 
       fill_driving_model_data(drivingdata_send, modelv2_send)
       fill_pose_msg(posenet_send, model_output, meta_main.frame_id, vipc_dropped_frames, meta_main.timestamp_eof, extrinsics_calibration_seen)

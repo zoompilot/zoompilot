@@ -116,19 +116,10 @@ def _adapter_class():
       return ModelConstants
 
     def action_function(self):
-      # modeld_v2 passes Blendful's correction as a callback on the raw curvature;
-      # stock modeld passes none. Stock's lateral smoothing is off (LAT_SMOOTH_SECONDS
-      # 0), so the correction added to its answer is the one modeld_v2 adds before smoothing
+      # modeld_v2 passes Blendful's correction as a callback on the raw curvature, as stock modeld now does
       from openpilot.selfdrive.modeld.modeld import MIN_LAT_CONTROL_SPEED, get_action_from_model
-
-      def action(model_output, prev_action, lat_action_t, long_action_t, v_ego, blendful=None):
-        action = get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego)
-        if blendful is not None:
-          correction = blendful(action.desiredCurvature)
-          if v_ego > MIN_LAT_CONTROL_SPEED:
-            action.desiredCurvature += correction
-        return action
-      return action
+      from openpilot.sunnypilot.modeld_v2.model_settings import with_blendful
+      return with_blendful(get_action_from_model, MIN_LAT_CONTROL_SPEED)
 
     def engaged(self, sm) -> bool:
       # selfdrived's enabled or mads.enabled, as controlsd republishes them.

@@ -60,6 +60,15 @@ class Blendful:
     self.curvature = float(np.clip(target, max(k - release, -build) if k > 0 else k - build, min(k + release, build) if k < 0 else k + build))
     return self.curvature
 
+  def fill(self, mdv2sp) -> None:
+    mdv2sp.blendfulCurvature = self.curvature
+    mdv2sp.blendfulTrust = float(self.trust)
+    mdv2sp.modelCurvature = float(self.model_curvature)
+    mdv2sp.blendfulGoingAround = bool(self.going_around)
+    mdv2sp.blendfulLeftProb = self.l_prob
+    mdv2sp.blendfulRightProb = self.r_prob
+    mdv2sp.blendfulLaneWidth = float(self.lane_width.x)
+
   def _target(self, model_output: dict[str, np.ndarray], v_ego: float, model_curvature: float) -> float:
     lookahead = max(v_ego * LOOKAHEAD_TIME, MIN_LOOKAHEAD)
     lines = model_output['lane_lines'][0, :, :, 0]

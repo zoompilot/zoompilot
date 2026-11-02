@@ -58,13 +58,10 @@ class LaneCenterToggle(BigMultiParamToggleSP):
 
 class ModelOptions:
   def __init__(self):
-    # modeld_v2 runs Blendful and the camera offset; stock modeld, which runs the Default model, does neither
     self.lane_center = LaneCenterToggle(description=tr("Alpha. Nudges the car toward the middle of the lane.\n" +
                                                        "Stronger when the lane lines are clear. Yields around obstacles.\n" +
                                                        "The blue line shows the strength and direction of correction.\n" +
-                                                       "Debug UI shows the exact adjustment in cm.\n" +
-                                                       "Not with the Default model."))
-    self.lane_center.set_superseded(lambda: not ui_state.active_runner_tinygrad)
+                                                       "Debug UI shows the exact adjustment in cm."))
 
     # LaneTurnDesire is the picker's off. A metric step of 0.62 mph lands on each whole km/h, as the tici panel steps it
     self.lane_turn = _option(tr("lane turn desires"), "LaneTurnValue", lambda v: str(round(v / 100 * _per_mph())), speed_unit,
@@ -90,8 +87,7 @@ class ModelOptions:
 
     self.camera_offset = _option(tr("camera offset"), "CameraOffset", _hundredths, "m", min_value=-35, max_value=35,
                                  description=tr("Shifts where the model thinks the camera sits.\n" +
-                                                "Positive moves the car left, negative right. Not with the Default model."))
-    self.camera_offset.set_enabled(lambda: ui_state.active_runner_tinygrad)
+                                                "Positive moves the car left, negative right."))
 
     # between the panel's lane center and jetlink rows; small_steering sits after jetlink
     self.items = [self.lane_turn, self.steer_delay, self.camera_offset]
