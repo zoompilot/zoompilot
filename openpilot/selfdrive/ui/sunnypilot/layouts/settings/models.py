@@ -110,10 +110,10 @@ class ModelsLayout(Widget):
                                         1, None, True, "", style.BUTTON_ACTION_WIDTH, None, True, lambda v: f"{v / 100:.2f}s",
                                         switch=Switch("LagdToggle", True, tr("Live")))
 
-    self._blendful_desc = tr("Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear." +
+    blendful_desc = tr("Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear." +
                              " Yields around obstacles. The blue line and the gauge under the torque bar show the strength and direction of" +
-                             " correction. The developer UI shows the exact adjustment in cm. Not available with the Default model.")
-    self.blendful_toggle = multiple_button_item_sp(tr("Lane Center Assist (Alpha)"), self._blendful_desc,
+                             " correction. The developer UI shows the exact adjustment in cm.")
+    self.blendful_toggle = multiple_button_item_sp(tr("Lane Center Assist (Alpha)"), blendful_desc,
                                                    buttons=[tr("Off"), tr("On")], button_width=300,
                                                    callback=lambda i: set_lane_center_mode(ui_state.params, i), inline=False)
 
@@ -388,24 +388,13 @@ class ModelsLayout(Widget):
     for control in (self.lane_turn_value_control, self.delay_control):
       control.action_item.refresh()
     live_delay: bool = self.delay_control.action_item.switched
-    camera_offset: bool = ui_state.active_bundle is not None
-
-    blendful_allowed = ui_state.active_runner_tinygrad
     # the comma 4's debug ui option reads as on: the 3X shows the push in its developer UI
-    self.blendful_toggle.action_item.set_selected_button(min(lane_center_mode(ui_state.params), 1) if blendful_allowed else 0)
-    self.blendful_toggle.action_item.set_enabled(blendful_allowed)
-
-    blendful_desc = self._blendful_desc if blendful_allowed else \
-      f"<b>{tr('Select a non-Default model to use Lane Center Assist.')}</b><br><br>{self._blendful_desc}"
-    if self.blendful_toggle.description != blendful_desc:
-      self.blendful_toggle.set_description(blendful_desc)
-      self.blendful_toggle.show_description(not blendful_allowed)
+    self.blendful_toggle.action_item.set_selected_button(min(lane_center_mode(ui_state.params), 1))
 
     new_step = int(round(100 / CV.MPH_TO_KPH)) if ui_state.is_metric else 100
     if self.lane_turn_value_control.action_item is not None and self.lane_turn_value_control.action_item.value_change_step != new_step:
       self.lane_turn_value_control.action_item.value_change_step = new_step
     self.small_steering_control.action_item.value_change_step = int(round(100 * (CV.KPH_TO_MS if ui_state.is_metric else CV.MPH_TO_MS)))
-    self.camera_offset.set_visible(camera_offset)
 
     self._update_lagd_description(live_delay)
     self.model_manager = ui_state.sm["modelManagerSP"]

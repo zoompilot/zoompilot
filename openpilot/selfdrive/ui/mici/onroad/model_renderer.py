@@ -75,7 +75,7 @@ class ModelRenderer(Widget, ModelRendererSP):
     self._clip_region = None
 
     self._counter = -1
-    self._camera_offset = ui_state.params.get("CameraOffset", return_default=True) if ui_state.active_bundle else 0.0
+    self._camera_offset = ui_state.params.get("CameraOffset", return_default=True)
 
     self._path_gradient = Gradient(
       start=(0.0, 1.0),  # Bottom of path
@@ -97,7 +97,7 @@ class ModelRenderer(Widget, ModelRendererSP):
     sm = ui_state.sm
 
     if self._counter % 180 == 0:  # This runs at 60fps, so we query every 3 seconds
-      self._camera_offset = ui_state.params.get("CameraOffset", return_default=True) if ui_state.active_bundle else 0.0
+      self._camera_offset = ui_state.params.get("CameraOffset", return_default=True)
     self._counter += 1
 
     self._torque_filter.update(-ui_state.torque_utilization)

@@ -7,7 +7,6 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 from collections.abc import Callable
-from functools import partial
 import gc
 import os
 os.environ['GMMU'] = '0'
@@ -46,11 +45,9 @@ from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, 
 
 from openpilot.sunnypilot.modeld_v2.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState, get_curvature_from_output
 from openpilot.sunnypilot.modeld_v2.parse_model_outputs import Parser
-from openpilot.sunnypilot.modeld_v2.blendful import Blendful
 from openpilot.sunnypilot.modeld_v2.constants import ModelConstants, Plan
 from openpilot.sunnypilot.modeld_v2.meta_helper import load_meta_constants
-from openpilot.sunnypilot.modeld_v2.camera_offset_helper import CameraOffsetHelper
-from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
+from openpilot.sunnypilot.modeld_v2.model_settings import ModelSettings
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.modeld_v2.helpers import load_model
 from openpilot.sunnypilot.modeld_v2.frame_fusion import fused_with_warp
@@ -372,7 +369,7 @@ def main(demo=False):
   buf_main, buf_extra = None, None
   meta_main = FrameMeta()
   meta_extra = FrameMeta()
-  camera_offset_helper = CameraOffsetHelper()
+  settings = ModelSettings()
 
 
   if demo:
@@ -387,8 +384,6 @@ def main(demo=False):
   DH = DesireHelper()
   meta_constants = load_meta_constants()
   RELC = RoadEdgeLaneChangeController()
-  blendful = Blendful()
-  blendful_enabled = False
   small_lateral = SmallLateral(small_model)
 
   while True:
@@ -429,11 +424,8 @@ def main(demo=False):
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["narrowRoadCameraState"].frameId
     v_ego = max(sm["carState"].vEgo, 0.)
-    if sm.frame % 60 == 0:
-      model.lat_delay = get_lat_delay(params, sm["lateralDelay"].lateralDelay)
+    if settings.refresh(sm, params, model):
       model.PLANPLUS_CONTROL = params.get("PlanplusControl", return_default=True)
-      camera_offset_helper.set_offset(params.get("CameraOffset", return_default=True))
-      blendful_enabled = params.get_bool("Blendful")
       small_lateral.speed = params.get("SmallModelSteering", return_default=True)
     lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
     long_delay = CP.longitudinalActuatorDelay + model.LONG_SMOOTH_SECONDS
@@ -443,7 +435,7 @@ def main(demo=False):
       main_intrinsics = dc.wide_road.intrinsics if main_wide_camera else dc.narrow_road.intrinsics
       model_transform_main = get_warp_matrix(device_from_calib_euler, main_intrinsics, False).astype(np.float32)
       model_transform_extra = get_warp_matrix(device_from_calib_euler, dc.wide_road.intrinsics, True).astype(np.float32)
-      model_transform_main, model_transform_extra = camera_offset_helper.update(model_transform_main, model_transform_extra, sm, main_wide_camera)
+      model_transform_main, model_transform_extra = settings.camera_offset.update(model_transform_main, model_transform_extra, sm, main_wide_camera)
       live_calib_seen = True
 
     traffic_convention = np.zeros(2)
@@ -515,9 +507,8 @@ def main(demo=False):
 
       if not sm['carControl'].latActive:
         prev_action.desiredCurvature = sm['controlsState'].curvature
-      blendful_active = desire == log.Desire.none and DH.lane_change_state == log.LaneChangeState.off
       action = model.get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego,
-                                           partial(blendful.update, model_output, v_ego, blendful_active, enabled=blendful_enabled))
+                                           settings.blendful_callback(model_output, v_ego, desire, DH.lane_change_state))
       small_lateral.curvature(action, prev_action, v_ego)
       prev_action = action
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
@@ -537,13 +528,7 @@ def main(demo=False):
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
       mdv2sp_send.valid = modelv2_send.valid
       mdv2sp_send.modelDataV2SP.laneTurnDirection = DH.lane_turn_direction
-      mdv2sp_send.modelDataV2SP.blendfulCurvature = blendful.curvature
-      mdv2sp_send.modelDataV2SP.blendfulTrust = float(blendful.trust)
-      mdv2sp_send.modelDataV2SP.modelCurvature = float(blendful.model_curvature)
-      mdv2sp_send.modelDataV2SP.blendfulGoingAround = bool(blendful.going_around)
-      mdv2sp_send.modelDataV2SP.blendfulLeftProb = blendful.l_prob
-      mdv2sp_send.modelDataV2SP.blendfulRightProb = blendful.r_prob
-      mdv2sp_send.modelDataV2SP.blendfulLaneWidth = float(blendful.lane_width.x)
+      settings.blendful.fill(mdv2sp_send.modelDataV2SP)
       drivingdata_send.drivingModelData.meta.laneChangeState = DH.lane_change_state
       drivingdata_send.drivingModelData.meta.laneChangeDirection = DH.lane_change_direction
 

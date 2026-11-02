@@ -1223,15 +1223,11 @@ class TestModelsPanelMici:
                                              "camera offset", "jetlink", "small model steer", "refresh models", "clear cache"]
     assert {item._get_label_font_size() for item in items} == {BigButton("t")._get_label_font_size()}, "a long title shrinks its font"
 
-  def test_the_default_model_locks_model_options_showing_their_value(self, params, monkeypatch):
+  def test_the_default_model_locks_small_model_steering(self, monkeypatch):
     from openpilot.selfdrive.ui.ui_state import ui_state
-    params.put_bool("Blendful", True, block=True)
     options = self._options()
-    assert options.lane_center.value == "on"
     for runner_tinygrad in (False, True):
       monkeypatch.setattr(ui_state, "active_runner_tinygrad", runner_tinygrad)
-      assert options.lane_center.superseded is not runner_tinygrad
-      assert options.camera_offset.enabled is runner_tinygrad
       assert options.small_steering.enabled is runner_tinygrad
 
   def test_lane_center_cycles_off_on_debug(self, params):
