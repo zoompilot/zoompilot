@@ -5,9 +5,10 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
 Lane center assist on the comma 4 and 3X: a muted center line that turns blue as the nudge grows, a thin gauge
-under the torque bar filled blue from its middle toward the side it nudges, and with debug ui a box with the push
-in cm. The gauge is drawn in screen space, so it stays readable where road-space marks shrink to a few pixels,
-and apart from the torque bar so planning's nudge is not read as steering torque.
+under the torque bar filled blue from its middle toward the side it nudges, and the push in cm: on the comma 4 a
+box with debug ui, on the 3X an item in the developer UI's bottom bar (developer_ui/lane_center.py). The gauge is drawn in screen space, so it
+stays readable where road-space marks shrink to a few pixels, and apart from the torque bar so planning's nudge is
+not read as steering torque.
 """
 import math
 
@@ -27,7 +28,8 @@ BLUE = rl.Color(0, 200, 255, 255)
 IDLE = rl.Color(150, 160, 168, 255)  # the line with no nudge: grey, so a nudge stands out
 IDLE_ALPHA = 0.45
 COLOR_FULL = 0.2  # m of push for full color; sqrt, so a 5 cm push is already halfway
-READOUT_W, READOUT_H = 190, 58  # px, the box without its bar; the base's with it is 76 tall
+READOUT_W, READOUT_H = 190, 58  # px, the box without the base's bar
+READOUT_TOP = 10  # px below the top of the view, the base's spot
 
 # TorqueBar._render keeps its geometry as locals: mirror any change to it here
 TORQUE_RADIUS = 1200  # px at scale 1
@@ -35,9 +37,9 @@ TORQUE_VIEW_W = 476  # px, the camera view width its span is laid out for
 TORQUE_CENTER_SHIFT = 8  # px right of the view's middle
 TORQUE_OFFSET = 22  # px, its track's inner edge above the bottom of the view at rest; it only grows upward
 # the gauge, just under that track
-GAUGE_GAP = 4  # px
-GAUGE_THICKNESS = 6  # px
-GAUGE_DOT = 4  # px radius, a touch wider than the gauge like TorqueBar's dot on its track
+GAUGE_GAP = 2  # px
+GAUGE_THICKNESS = 10  # px, a bit under the track's 14 at rest
+GAUGE_DOT = 6  # px radius, a touch wider than the gauge like TorqueBar's dot on its track
 
 
 def pull_at_lookahead(curvature: float, v_ego: float) -> float:
@@ -52,16 +54,11 @@ def nudge_share(pull: float, full: float = COLOR_FULL) -> float:
 
 
 class BlendfulRendererZP(BlendfulRenderer):
-  """The line colored by the nudge, and the debug ui readout box. Each device passes its readout layout: the
-  comma 4 keeps the base's spot, the 3X draws it larger under its speed and keeps the box's bar only while its
-  torque bar, and so the gauge's context, is hidden."""
+  """The line colored by the nudge, and with `readout` the debug ui box (the comma 4; the 3X shows the push in
+  its developer UI)."""
 
-  def __init__(self, rect_relative: bool = False, readout_scale: float = 1.0, readout_top: float = 10,
-               readout_bar=lambda: False):
-    super().__init__(readout=True, rect_relative=rect_relative)
-    self._readout_scale = readout_scale
-    self._readout_top = readout_top  # px below the top of the view
-    self._readout_bar = readout_bar
+  def __init__(self, rect_relative: bool = False, readout: bool = True):
+    super().__init__(readout=readout, rect_relative=rect_relative)
     self._line_color = IDLE
 
   def update(self, renderer, max_idx: int, *map_args) -> None:
@@ -79,22 +76,14 @@ class BlendfulRendererZP(BlendfulRenderer):
       offset = np.array([rect.x, rect.y]) if self._rect_relative else np.zeros(2)
       fade = self._alpha.x  # the whole overlay fades in and out with trust
       draw_polygon(rect, self._center_points + offset, rl.color_alpha(self._line_color, self._line_color.a / 255 * fade))
-    if ui_state.blendful_readout:
-      # the box is drawn about its top center, then placed and scaled for this device
-      rl.rl_push_matrix()
-      rl.rl_translatef(rect.x + rect.width / 2, rect.y + self._readout_top, 0)
-      rl.rl_scalef(self._readout_scale, self._readout_scale, 1)
-      if self._readout_bar():
-        super()._draw_readout(rl.Rectangle(-READOUT_W / 2, -10, READOUT_W, 0))  # the base sets its box 10 px down
-      else:
-        self._draw_readout_box()
-      rl.rl_pop_matrix()
+    if self._readout and ui_state.blendful_readout:
+      self._draw_readout_box(rect.x + rect.width / 2, rect.y + READOUT_TOP)
 
-  def _draw_readout_box(self) -> None:
-    """BlendfulRenderer's box, number and arrows, without its bar, about the origin."""
+  def _draw_readout_box(self, cx: float, top: float) -> None:
+    """BlendfulRenderer's box, number and arrows, without its bar, about its top center."""
     pull = self._pull_display.x
-    x, y = -READOUT_W / 2, 0
-    cx, cy = 0, READOUT_H / 2
+    x, y = cx - READOUT_W / 2, top
+    cy = top + READOUT_H / 2
     rl.draw_rectangle_rounded(rl.Rectangle(x, y, READOUT_W, READOUT_H), 0.5, 12, self._color((0, 0, 0), 170))
 
     text = f"{abs(pull) * 100:.0f}"
