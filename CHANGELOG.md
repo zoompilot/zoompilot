@@ -2,47 +2,38 @@ zoompilot vUNRELEASED
 ========================
 * Synced with sunnypilot of 2026-10-29, through openpilot of 2026-10-16.
 * Cruise
-  * Experimental is the only mode with alpha longitudinal; chill mode is removed (openpilot).
-  * Dynamic Experimental Control is removed.
+  * Alpha longitudinal is Experimental only; chill and Dynamic Experimental Control removed (openpilot).
   * Set Speed Assist reaches set speed and follow distance at stock ACC pace (on by default).
   * Toggle Set Speed Assist: hold the distance button, long press home or tap the onroad button.
   * Set Speed Assist indicated with icon when enabled.
-  * Alpha longitudinal coasts more.
-  * Alpha longitudinal can be toggled onroad while disengaged.
-* Settings
-  * On/off toggles folded into their numerical value pickers.
-  * Off options show a grey pill.
+  * Alpha longitudinal coasts more, and can be toggled onroad while disengaged.
 * Steering
   * New Lane Center Assist (alpha) in Models.
   * Road edge lane change block: new silent option.
 * comma 4
   * Alpha longitudinal and Set Speed Assist now live in the Cruise menu.
-  * Home shows icons for alpha longitudinal and Set Speed Assist.
+  * Home shows alpha longitudinal and Set Speed Assist icons, and can show the active model (Display).
   * Models adds lane turn desires, steer delay and camera offset.
-  * Home can show the active model (Display).
+  * On/off toggles folded into their value pickers; off shows a grey pill.
 * comma 3X
-  * Driver monitor, lead car and follow distance bars from the comma 4.
+  * comma 4 driver monitor and follow distance indicator.
   * Optional confidence ball (Visuals).
-  * Lane Center Assist's push shows in the developer UI.
+  * Lane Center Assist offset shown in the developer UI.
 * Mazda
   * Steering tuning from reverse engineering work. thx @braind84
   * CX-5: steering delay learning starts at 0.34 s.
   * Easier steering override, same feel at every speed.
   * Alpha longitudinal: smoother acceleration, earlier braking, fewer downshifts.
-  * Alpha longitudinal pulls away from a stop sooner.
-  * Alpha longitudinal is ready sooner after starting the car.
+  * Alpha longitudinal: quicker from a stop, and ready sooner after starting the car.
   * 2017 Mazda 3 2.5 L and non-US 2026 CX-5 recognized automatically.
   * A camera fault no longer shows as LKAS off.
-* jetlink
-  * Pick models on either the comma or jetlink.
-  * The comma no longer downloads models jetlink already has.
-  * Jetlink-only models can be picked in sunnylink.
-  * A big model picked on the comma stays picked.
-  * The jetlink app no longer keeps a CPU core busy between drives.
-  * The jetlink port draws less power at boot.
-  * comma 3X: no reboot when a laptop is plugged in.
-  * With a big model, the small model steers below 11 mph (Models).
 * Toyota TSS2: Smooth Longitudinal (alpha).
+* jetlink
+  * Pick models on the comma, jetlink or sunnylink, jetlink-only models included.
+  * The comma no longer downloads models jetlink already has.
+  * A big model picked on the comma stays picked.
+  * comma 3X: no reboot when a laptop is plugged in.
+  * Use small model lateral below 11 mph (Models).
 
 zoompilot v2026.10.16-16
 ========================
