@@ -660,16 +660,21 @@ class TestLayoutsSurviveRender:
 
     render(MiciHomeLayoutSP())
 
-  def test_home_shows_speed_assist_after_network(self, params, monkeypatch):
+  def test_home_shows_long_then_speed_assist_after_network(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.home import MiciHomeLayoutSP
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import STATUS_ICON_HEIGHT
     from openpilot.selfdrive.ui.ui_state import ui_state
 
     home = MiciHomeLayoutSP()
-    assert home._status_bar_layout.widgets[2] is home._speed_assist_icon
-    for has_long, speed_assist, shown in ((True, True, True), (True, False, False), (False, True, False)):
+    assert home._status_bar_layout.widgets[2:4] == [home._long_icon, home._speed_assist_icon]
+    # upstream's footer icons are 40 px of ink, and so are ours
+    assert home._long_icon.rect.height == home._speed_assist_icon.rect.height == STATUS_ICON_HEIGHT
+    for has_long, speed_assist, long_shown, assist_shown in ((True, True, True, True), (True, False, True, False),
+                                                             (False, True, False, False)):
       monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
       monkeypatch.setattr(ui_state, "speed_assist", speed_assist)
-      assert home._speed_assist_icon.is_visible == shown
+      assert home._long_icon.is_visible == long_shown
+      assert home._speed_assist_icon.is_visible == assist_shown
     render(home)
 
   def test_home_long_press_switches_speed_assist(self, params, monkeypatch):
@@ -1296,3 +1301,52 @@ class TestModelsPanelMici:
     options = self._options()
     assert options.steer_delay.value == "0.20 s"
     assert options.camera_offset.value == "-0.05 m"
+
+
+class TestSpeedAssistBadge:
+  """The Set Speed Assist badge comes and goes with the wheel and waits for the model icon."""
+
+  def _settle(self, hud, monkeypatch, frames=200):
+    import pyray as rl
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import hud_renderer
+    drawn = []
+    monkeypatch.setattr(hud_renderer, "draw_gauge_centered", lambda *a: drawn.append(a))
+    for _ in range(frames):
+      hud._draw_speed_assist(rl.Rectangle(0, 0, 536, 240))
+    return drawn
+
+  @pytest.mark.parametrize(("status", "chestnut", "shown"), [
+    ("ENGAGED", "DISCONNECTED", True),
+    ("DISENGAGED", "DISCONNECTED", False),  # leaves with the wheel
+    ("ENGAGED", "LOADING", False),  # the model icon owns the corner
+    ("ENGAGED", "ACTIVE", False),  # within the model icon's persistence after engaging
+  ])
+  def test_follows_the_wheel(self, params, monkeypatch, status, chestnut, shown):
+    import pyray as rl
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import HudRendererSP
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
+
+    monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
+    monkeypatch.setattr(ui_state, "status", UIStatus[status])
+    monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState[chestnut])
+    hud = HudRendererSP()
+    hud._chestnut_fade_time = rl.get_time()
+    drawn = self._settle(hud, monkeypatch)
+    if shown:
+      assert drawn and drawn[-1][3] > 0.85
+    else:
+      assert not drawn
+
+  def test_swaps_in_after_the_model_icon(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.mici.onroad.hud_renderer import SET_SPEED_PERSISTENCE
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import HudRendererSP
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
+    import pyray as rl
+
+    monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
+    monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
+    monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.ACTIVE)
+    hud = HudRendererSP()
+    hud._chestnut_fade_time = rl.get_time() - SET_SPEED_PERSISTENCE - 0.1
+    drawn = self._settle(hud, monkeypatch)
+    assert drawn and drawn[-1][3] > 0.85
