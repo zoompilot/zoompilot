@@ -154,7 +154,7 @@ class LongitudinalPlannerSP:
     steer_lat_accel = sm['controlsState'].curvature * sm['carState'].vEgo ** 2
     # chill mode's answer: the MPC candidate as the host takes it from this frame's solution (a lead,
     # or its synthetic one far ahead), and last frame's cruise candidate (the host builds this
-    # frame's after the e2e candidate), closing on this frame's target speed at a production ACC's pace
+    # frame's after the e2e candidate), capped at the approach pace
     a_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
                                 action_t=self.CP.longitudinalActuatorDelay + DT_MDL)
     a_chill = min(float(a_mpc), self.a_cruise, approach_accel(self.v_ego, self.output_v_target))

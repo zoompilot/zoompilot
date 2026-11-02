@@ -70,8 +70,7 @@ def test_off_is_upstream():
 def test_on_raises_the_e2e_candidate():
   planner = run_planner(True)
   assert planner.e2e_set_speed.inhibit == Inhibit.none
-  # the model holding at 0 under the set speed: lifted toward it at a production ACC's pace, not
-  # the cruise law's 2.0
+  # the model holding at 0 under the set speed: lifted at the approach pace, below the cruise law's
   approach = approach_accel(planner.v_ego, planner.output_v_target)
   assert planner.e2e_set_speed.lift == pytest.approx(approach)
   assert planner.output_a_target == pytest.approx(approach)

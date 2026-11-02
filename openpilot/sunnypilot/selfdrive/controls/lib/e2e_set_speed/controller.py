@@ -61,13 +61,11 @@ LAT_HORIZON = 10.0  # s
 # The lift rises at upstream's cruise jerk, as the cruise candidate it stands in for, and falls fast
 # so the model's own braking is never held off.
 LIFT_FALL = 2.4  # m/s^3
-# The floor closes on the target speed no harder than a production ACC: the CX-5's stock MRCC
-# command with no lead, its p99 by speed scaled by the shortfall (between its p50 and p90, 1.94M
-# stock frames). Upstream's cruise law asks 1 m/s^2 per m/s of shortfall up to 2.0, a kickdown at
-# every small gap on a stepped automatic.
+# Stock ACC approach to the target speed, gentler than the cruise planner's: max accel by speed,
+# scaled by the shortfall (docs/zoompilot/e2e-set-speed.md).
 APPROACH_BP = [0., 4., 9., 14., 18., 25.]  # m/s
 APPROACH_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s^2
-APPROACH_GAP_BP = [0., 1., 3., 5., 10.]  # m/s under the target speed
+APPROACH_GAP_BP = [0., 1., 3., 5., 10.]  # m/s below the target speed
 APPROACH_GAP_FRACTION = [0.38, 0.47, 0.57, 0.72, 1.]
 
 T_IDXS = np.asarray(ModelConstants.T_IDXS)
@@ -75,7 +73,7 @@ LAT_MASK = T_IDXS <= LAT_HORIZON
 
 
 def approach_accel(v_ego: float, v_target: float) -> float:
-  """The most the floor asks while closing on v_target."""
+  """Max floor accel while closing on v_target."""
   return float(np.interp(v_ego, APPROACH_BP, APPROACH_V) *
                np.interp(v_target - v_ego, APPROACH_GAP_BP, APPROACH_GAP_FRACTION))
 
