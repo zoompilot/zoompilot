@@ -26,6 +26,8 @@ from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import TUNE_PARAM_B
 from openpilot.system.ui.lib.application import gui_app
 
 MADS_STEERING_MODE_LABELS = [tr("remain"), tr("pause"), tr("disengage")]
+# the engagement tile's pill for each MadsSteeringMode
+MADS_BRAKE_BADGES = [tr("brake: remain"), tr("brake: pause"), tr("brake: off")]
 # LaneChangeSmoothing stores the index into this list (lane_change_smoothing.LEVELS order, off first)
 LC_LEVEL_LABELS = [tr("off"), tr("fast"), tr("medium"), tr("slow"), tr("extra slow")]
 # RoadEdgeLaneChangeEnabled stores the index into this list (relc.RoadEdgeMode)
@@ -64,7 +66,7 @@ class SteeringLayoutMici(NavScroller):
     self._torque_allowed = False
     self._enforce_torque = False
 
-    self._mads_settings_btn = BigButtonSP(tr("mads"))
+    self._mads_settings_btn = BigButtonSP(tr("when to steer"))
     self._lane_change_btn = BigButtonSP(tr("lane change"))
     self._blinker_settings_btn = BigButtonSP(tr("blinker pause"))
     self._torque_settings_btn = BigButtonSP(tr("torque control"))
@@ -81,18 +83,18 @@ class SteeringLayoutMici(NavScroller):
       self._torque_settings_btn, self._nnlc_toggle,
     ])
 
-    self._mads_toggle = BigParamControlSP(tr("enable mads"), "Mads",
+    self._mads_toggle = BigParamControlSP(tr("steer without cruise"), "Mads",
                                           description=tr("Lets zoompilot steer while cruise control is off.\n" +
                                                          "When off, steering and cruise engage and disengage together."))
     self._mads_toggle.set_enabled(ui_state.is_offroad)
     # Read the live toggle so dependent controls update in the same frame.
-    self._mads_main_cruise = BigParamControlSP(tr("main cruise toggle"), "MadsMainCruiseAllowed",
+    self._mads_main_cruise = BigParamControlSP(tr("steer when cruise on"), "MadsMainCruiseAllowed",
                                                depends_on=self._mads_engagement_applies,
-                                               description=tr("Turning cruise main on also turns steering on.\n" +
+                                               description=tr("Turning cruise on with its on/off button also turns steering on.\n" +
                                                               "Cars without a lane keep button need this on to steer."))
-    self._mads_unified = BigParamControlSP(tr("unified engagement"), "MadsUnifiedEngagementMode",
+    self._mads_unified = BigParamControlSP(tr("steer when cruise set"), "MadsUnifiedEngagementMode",
                                            depends_on=self._mads_engagement_applies,
-                                           description=tr("Engaging cruise also turns steering on.\n" +
+                                           description=tr("Setting or resuming a cruise speed also turns steering on.\n" +
                                                           "Steering then stays on until you switch it off or turn off the car."))
     # a limited platform fixes both, and the fixed values still apply
     for item in (self._mads_main_cruise, self._mads_unified):
@@ -105,7 +107,7 @@ class SteeringLayoutMici(NavScroller):
     # cruise and unified engagement stop touching MADS. Fingerprint cannot tell, so ask.
     self._mads_tja = BigParamControlSP(tr("tja button"), "MazdaTjaButton", depends_on=lambda: self._mads_toggle._checked,
                                        description=tr("The wheel's TJA button becomes the only steering switch.\n" +
-                                                      "The MRCC main button then only controls cruise.\n" +
+                                                      "The MRCC button then only controls cruise.\n" +
                                                       "Turn on only if your car has the button."))
     self._mads_tja.set_enabled(ui_state.is_offroad)
     self._mads_tja.set_visible(self._is_mazda)
@@ -233,15 +235,16 @@ class SteeringLayoutMici(NavScroller):
     offroad = ui_state.is_offroad()
     self._mads_settings_btn.set_enabled(offroad)
     if not mads_on:
-      self._mads_settings_btn.set_disabled()
+      self._mads_settings_btn.set_value(tr("tied to cruise"))
     else:
-      cruise = _on_off(ui_state.params.get_bool("MadsMainCruiseAllowed"))
-      unified = _on_off(ui_state.params.get_bool("MadsUnifiedEngagementMode"))
+      # pills name what turns steering on, then what the brake does; the TJA button replaces the cruise ones
+      tja = self._is_mazda() and ui_state.params.get_bool("MazdaTjaButton")
+      cruise = _on_off(not tja and ui_state.params.get_bool("MadsMainCruiseAllowed"))
+      unified = _on_off(not tja and ui_state.params.get_bool("MadsUnifiedEngagementMode"))
       steer_idx = ui_state.params.get("MadsSteeringMode", return_default=True) or 0
-      steer_mode = MADS_STEERING_MODE_LABELS[min(steer_idx, len(MADS_STEERING_MODE_LABELS) - 1)]
-      badges = [(tr("enabled"), "on"), (tr("main-cruise"), cruise), (tr("unified"), unified), (steer_mode, "on")]
-      if self._is_mazda():
-        badges.append((tr("tja"), _on_off(ui_state.params.get_bool("MazdaTjaButton"))))
+      brake = MADS_BRAKE_BADGES[min(steer_idx, len(MADS_BRAKE_BADGES) - 1)]
+      badges = [(tr("cruise on"), cruise), (tr("cruise set"), unified),
+                (tr("tja"), _on_off(tja)), (brake, "on")]
       self._mads_settings_btn.set_badges(badges)
 
     blinker_on = ui_state.params.get_bool("BlinkerPauseLateralControl")

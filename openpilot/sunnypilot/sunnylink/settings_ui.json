@@ -12,14 +12,14 @@
       "sections": [
         {
           "id": "mads",
-          "title": "Modular Assistive Driving System (MADS)",
+          "title": "When to Steer",
           "description": "",
           "items": [
             {
               "key": "Mads",
               "widget": "toggle",
-              "title": "Enable Modular Assistive Driving System (MADS)",
-              "description": "Enable MADS. Disable toggle to revert back to stock sunnypilot engagement/disengagement.",
+              "title": "Steer Without Cruise",
+              "description": "Lets zoompilot steer while cruise control is off. When off, steering and cruise engage and disengage together.",
               "enablement": [
                 {
                   "type": "offroad_only"
@@ -30,7 +30,7 @@
           "sub_panels": [
             {
               "id": "mads_settings",
-              "label": "MADS Settings",
+              "label": "When to Steer",
               "trigger_key": "Mads",
               "trigger_condition": {
                 "type": "param",
@@ -41,8 +41,8 @@
                 {
                   "key": "MadsMainCruiseAllowed",
                   "widget": "toggle",
-                  "title": "Toggle with Main Cruise",
-                  "description": "Note: For vehicles without LFA/LKAS button, disabling this will prevent lateral control engagement.",
+                  "title": "Steer When Cruise On",
+                  "description": "Turning cruise on with its on/off button also turns steering on. Cars without a lane keep button need this on to steer.",
                   "enablement": [
                     {
                       "type": "offroad_only"
@@ -83,8 +83,8 @@
                 {
                   "key": "MadsUnifiedEngagementMode",
                   "widget": "toggle",
-                  "title": "Unified Engagement Mode (UEM)",
-                  "description": "Engage lateral and longitudinal control with cruise control engagement. Note: Once lateral control is engaged via UEM, it will remain engaged until it is manually disabled via the MADS button or car shut off.",
+                  "title": "Steer When Cruise Set",
+                  "description": "Setting or resuming a cruise speed also turns steering on. Steering then stays on until you switch it off or turn off the car.",
                   "enablement": [
                     {
                       "type": "offroad_only"
@@ -126,7 +126,7 @@
                   "key": "MazdaTjaButton",
                   "widget": "toggle",
                   "title": "Mazda TJA Button",
-                  "description": "The physical TJA button toggles Automatic Lane Centering and MRCC only controls cruise. Main Cruise and UEM no longer engage or disengage lateral control. Enable only if your car has the button.",
+                  "description": "The wheel's TJA button becomes the only steering switch. The MRCC button then only controls cruise. Turn on only if your car has the button.",
                   "visibility": [
                     {
                       "type": "capability",
@@ -143,12 +143,12 @@
                 {
                   "key": "MadsSteeringMode",
                   "widget": "multiple_button",
-                  "title": "Steering Mode on Brake Pedal",
-                  "description": "Choose how Automatic Lane Centering (ALC) behaves after the brake pedal is manually pressed in sunnypilot.",
+                  "title": "Steering on Brake",
+                  "description": "What steering does when you press the brake. Remain keeps steering. Pause resumes it when you let go. Disengage turns steering off.",
                   "options": [
                     {
                       "value": 0,
-                      "label": "Remain Active",
+                      "label": "Remain",
                       "enablement": [
                         {
                           "type": "not",
