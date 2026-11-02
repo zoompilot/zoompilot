@@ -40,17 +40,17 @@ class SteeringLayout(Widget):
   def _initialize_items(self):
     self._mads_base_desc = tr("Lets zoompilot steer while cruise control is off. " +
                               "When off, steering and cruise engage and disengage together.")
-    self._mads_limited_desc = tr("This platform supports limited MADS settings.")
-    self._mads_full_desc = tr("This platform supports all MADS settings.")
+    self._mads_limited_desc = tr("This car supports only some When to Steer settings.")
+    self._mads_full_desc = tr("This car supports all When to Steer settings.")
     self._mads_check_compat_desc = tr("Start the vehicle to check vehicle compatibility.")
 
     self._mads_toggle = toggle_item_sp(
       param="Mads",
-      title=lambda: tr("Modular Assistive Driving System (MADS)"),
+      title=lambda: tr("Steer Without Cruise"),
       description=self._mads_base_desc,
     )
     self._mads_settings_button = simple_button_item_sp(
-      button_text=lambda: tr("Customize MADS"),
+      button_text=lambda: tr("When to Steer"),
       button_width=800,
       callback=lambda: self._set_current_panel(PanelType.MADS)
     )
