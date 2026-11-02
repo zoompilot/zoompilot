@@ -16,7 +16,7 @@ zoompilot vUNRELEASED
   * New Lane Center Assist (alpha) in Models.
   * Road edge lane change block: new silent option.
 * comma 4
-  * Alpha longitudinal and Set Speed Assist sit at the top of Cruise.
+  * Alpha longitudinal and Set Speed Assist now live in the Cruise menu.
   * Home shows icons for alpha longitudinal and Set Speed Assist.
   * Models adds lane turn desires, steer delay and camera offset.
   * Home can show the active model (Display).
