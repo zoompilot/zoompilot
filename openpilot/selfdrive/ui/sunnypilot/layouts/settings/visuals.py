@@ -39,6 +39,12 @@ class VisualsLayout(Widget):
         tr("Display steering arc on the driving screen when lateral control is enabled."),
         None,
       ),
+      "ConfidenceBall": (
+        lambda: tr("Confidence Ball"),
+        tr("Shows the model's confidence as a ball on your side of the screen, as on the comma 4: higher is more " +
+           "confident, and while engaged it is green, then yellow, then red as confidence drops."),
+        None,
+      ),
       "RainbowMode": (
         lambda: tr("Enable Tesla Rainbow Mode"),
         tr("A beautiful rainbow effect on the path the model wants to take. " +

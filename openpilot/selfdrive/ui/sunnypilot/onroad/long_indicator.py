@@ -16,7 +16,16 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor
 from openpilot.selfdrive.ui.ui_state import ui_state
 
 SCALE = 2.0
-MICI_WHEEL_TOP_Y = 176  # in LongIndicator's y layout: its last bar ends at 157.5, 18.5 above mici's wheel
+# in LongIndicator's y layout
+CAR_TOP_Y = 100 - 27 / 2  # its car's top
+LAST_BAR_BOTTOM_Y = 152 + 11 / 2
+MICI_WHEEL_TOP_Y = 176
+STACK_GAP = (MICI_WHEEL_TOP_Y - LAST_BAR_BOTTOM_Y) * SCALE  # mici's bars-to-wheel spacing, at tizi's size
+
+
+def long_indicator_top(rect: rl.Rectangle, is_rhd: bool) -> float:
+  """Where the stack's car begins; the confidence ball's track ends above it."""
+  return driver_monitor_rect(rect, is_rhd).y - (MICI_WHEEL_TOP_Y - CAR_TOP_Y) * SCALE
 
 
 class LongIndicatorTizi(LongIndicator):
