@@ -112,9 +112,9 @@ class ModelsLayout(Widget):
 
     self._blendful_desc = tr("Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear." +
                              " Yields around obstacles. The blue line and the gauge under the torque bar show the strength and direction of" +
-                             " correction. Debug UI shows the exact adjustment in cm. Not available with the Default model.")
+                             " correction. The developer UI shows the exact adjustment in cm. Not available with the Default model.")
     self.blendful_toggle = multiple_button_item_sp(tr("Lane Center Assist (Alpha)"), self._blendful_desc,
-                                                   buttons=[tr("Off"), tr("On"), tr("Debug UI")], button_width=300,
+                                                   buttons=[tr("Off"), tr("On")], button_width=300,
                                                    callback=lambda i: set_lane_center_mode(ui_state.params, i), inline=False)
 
     # stored in m/s, stepped by whole display units
@@ -391,7 +391,8 @@ class ModelsLayout(Widget):
     camera_offset: bool = ui_state.active_bundle is not None
 
     blendful_allowed = ui_state.active_runner_tinygrad
-    self.blendful_toggle.action_item.set_selected_button(lane_center_mode(ui_state.params) if blendful_allowed else 0)
+    # the comma 4's debug ui option reads as on: the 3X shows the push in its developer UI
+    self.blendful_toggle.action_item.set_selected_button(min(lane_center_mode(ui_state.params), 1) if blendful_allowed else 0)
     self.blendful_toggle.action_item.set_enabled(blendful_allowed)
 
     blendful_desc = self._blendful_desc if blendful_allowed else \

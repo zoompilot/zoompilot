@@ -140,3 +140,55 @@ def test_onroad_button_tap_leaves_the_sidebar(params, monkeypatch):
   assert view._touch_valid()
   monkeypatch.setattr(type(view._hud_renderer._speed_assist_button), "is_pressed", property(lambda self: True))
   assert not view._touch_valid()
+
+
+@pytest.mark.parametrize(("rhd", "dev_ui"), [(False, 0), (True, 0), (False, 3), (True, 3)])
+def test_long_indicator_stacks_on_the_driver_monitor(params, monkeypatch, rhd, dev_ui):
+  from types import SimpleNamespace
+
+  import pyray as rl
+  from openpilot.selfdrive.ui.sunnypilot.onroad import long_indicator
+  from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "sm", {"driverMonitoringState": SimpleNamespace(isRHD=rhd)})
+  monkeypatch.setattr(ui_state, "developer_ui", dev_ui)
+  drawn = []
+  monkeypatch.setattr(long_indicator.rl, "draw_texture_ex", lambda tex, pos, *_: drawn.append((tex, pos)))
+  indicator = long_indicator.LongIndicatorTizi()
+  rect = rl.Rectangle(0, 0, 2160, 1080)
+  last_bar = indicator._txt_distance[2][0]
+  indicator._draw_centered(last_bar, rect, 152, 1.0)
+  _, pos = drawn[-1]
+
+  monitor = driver_monitor_rect(rect, rhd)
+  assert (monitor.x < rect.width / 2) != rhd  # the driver's side
+  assert pos.x + last_bar.width / 2 == pytest.approx(monitor.x + monitor.width / 2, abs=1)
+  # mici's bar-to-wheel gap, doubled
+  assert monitor.y - (pos.y + last_bar.height) == pytest.approx(2 * 18.5, abs=1.5)
+
+
+class _SM(dict):
+  """SubMaster stand-in: the messages, all just updated."""
+  updated = {"modelDataV2SP": True}
+
+
+@pytest.mark.parametrize(("trust", "curvature", "side"), [
+  (0.0, 0.002, None),  # no lane center: no number
+  (1.0, 0.0, ""),
+  (1.0, -0.0005, "L "),
+  (1.0, 0.0005, "R "),
+])
+def test_developer_ui_shows_lane_center_push(trust, curvature, side):
+  from types import SimpleNamespace
+
+  from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import pull_at_lookahead
+  from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.lane_center import LaneCenterElement
+
+  sm = _SM(modelDataV2SP=SimpleNamespace(blendfulTrust=trust, blendfulCurvature=curvature), carState=SimpleNamespace(vEgo=25.0))
+  element = LaneCenterElement()
+  for _ in range(200):  # past the readout's 0.5 s smoothing
+    shown = element.update(sm, False)
+  assert (shown.label, shown.unit) == ("LANE CTR", "" if side is None else "cm")
+  cm = round(abs(pull_at_lookahead(curvature, 25.0)) * 100)
+  assert shown.value == ("-" if side is None else f"{side}{cm}")

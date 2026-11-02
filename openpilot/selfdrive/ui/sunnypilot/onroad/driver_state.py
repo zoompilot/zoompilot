@@ -1,48 +1,39 @@
 """
-Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+Copyright (c) 2026-, Zeph Leggett.
 
-This file is part of sunnypilot and is licensed under the MIT License.
+This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
+
+mici's driver monitor (the dmoji) on tizi, at twice its size, in the bottom corner on the driver's
+side. Its behaviour is mici's unchanged: hidden under alerts, and while disengaged unless AlwaysOnDM.
 """
-import numpy as np
+from __future__ import annotations
+
+import pyray as rl
 
 from openpilot.selfdrive.ui import UI_BORDER_SIZE
-from openpilot.selfdrive.ui.onroad.driver_state import DriverStateRenderer, BTN_SIZE, ARC_LENGTH
+from openpilot.selfdrive.ui.mici.onroad.driver_state import DriverStateRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui import get_bottom_dev_ui_offset
+from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
+
+SIZE = 2 * DriverStateRenderer.BASE_SIZE
+
+
+def driver_monitor_rect(rect: rl.Rectangle, is_rhd: bool) -> rl.Rectangle:
+  """Where the monitor sits in the onroad content rect; the long indicator stacks on it."""
+  x = rect.x + (rect.width - UI_BORDER_SIZE - SIZE if is_rhd else UI_BORDER_SIZE)
+  y = rect.y + rect.height - UI_BORDER_SIZE - SIZE - get_bottom_dev_ui_offset()
+  return rl.Rectangle(x, y, SIZE, SIZE)
 
 
 class DriverStateRendererSP(DriverStateRenderer):
   def __init__(self):
     super().__init__()
+    self.set_rect(rl.Rectangle(0, 0, SIZE, SIZE))
+    self.load_icons()  # sized by the rect
 
-  def _pre_calculate_drawing_elements(self):
-    """Pre-calculate all drawing elements based on the current rectangle"""
-    # Calculate icon position (bottom-left or bottom-right)
-    width, height = self._rect.width, self._rect.height
-    offset = UI_BORDER_SIZE + BTN_SIZE // 2
-    self.position_x = self._rect.x + (width - offset if self.is_rhd else offset)
-    self.position_y = self._rect.y + height - offset - get_bottom_dev_ui_offset()
-
-    # Pre-calculate the face lines positions
-    positioned_keypoints = self.face_keypoints_transformed + np.array([self.position_x, self.position_y])
-    for i in range(len(positioned_keypoints)):
-      self.face_lines[i].x = positioned_keypoints[i][0]
-      self.face_lines[i].y = positioned_keypoints[i][1]
-
-    # Calculate arc dimensions based on head rotation
-    delta_x = -self.driver_pose_sins[1] * ARC_LENGTH / 2.0  # Horizontal movement
-    delta_y = -self.driver_pose_sins[0] * ARC_LENGTH / 2.0  # Vertical movement
-
-    # Horizontal arc
-    h_width = abs(delta_x)
-    self.h_arc_data = self._calculate_arc_data(
-      delta_x, h_width, self.position_x, self.position_y - ARC_LENGTH / 2,
-      self.driver_pose_sins[1], self.driver_pose_diff[1], is_horizontal=True
-    )
-
-    # Vertical arc
-    v_height = abs(delta_y)
-    self.v_arc_data = self._calculate_arc_data(
-      delta_y, v_height, self.position_x - ARC_LENGTH / 2, self.position_y,
-      self.driver_pose_sins[0], self.driver_pose_diff[0], is_horizontal=False
-    )
+  def render(self, rect: rl.Rectangle | None = None):
+    # upstream's tizi view hands over the whole content rect; mici's renderer draws into its own
+    assert rect is not None
+    self.set_should_draw(ui_state.status != UIStatus.DISENGAGED or ui_state.always_on_dm)
+    return super().render(driver_monitor_rect(rect, self.is_rhd))

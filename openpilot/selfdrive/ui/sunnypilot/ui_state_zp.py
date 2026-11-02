@@ -47,6 +47,8 @@ class UIStateZP:
     self.home_model_name: str | None = None
     # lane center assist's debug readout on the comma 4
     self.blendful_readout: bool = False
+    # lane center assist on: the 3X developer UI shows its push
+    self.lane_center: bool = False
 
   def update(self) -> None:
     # read where sm is updated, so the params thread never touches a message
@@ -56,7 +58,9 @@ class UIStateZP:
 
   def update_params(self) -> None:
     self.speed_assist = self.params.get_bool("ExperimentalModeSetSpeed")
-    self.blendful_readout = lane_center_mode(self.params) == 2
+    mode = lane_center_mode(self.params)
+    self.lane_center = mode > 0
+    self.blendful_readout = mode == 2
     self._steer_rail_schedule = get_steer_rail_schedule(self.CP) if self.CP is not None else None
     # on the 5 Hz params pass, not per frame in a layout; a fitted chestnut owns chestnut_state
     self.jetlink = None if self.sm['deviceState'].chestnutPresent else jetlink_adapter.status()

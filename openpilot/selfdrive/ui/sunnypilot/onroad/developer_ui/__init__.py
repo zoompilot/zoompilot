@@ -14,6 +14,7 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.elements import (
   AEgoElement, LeadSpeedElement, FrictionCoefficientElement, LatAccelFactorElement,
   SteeringTorqueEpsElement, BearingDegElement, AltitudeElement, DesiredSteeringPIDElement
 )
+from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.lane_center import LaneCenterElement
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget
@@ -53,6 +54,7 @@ class DeveloperUiRenderer(Widget):
     self.steering_torque_elem = SteeringTorqueEpsElement()
     self.bearing_elem = BearingDegElement()
     self.altitude_elem = AltitudeElement()
+    self.lane_center_elem = LaneCenterElement()  # zoompilot
 
   def _update_state(self) -> None:
     self.dev_ui_mode = ui_state.developer_ui
@@ -80,6 +82,9 @@ class DeveloperUiRenderer(Widget):
     UI_BORDER_SIZE = 20
     container_width = 184
     x = int(rect.x + rect.width - container_width - UI_BORDER_SIZE * 2)
+    # zoompilot: a right-hand drive puts the driver monitor in the right corner, so the column moves left
+    if sm['driverMonitoringState'].isRHD:
+      x = int(rect.x + UI_BORDER_SIZE * 2)
     y = int(rect.y + UI_BORDER_SIZE * 1.5)
 
     elements = [
@@ -153,6 +158,10 @@ class DeveloperUiRenderer(Widget):
 
       if sm.valid['gpsLocationExternal'] or sm.valid['gpsLocation']:
         elements.append(self.bearing_elem.update(sm, ui_state.is_metric))
+
+    # zoompilot: lane center assist's push
+    if ui_state.lane_center:
+      elements.append(self.lane_center_elem.update(sm, ui_state.is_metric))
 
     # Add altitude if GPS available
     if sm.valid['gpsLocationExternal'] or sm.valid['gpsLocation']:
