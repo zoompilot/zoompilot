@@ -17,10 +17,11 @@ This lifts the e2e candidate toward what chill mode would do and never lowers it
 
 floor is chill mode's answer, the lower of the planner's own lead MPC and cruise candidates
 (upstream's cruise law with SCC and SLA's targets), so with nothing to slow for experimental mode
-drives and follows as chill does. gain fades the lift out as the model eases off (its own
-acceleration and its throttle probability) and below walking pace, and fade as the road ahead bends
-at the current speed. Every slowdown is the model's: the lift only lets go of it, and a lead that
-brakes binds through the MPC candidate at once.
+drives and follows as chill does, closing on the target speed no harder than a production ACC
+(approach_accel). gain fades the lift out as the model eases off (its own acceleration and its
+throttle probability) and below walking pace, and fade as the road ahead bends at the current
+speed. Every slowdown is the model's: the lift only lets go of it, and a lead that brakes binds
+through the MPC candidate at once.
 
 A lift that could go negative made the car pump on a straight road: the plan's far end flickers
 by several mph from one frame to the next, and handing back added speed on each flicker
@@ -60,9 +61,23 @@ LAT_HORIZON = 10.0  # s
 # The lift rises at upstream's cruise jerk, as the cruise candidate it stands in for, and falls fast
 # so the model's own braking is never held off.
 LIFT_FALL = 2.4  # m/s^3
+# The floor closes on the target speed no harder than a production ACC: the CX-5's stock MRCC
+# command with no lead, its p99 by speed scaled by the shortfall (between its p50 and p90, 1.94M
+# stock frames). Upstream's cruise law asks 1 m/s^2 per m/s of shortfall up to 2.0, a kickdown at
+# every small gap on a stepped automatic.
+APPROACH_BP = [0., 4., 9., 14., 18., 25.]  # m/s
+APPROACH_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s^2
+APPROACH_GAP_BP = [0., 1., 3., 5., 10.]  # m/s under the target speed
+APPROACH_GAP_FRACTION = [0.38, 0.47, 0.57, 0.72, 1.]
 
 T_IDXS = np.asarray(ModelConstants.T_IDXS)
 LAT_MASK = T_IDXS <= LAT_HORIZON
+
+
+def approach_accel(v_ego: float, v_target: float) -> float:
+  """The most the floor asks while closing on v_target."""
+  return float(np.interp(v_ego, APPROACH_BP, APPROACH_V) *
+               np.interp(v_target - v_ego, APPROACH_GAP_BP, APPROACH_GAP_FRACTION))
 
 
 class E2ESetSpeedController:
@@ -96,7 +111,7 @@ class E2ESetSpeedController:
   def update(self, sm: messaging.SubMaster, a_model: float, a_chill: float, is_e2e: bool, reset_state: bool,
              steer_lat_accel: float = 0.) -> float:
     """Return the e2e candidate; a_model unchanged whenever the feature is off or idle.
-    a_chill: chill mode's acceleration, the lower of the planner's lead MPC and cruise candidates.
+    a_chill: the floor, the lower of the planner's lead MPC and cruise candidates and the approach pace.
     steer_lat_accel: lateral acceleration from the measured steering angle."""
     self.frame += 1
     self._update_params()

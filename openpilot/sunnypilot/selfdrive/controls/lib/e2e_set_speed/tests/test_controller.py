@@ -174,3 +174,13 @@ def test_invalid_model_passes_through():
 
   assert run(ctl, 1, build_sm(V_EGO, throttle_prob=float('nan')), a_model=0.05) == 0.05
   assert ctl.inhibit == Inhibit.invalid
+
+
+def test_approach_closes_small_gaps_gently():
+  # the floor's pace grows with the shortfall to the whole speed envelope at 10 m/s, and is a third
+  # of it at the target
+  assert all(np.diff(c.APPROACH_GAP_FRACTION) > 0) and c.APPROACH_GAP_FRACTION[-1] == 1.
+  for v, ceiling in zip(c.APPROACH_BP, c.APPROACH_V, strict=True):
+    assert c.approach_accel(v, v + 10.) == pytest.approx(ceiling)
+    assert c.approach_accel(v, v) == pytest.approx(c.APPROACH_GAP_FRACTION[0] * ceiling)
+  assert c.approach_accel(V_EGO, V_EGO + 1.) < 0.42  # a CX-5 5>4 kickdown at highway speed
