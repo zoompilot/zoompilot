@@ -462,7 +462,6 @@ class TestMadsLimitedCallSignature:
     # State-only tests do not cover widget overrides that depend on upstream drawing internals.
 
 LAYOUT_TARGETS = [
-  ("alpha_longitudinal", "AlphaLongitudinalLayoutMici"),
   ("cruise", "CruiseLayoutMici"),
   ("developer", "DeveloperLayoutMiciSP"),
   ("display", "DisplayLayoutMici"),
@@ -995,12 +994,12 @@ class TestAlphaLongSwitchMici:
 
   @pytest.mark.parametrize("engaged", [True, False])
   def test_switch_locks_only_while_engaged(self, params, monkeypatch, engaged):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalTogglesMici
     from openpilot.selfdrive.ui.ui_state import UIState
     monkeypatch.setattr(UIState, "engaged", property(lambda _: engaged))
-    layout = AlphaLongitudinalLayoutMici()
-    render(layout)
-    assert layout._alpha_long_toggle.enabled == (not engaged)
+    toggles = AlphaLongitudinalTogglesMici()
+    render(toggles._alpha_long_toggle)
+    assert toggles._alpha_long_toggle.enabled == (not engaged)
 
   @pytest.mark.parametrize("started", [True, False])
   def test_switch_cycles_onroad_only(self, params, monkeypatch, started):
@@ -1026,18 +1025,19 @@ class TestAlphaLongSwitchMici:
 
 
 class TestAlphaLongitudinalPanelMici:
-  """The alpha switch and the e2e assists live under Cruise, once."""
+  """The alpha switch and Set Speed Assist head Cruise, once, with no sub-panel."""
 
   def test_moved_switches_appear_once(self, params):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
 
     developer = DeveloperLayoutMiciSP()
     assert developer._alpha_long_toggle not in developer._scroller.items
 
-    alpha = AlphaLongitudinalLayoutMici()
+    cruise = CruiseLayoutMici()
+    alpha = cruise._alpha_long
     assert [key for key, _ in alpha._refresh_toggles] == ["AlphaLongitudinalEnabled", "ExperimentalModeSetSpeed"]
-    assert alpha._scroller.items == [item for _, item in alpha._refresh_toggles]
+    assert cruise._scroller.items[:2] == alpha.items == [item for _, item in alpha._refresh_toggles]
 
   def test_settings_opens_the_sp_panels(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
@@ -1053,43 +1053,26 @@ class TestAlphaLongitudinalPanelMici:
       buttons[label]._click_callback()
       assert type(pushed[-1]) is cls
 
-  @pytest.mark.parametrize(("has_long", "speed_assist", "badges"), [
-    (True, True, ["speed assist"]),
-    (True, False, ["default"]),
-    (False, True, None),  # alpha off: a grey "disabled" pill
+  @pytest.mark.parametrize(("alpha", "has_long", "alpha_visible", "assist_visible"), [
+    (True, False, True, True),  # alpha off: assist locked
+    (True, True, True, True),
+    (False, True, False, True),  # openpilot long without alpha
+    (False, False, False, False),  # stock ACC only: nothing to switch
   ])
-  def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, speed_assist, badges):
+  def test_rows_show_only_where_they_can_act(self, params, monkeypatch, alpha, has_long, alpha_visible, assist_visible):
     from opendbc.car.structs import car
     from openpilot.cereal import custom
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
     from openpilot.selfdrive.ui.ui_state import ui_state
-    from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import E2E_ASSISTS
-    from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import badge_rows
-    from openpilot.system.ui.lib.application import gui_app
 
-    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=has_long))
+    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=alpha, openpilotLongitudinalControl=has_long))
     monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
     monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
-    for param, _ in E2E_ASSISTS:
-      params.put_bool(param, speed_assist, block=True)
-    try:
-      cruise = CruiseLayoutMici()
-      render(cruise)
-      btn = cruise._scroller.items[0]
-      assert btn is cruise._alpha_long_btn
-      assert btn._badge_labels == (badges or ["disabled"])
-      assert btn._disabled == (badges is None)
-      assert len(badge_rows(btn._badge_labels, btn._subtitle_width_hint())) == 1  # the widest state stays on one row
-
-      pushed = []
-      monkeypatch.setattr(gui_app, "push_widget", lambda w: pushed.append(w))
-      btn._click_callback()
-      assert type(pushed[-1]) is AlphaLongitudinalLayoutMici
-    finally:
-      for param, _ in E2E_ASSISTS:
-        params.remove(param)
-
+    monkeypatch.setattr(ui_state, "is_release", False)
+    cruise = CruiseLayoutMici()
+    render(cruise)
+    assert cruise._alpha_long._alpha_long_toggle.is_visible == alpha_visible
+    assert cruise._alpha_long._set_speed_toggle.is_visible == assist_visible
 
 
 class TestOverriddenToggles:
@@ -1098,16 +1081,16 @@ class TestOverriddenToggles:
   @pytest.mark.parametrize("has_long", [False, True])
   def test_e2e_toggles_lock_without_openpilot_long(self, params, monkeypatch, has_long):
     from opendbc.car.structs import car
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalTogglesMici
     from openpilot.selfdrive.ui.ui_state import ui_state
 
-    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(openpilotLongitudinalControl=has_long))
+    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=has_long))
     monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
     params.put_bool("ExperimentalModeSetSpeed", True, block=True)
     try:
-      layout = AlphaLongitudinalLayoutMici()
-      layout._refresh()
-      layout._update_state()
+      layout = AlphaLongitudinalTogglesMici()
+      layout.refresh()
+      layout.update_state()
       toggle = layout._set_speed_toggle
       assert toggle.enabled == has_long
       assert toggle._checked, "locking must keep the stored value"
