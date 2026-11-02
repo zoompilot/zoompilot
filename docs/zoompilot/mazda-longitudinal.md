@@ -557,6 +557,17 @@ release moved at -0.001, pure creep. The roughly 0.3 s actuator dead time carrie
 about 0.38 past the value that actually broke the car free before standstill clears, which is
 why the cap is what bounds the worst case.
 
+Past stock's release frames the climb runs at `ACCEL_BREAKAWAY_RAMP` (2.5 m/s3), about twice
+stock's 1.22, for as long as the car is still stopped. Stock's ramp only adds time there: nothing
+moves until the command reaches the breakaway value. Our 2026-10-30/31 launches took 1.36 s from the
+plan asking to go until the car moved: 0.2 s debounce, 0.2 s up from the relax band, about 0.6 s
+at stock's rate up to the breakaway, then the car's own 0.3 s. The first 0.2 s after the release
+(`RELEASE_SHAPE_FRAMES`) stays on stock's rate, because every stock release pulse, never-latched
+or latched, falls inside it and those are the frames the camera checks. The quicker climb saves
+about 0.2 s at a +0.5 breakaway and 0.35 s at +0.8, and it overshoots further before standstill
+clears (about +0.75 instead of +0.38), which the two caps still bound. Once the car rolls, the
+ramp to the plan is stock's again.
+
 The climb gives up after `BREAKAWAY_FRAMES` (3.0 s), so a car held by something we cannot see
 (a kerb, a steep grade, a foot on the brake) settles back onto the plan instead of being leaned
 on indefinitely.
@@ -598,7 +609,9 @@ the plan.
 Above zero the command is additionally shaped to what stock MRCC does
 (`tools/mazda_long/accel_profile.py`, 158 stock routes, 1298 stock accelerating episodes against
 302 of ours). Two things separate the two systems, and neither is the plant: the car answers the
-command with a gain of 1.07 and about 0.6 s of lag whoever sends it.
+command with a gain of 1.07 and about 0.6 s of lag whoever sends it. It also corrects for grade
+itself (aEgo loses only about a quarter of g*sin(pitch) at a fixed command), and its gain scatters
++/-20% run to run with the torque converter, so the port runs no integrator and no pitch feedforward.
 
 - **Build rate.** Stock raises a positive command by at most +12 raw per 50 Hz frame, 0.6 m/s3,
   in 99.3% of rising frames at every speed above about 5 m/s; the only faster ramp is its 1.25
@@ -635,11 +648,11 @@ command with a gain of 1.07 and about 0.6 s of lag whoever sends it.
   car kicked down 24 times in 13.7 engaged minutes, mostly 6>5>4 at 18 to 21 m/s; 23 of them came
   from the lift toward chill's answer, none from the model. This car's kickdowns (CAN 0x202 RPM,
   0x228 GEAR_BOX) sit at about 0.35 m/s2 in sixth and 0.42 in fifth from 14 to 24 m/s.
-  `get_pid_accel_limits` caps the command at the speed ceiling scaled by `ACCEL_GAP_FRACTION`
-  over the gap, which lands between stock's p50 and p90 from 9 to 24 m/s; a launch or a large
-  gap keeps the whole ceiling. It is Ford's and Honda Nidec's pattern (their PCM refuses accel
-  near the set speed) and binds every candidate in both modes: chill, the lift, the lead MPC and
-  the model.
+  From 2026-10-30 to 11-01 `get_pid_accel_limits` capped the command at the speed ceiling scaled
+  by the gap, between stock's p50 and p90. It only ever bound Set Speed Assist's lift (the model's
+  own request was above it 0.0% of 16 post-cap minutes), so the same law now caps Set Speed
+  Assist's floor in the planner for every car (`approach_accel`, e2e-set-speed.md), and this port
+  keeps only the speed ceiling. The first post-cap drive (00000062) went from 1.44 to 1.09 kickdowns a minute.
 
 Replaying all three over the logged plans of our 17 alpha-long routes moves the p90 rising jerk
 from 1.0 to 1.7 m/s3 onto the 0.8 line in every bin from 5 m/s up and trims the peaks by 0.05 to
@@ -728,7 +741,15 @@ DBC and are assumed to. Note that a stock CX-9 2021 carries EPS firmware TC3M-32
 not in `STEER_TO_ZERO_EPS_FW`, so under the EPS-keyed rule only a CX-9 with the swapped 2022 CX-5
 EPS is offered alpha long (see mazda-fingerprinting.md).
 
-`longitudinalActuatorDelay` is 0.36 s: about 0.3 s dead time plus about 0.3 s first-order lag.
+`longitudinalActuatorDelay` is 0.5 s, Honda's, GM's and Hyundai's value. The maneuver report on
+route 21d103861daeed11/0000005f (2026-11-01) and four stock brake steps agree on the friction brake:
+after a brake step of any size the car reaches -0.5 m/s2 at 0.75 to 0.85 s and -1.0 at about 1.0 s,
+then builds about 3 m/s3 to near -1.9 and about 1.3 m/s3 beyond, so -2.0 is the brake that arrives
+quickly. Only the first -0.3 or so (engine braking) comes sooner, at 0.36 to 0.38 s. Gas answers in
+0 to 0.2 s, but the wire's own build rate limits it. The delay is how far ahead the planner and the
+model read the plan, so 0.5 starts a jerk-limited brake about 0.14 s earlier than the old 0.36 did.
+A larger or steeper brake command does not start the friction brake any sooner, and stock never
+steps its own brake command (0 of 94 stock brake onsets), so the command shape stays as it is.
 
 ## Cruise button management (ICBM)
 
@@ -791,13 +812,14 @@ the dash lane indicators, so those two stay zeroed.
 | `ACCEL_BREAKAWAY_MAX` | 1.45 m/s2 | stock last-still-frame command max +1.425 (n=31) | corpus |
 | `BREAKAWAY_FRAMES` | 3.0 s | give-up bound on an unseen holder | design |
 | `ACCEL_BREAKAWAY_OVERSHOOT` | 0.75 m/s2 | 132 case +0.67 above plan; stock p25 +0.744 | 132, 12c, 34 stock episodes |
+| `ACCEL_BREAKAWAY_RAMP` | 2.5 m/s3 | still-stopped climb after the 0.2 s release frames; stock's rate spent ~0.6 s of a 1.36 s launch reaching breakaway | 60, 62, 0000005f |
 | `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3; brake region only | reporter's route |
 | `ACCEL_BUILD_V` | 1.22 to 0.8 m/s3 over 3 to 6 m/s | stock +12 raw per 50 Hz frame (0.59) in 99.3% of rising frames, taken a third quicker; the release ramp pulling away | 158 stock routes |
 | `ACCEL_LIFT_LIMIT` | -2.0 m/s3 | stock throttle lift <= 40 raw per frame in 99.98% of falling positive frames | 158 stock routes |
 | `ACCEL_CEILING_V` | 1.5, 1.75, 1.45, 0.95, 0.85, 0.65 m/s2 at 0, 4, 9, 14, 18, 25 m/s | stock accelerating command p99 by speed, no lead; 14 m/s eased from 1.05 after 4>3 kickdowns near 3000 rpm (2026-10-31) | 158 stock routes |
 | `ACCEL_WINDDOWN_LIMIT` | -10.0 m/s3 | clips only p99.9+ steps | reporter's route |
 | `stopAccel` | -1.0 m/s2 | stock hold raw -1024 | corpus |
-| `longitudinalActuatorDelay` | 0.36 s | 0.3 s dead time + 0.3 s lag | corpus |
+| `longitudinalActuatorDelay` | 0.5 s | friction brake -0.5 m/s2 at 0.75-0.85 s after any step | 0000005f maneuvers, 4 stock steps |
 | `HOLD_PERIOD` | 0.1 s | CRZ_BTNS 10 Hz, 99 to 101 ms for 95% of 7.2k gaps | 0b |
 | `MAZDA_LONG_LIMITS` | +2048 / -3584 raw | ISO window; stock reaches raw -3891 | corpus |
 

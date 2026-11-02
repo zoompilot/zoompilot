@@ -9,11 +9,10 @@ from openpilot.cereal import log, custom
 from opendbc.car.structs import car
 from openpilot.common.constants import CV
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
-  NoEntryAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, AlertCallbackType, wrong_car_mode_alert
+  NoEntryAlert, ImmediateDisableAlert, EngagementAlert, AlertCallbackType, wrong_car_mode_alert
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import PCM_LONG_REQUIRED_MAX_SET_SPEED, CONFIRM_SPEED_THRESHOLD
 from openpilot.common.hardware import HARDWARE
 from openpilot.sunnypilot.selfdrive.selfdrived.events_zp import EVENTS_SP_ZP, EventsWithZP
-from openpilot.sunnypilot.selfdrive.selfdrived.selfdrived_zp import SelfdrivedZP
 
 AlertSize = log.SelfdriveState.AlertSize
 AlertStatus = log.SelfdriveState.AlertStatus
@@ -27,12 +26,6 @@ EventNameSP = custom.OnroadEventSP.EventName
 EVENT_NAME_SP = {v: k for k, v in EventNameSP.schema.enumerants.items()}
 
 IS_MICI = HARDWARE.get_device_type() == 'mici'
-
-
-def experimental_mode_switched_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
-  # switched_to is the driving model's state; the switch is named for legacy chill, its opposite
-  state = "Off" if SelfdrivedZP.switched_to else "On"
-  return NormalPermanentAlert(f"Legacy Chill {state}", duration=1.5)
 
 
 def speed_limit_adjust_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
@@ -187,11 +180,6 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventNameSP.controlsMismatchLateral: {
     ET.IMMEDIATE_DISABLE: ImmediateDisableAlert("Controls Mismatch: Lateral"),
     ET.NO_ENTRY: NoEntryAlert("Controls Mismatch: Lateral"),
-  },
-
-  # zoompilot keeps the experimental/chill switch upstream retired with the event (selfdrived_zp)
-  EventNameSP.experimentalModeSwitchedDEPRECATED: {
-    ET.WARNING: experimental_mode_switched_alert,
   },
 
   EventNameSP.wrongCarModeAlertOnly: {

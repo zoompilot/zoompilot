@@ -4,8 +4,8 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-The planner's e2e candidate follows zoompilot's experimental/chill switch (selfdrived_zp), which
-upstream retired. Also the fixture the planner hook tests build on.
+The planner's e2e candidate runs whenever openpilot drives the gas and brakes (chill mode went
+2026-11). Also the fixture the planner hook tests build on.
 """
 import pytest
 
@@ -32,7 +32,7 @@ class MockSubMaster(dict):
     return True
 
 
-def build_sm(experimental_mode: bool) -> MockSubMaster:
+def build_sm() -> MockSubMaster:
   services = {}
   for service in ("radarState", "carStateSP", "liveMapDataSP", "gpsLocationExternal", "gpsLocation"):
     services[service] = getattr(messaging.new_message(service), service)
@@ -51,10 +51,6 @@ def build_sm(experimental_mode: bool) -> MockSubMaster:
   selfdrive_state = messaging.new_message('selfdriveState')
   selfdrive_state.selfdriveState.enabled = True
   services['selfdriveState'] = selfdrive_state.selfdriveState.as_reader()
-
-  selfdrive_state_sp = messaging.new_message('selfdriveStateSP')
-  selfdrive_state_sp.selfdriveStateSP.zoompilot.experimentalMode = experimental_mode
-  services['selfdriveStateSP'] = selfdrive_state_sp.selfdriveStateSP.as_reader()
 
   car_control = messaging.new_message('carControl')
   car_control.carControl.enabled = True
@@ -79,23 +75,20 @@ def build_planner(op_long: bool = True) -> LongitudinalPlanner:
 
 
 class TestExperimentalGate(OpenpilotTestCase):
-  def _source(self, experimental_mode: bool, op_long: bool = True) -> LongitudinalPlanSource:
+  def _source(self, op_long: bool = True) -> LongitudinalPlanSource:
     planner = build_planner(op_long)
-    planner.update(build_sm(experimental_mode))
+    planner.update(build_sm())
     return planner.mpc.source
 
-  def test_e2e_in_experimental_mode(self):
-    assert self._source(True) == LongitudinalPlanSource.e2e
-
-  def test_no_e2e_in_chill(self):
-    assert self._source(False) != LongitudinalPlanSource.e2e
+  def test_e2e_on_openpilot_long(self):
+    assert self._source() == LongitudinalPlanSource.e2e
 
   def test_no_e2e_without_openpilot_long(self):
-    assert self._source(True, op_long=False) != LongitudinalPlanSource.e2e
+    assert self._source(op_long=False) != LongitudinalPlanSource.e2e
 
-  def test_chill_candidate_never_wins_or_stops(self):
-    planner = build_planner()
-    sm = build_sm(False)
+  def test_without_openpilot_long_the_candidate_never_wins_or_stops(self):
+    planner = build_planner(op_long=False)
+    sm = build_sm()
     model = sm['modelV2'].as_builder()
     model.action.shouldStop = True
     sm['modelV2'] = model.as_reader()
@@ -106,7 +99,7 @@ class TestExperimentalGate(OpenpilotTestCase):
   def test_cornering_estimate_is_controlsds_curvature(self):
     # plannerd no longer subscribes to vehicleParameters: the lifts read controlsState's curvature
     planner = build_planner()
-    sm = build_sm(True)
+    sm = build_sm()
     controls_state = sm['controlsState'].as_builder()
     controls_state.curvature = 0.002
     sm['controlsState'] = controls_state.as_reader()

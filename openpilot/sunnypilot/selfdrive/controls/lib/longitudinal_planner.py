@@ -19,7 +19,7 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.modeld.constants import ModelConstants
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController, approach_accel
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.forecast import LeadForecast
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import OP_LONG_A_BUDGET, op_long_cruise_jerk
@@ -71,10 +71,6 @@ class LongitudinalPlannerSP:
     self.a_cruise = 0.
     self.a_cruise_prev = 0.
     self.v_ego = 0.
-
-  def is_e2e(self, sm: messaging.SubMaster) -> bool:
-    # zoompilot keeps chill (selfdrived_zp): the model's candidate only in experimental mode
-    return bool(self.CP.openpilotLongitudinalControl and sm['selfdriveStateSP'].zoompilot.experimentalMode)
 
   def _sla_owner(self, icbm: bool):
     # the machine exists only on pcm openpilot-long cars, where it owns SLA while ICBM is passive
@@ -150,18 +146,18 @@ class LongitudinalPlannerSP:
 
   def update_e2e_target(self, sm: messaging.SubMaster, a_model: float, should_stop_model: bool,
                         reset_state: bool) -> tuple[float, bool]:
-    """The e2e candidate the host planner takes the minimum over. In chill it can never be the
-    minimum (cruise, listed first, wins a tie) and never asks to stop."""
-    is_e2e = self.is_e2e(sm)
+    """The e2e candidate the host planner takes the minimum over. Without openpilot longitudinal it
+    can never be the minimum (cruise, listed first, wins a tie) and never asks to stop."""
+    is_e2e = self.CP.openpilotLongitudinalControl
     # lateral acceleration from the measured steering: controlsd's curvature from the learned steer
     # ratio, angle offset and roll
     steer_lat_accel = sm['controlsState'].curvature * sm['carState'].vEgo ** 2
     # chill mode's answer: the MPC candidate as the host takes it from this frame's solution (a lead,
     # or its synthetic one far ahead), and last frame's cruise candidate (the host builds this
-    # frame's after the e2e candidate)
+    # frame's after the e2e candidate), closing on this frame's target speed at a production ACC's pace
     a_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
                                 action_t=self.CP.longitudinalActuatorDelay + DT_MDL)
-    a_chill = min(float(a_mpc), self.a_cruise)
+    a_chill = min(float(a_mpc), self.a_cruise, approach_accel(self.v_ego, self.output_v_target))
     a_e2e = self.e2e_set_speed.update(sm, a_model, a_chill, is_e2e, reset_state, steer_lat_accel)
     # upstream's gas boost learns past the model from gas presses; the set-speed floor already lifts
     # it, so the boost only runs with the floor off

@@ -10,7 +10,7 @@ from openpilot.common.constants import CV
 from openpilot.selfdrive.ui import UI_BORDER_SIZE
 from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import TorqueBarZP
 from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui import DeveloperUiRenderer, DeveloperUiState, get_bottom_dev_ui_offset
-from openpilot.selfdrive.ui.sunnypilot.onroad.exp_button import ExpButton
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_button import SpeedAssistButton
 from openpilot.selfdrive.ui.sunnypilot.onroad.road_name import RoadNameRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.rocket_fuel import RocketFuel
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_limit import SpeedLimitRenderer
@@ -28,7 +28,6 @@ SLA_ACTIVE_COLOR = rl.Color(0x91, 0x9b, 0x95, 0xff)
 
 # the experimental mode button's place, as upstream drew it before retiring chill mode
 EXP_BUTTON_SIZE = 192
-EXP_BUTTON_ICON_SIZE = 144
 
 
 class HudRendererSP(HudRenderer):
@@ -43,7 +42,7 @@ class HudRendererSP(HudRenderer):
     self.circular_alerts_renderer = CircularAlertsRenderer()
     self.speed_renderer = SpeedRenderer()
     self._torque_bar = TorqueBarZP(scale=3.0, always=True, show_bar=lambda: ui_state.torque_bar)
-    self._exp_button = ExpButton(EXP_BUTTON_SIZE, EXP_BUTTON_ICON_SIZE)
+    self._speed_assist_button = SpeedAssistButton(EXP_BUTTON_SIZE)
 
     self.pcm_cruise_speed: bool = True
     self.show_icbm_status: bool = False
@@ -141,7 +140,7 @@ class HudRendererSP(HudRenderer):
     if ui_state.has_longitudinal_control:
       button_x = rect.x + rect.width - UI_BORDER_SIZE - EXP_BUTTON_SIZE
       button_y = rect.y + UI_BORDER_SIZE
-      self._exp_button.render(rl.Rectangle(button_x, button_y, EXP_BUTTON_SIZE, EXP_BUTTON_SIZE))
+      self._speed_assist_button.render(rl.Rectangle(button_x, button_y, EXP_BUTTON_SIZE, EXP_BUTTON_SIZE))
 
     # always rendered: lane center's gauge shows under it even with the bar itself off
     torque_rect = rect
@@ -158,4 +157,4 @@ class HudRendererSP(HudRenderer):
     self.rocket_fuel.render(rect, ui_state.sm)
 
   def user_interacting(self) -> bool:
-    return self._exp_button.is_pressed
+    return self._speed_assist_button.is_pressed

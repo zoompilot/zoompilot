@@ -20,7 +20,6 @@ class Maneuver:
     self.enabled = kwargs.get("enabled", True)
     self.personality = kwargs.get("personality", 0)
     self.force_decel = kwargs.get("force_decel", False)
-    self.experimental = kwargs.get("experimental", True)  # zoompilot keeps chill
 
     self.duration = duration
     self.title = title
@@ -35,7 +34,6 @@ class Maneuver:
       only_radar=self.only_radar,
       personality=self.personality,
       force_decel=self.force_decel,
-      experimental=self.experimental,
     )
 
     valid = True

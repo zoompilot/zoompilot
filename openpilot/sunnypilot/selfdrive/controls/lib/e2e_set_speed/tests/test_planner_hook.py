@@ -15,7 +15,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDX
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, LongitudinalPlanSource
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.tests.test_experimental_gate import build_planner, build_sm
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController, Inhibit
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController, Inhibit, approach_accel
 
 MODEL_ACCEL = 0.
 
@@ -42,8 +42,8 @@ def no_lead_mpc(mpc) -> None:
 
 
 def planner_sm():
-  # the experimental gate's fixture: experimental mode, 20 m/s under a 100 km/h set speed; a model holding its pace
-  sm = build_sm(experimental_mode=True)
+  # the experimental gate's fixture: openpilot long, 20 m/s under a 100 km/h set speed; a model holding its pace
+  sm = build_sm()
   model = sm['modelV2'].as_builder()
   model.action.desiredAcceleration = MODEL_ACCEL
   sm['modelV2'] = model.as_reader()
@@ -70,10 +70,12 @@ def test_off_is_upstream():
 def test_on_raises_the_e2e_candidate():
   planner = run_planner(True)
   assert planner.e2e_set_speed.inhibit == Inhibit.none
-  # the model holding at 0 under the set speed: experimental drives as chill would
-  assert planner.e2e_set_speed.lift == pytest.approx(planner.a_cruise)
-  assert planner.output_a_target == pytest.approx(planner.a_cruise)
-  assert planner.a_cruise > 1.
+  # the model holding at 0 under the set speed: lifted toward it at a production ACC's pace, not
+  # the cruise law's 2.0
+  approach = approach_accel(planner.v_ego, planner.output_v_target)
+  assert planner.e2e_set_speed.lift == pytest.approx(approach)
+  assert planner.output_a_target == pytest.approx(approach)
+  assert planner.a_cruise > 1. > approach
 
 
 def test_behind_a_lead_follows_as_chill():
@@ -108,7 +110,7 @@ def test_throttle_probability_reaches_the_floor():
   for _ in range(200):
     planner.update(sm)
   assert planner.e2e_set_speed.gain == pytest.approx(0.25)
-  assert planner.e2e_set_speed.lift == pytest.approx(0.25 * planner.a_cruise, rel=1e-3)
+  assert planner.e2e_set_speed.lift == pytest.approx(0.25 * planner.e2e_set_speed.floor, rel=1e-3)
 
 
 def gas_pressed_planner(enabled: bool) -> LongitudinalPlanner:

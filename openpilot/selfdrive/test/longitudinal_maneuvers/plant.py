@@ -15,7 +15,7 @@ class Plant:
   messaging_initialized = False
 
   def __init__(self, lead_relevancy=False, speed=0.0, distance_lead=2.0,
-               enabled=True, only_lead2=False, only_radar=False, personality=0, force_decel=False, experimental=True):
+               enabled=True, only_lead2=False, only_radar=False, personality=0, force_decel=False):
     self.rate = 1. / DT_MDL
 
     if not Plant.messaging_initialized:
@@ -41,7 +41,6 @@ class Plant:
     self.only_radar = only_radar
     self.personality = personality
     self.force_decel = force_decel
-    self.experimental = experimental  # zoompilot keeps chill (selfdrived_zp)
 
     self.rk = Ratekeeper(self.rate, print_delay_threshold=100.0)
     self.ts = 1. / self.rate
@@ -65,7 +64,6 @@ class Plant:
     radar = messaging.new_message('radarState')
     control = messaging.new_message('controlsState')
     ss = messaging.new_message('selfdriveState')
-    ss_sp = messaging.new_message('selfdriveStateSP')
     car_state = messaging.new_message('carState')
     model = messaging.new_message('modelV2')
     car_state_sp = messaging.new_message('carStateSP')
@@ -123,7 +121,6 @@ class Plant:
 
     control.controlsState.longControlState = LongCtrlState.pid if self.enabled else LongCtrlState.off
     ss.selfdriveState.personality = self.personality
-    ss_sp.selfdriveStateSP.zoompilot.experimentalMode = self.experimental
     control.controlsState.forceDecel = self.force_decel
     car_state.carState.vEgo = float(self.speed)
     car_state.carState.standstill = bool(self.speed < 0.01)
@@ -135,7 +132,6 @@ class Plant:
           'carControl': car_control.carControl,
           'controlsState': control.controlsState,
           'selfdriveState': ss.selfdriveState,
-          'selfdriveStateSP': ss_sp.selfdriveStateSP,
           'modelV2': model.modelV2,
           'carStateSP': car_state_sp.carStateSP,
           'liveMapDataSP': live_map_data_sp.liveMapDataSP,

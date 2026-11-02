@@ -36,7 +36,7 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 ```
 e2e   = a_model + lift
 lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall 2.4 m/s^3
-floor = min(a_mpc, a_cruise)
+floor = min(a_mpc, a_cruise, approach_accel(v_ego, v_target))
 gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * gasPressProbs[1] * fade-in over 5-8 m/s
 fade  = interp(v_ego^2 * max curvature over the next 10 s (or now), [0.6, 1.0] m/s^2, [1, 0])
 ```
@@ -46,12 +46,23 @@ solution, as the host takes it) and its cruise candidate, upstream's chill cruis
 (`clip(v_target - v_ego, -0.5, ACCEL_MAX)` at upstream's cruise jerk) toward the target after SCC
 vision, SCC map and SLA, and SCC's rebuild of it in a bend. The planner already takes the minimum
 over both, so the lift can never put the e2e candidate above them: with nothing to slow for,
-experimental mode drives and follows exactly as chill does, on any car, and needs no gap-closing
-law of its own. Behind a lead that means the personality's gap (the model alone followed a median
-57 m further back on aggressive); a lead that brakes binds through the MPC candidate at once. With
-no lead the MPC chases its synthetic lead near +2 m/s^2 and the cruise candidate is the floor. (Before 2026-10-27 the floor
-was its own gentler law, `clip((v_target - v_ego) / 6 s, 0, 0.8)` after stock MRCC, with a copy of
-upstream's friction circle.) The lift is never negative:
+experimental mode drives and follows as chill does, on any car. Behind a lead that means the
+personality's gap (the model alone followed a median 57 m further back on aggressive); a lead that
+brakes binds through the MPC candidate at once. With no lead the MPC chases its synthetic lead near
++2 m/s^2 and the approach pace below (or the cruise candidate, when lower) is the floor. (Before
+2026-10-27 the floor was its own gentler law, `clip((v_target - v_ego) / 6 s, 0, 0.8)` after stock MRCC, with a copy of
+upstream's friction circle.)
+
+The floor also closes on the target speed no harder than a production ACC
+(`approach_accel(v_ego, v_target)`, the target after SCC and SLA). Upstream's cruise law asks 2.0
+for any 2 m/s shortfall, and on the CX-5 the lift toward it drove 23 of 24 kickdowns on the
+2026-10-30 drives. The Mazda port capped its whole command for this from 10-30 to 11-01
+(mazda-longitudinal.md, "Gap to the set speed"); the cap only ever bound this lift. Replayed over
+27 minutes (00000060, 62, 65) against that cap, the floor gives the same command (median difference
+0.000, p99 +0.05), 1.9% of frames gentler by over 0.05 where the model eases off or a bend fades the
+lift, and slightly less time above the 0.42 kickdown point at 14-24 m/s (7.1% against 7.4%).
+
+The lift is never negative:
 every slowdown is the model's, and the lift only lets go of it, at 2.4 m/s^3 so the model's own
 braking is never held off. A lane change drops it; off, not in e2e, long control reset or invalid
 input pass the model through. Switched off with a lift on, it goes out at the fall rate. The only
@@ -106,6 +117,8 @@ add under DEC.
 | `GAIN_BP` | -0.3, -0.1 | above |
 | `FADE_LAT_BP`, `LAT_HORIZON` | 0.6-1.0 m/s^2, 10 s | the envelope's 1.0 bend ceiling, as a ramp |
 | rise | 1.6/1.2/0.8/0.6 m/s^3 at 0/10/25/40 m/s | upstream's cruise jerk (`op_long_cruise_jerk`): the lift stands in for cruise, on any car. Mazda's AccelShaper still caps the build at stock MRCC's 0.8 |
+| `APPROACH_V` over `APPROACH_BP` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s^2 at 0, 4, 9, 14, 18, 25 m/s | the CX-5's stock MRCC accelerating command p99 by speed, no lead (its wire ceiling eases 14 m/s to 0.95 for a 4>3 kickdown; that stays in the Mazda port) |
+| `APPROACH_GAP_FRACTION` over `APPROACH_GAP_BP` | 0.38, 0.47, 0.57, 0.72, 1 at 0, 1, 3, 5, 10 m/s under the target | between stock's p50 and p90 by shortfall: 0.31/0.37 at 0.5-1.5 m/s, 0.41/0.44 at 1.5-3, 0.51/0.55 at 3-5, 0.64/0.76 at 5-10 (20-24 m/s) |
 | `LIFT_FALL` | 2.4 m/s^3 | at 0.5 the lift was still over 0.2 for 1.8% of frames with the model braking past -0.5; at 2.4, none |
 
 ## Expected behaviour

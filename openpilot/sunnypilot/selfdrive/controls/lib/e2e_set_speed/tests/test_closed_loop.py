@@ -6,7 +6,8 @@ See the LICENSE.md file in the root directory for more details.
 
 Closed loop against a model fitted from our experimental-mode logs: it pulls toward its own
 pace at about -0.02 m/s^2 per m/s (43 ACC set-speed steps, tau ~50 s), with a 0.5 s actuator lag.
-The upper bound is upstream's cruise candidate, as in the planner with no lead.
+The upper bound is upstream's cruise candidate, as in the planner with no lead, and the floor closes
+on the set speed at the approach pace.
 """
 import numpy as np
 import pytest
@@ -35,8 +36,8 @@ def simulate(enabled, seconds=60., tau=50., brake_at=None):
     a_model = float(np.clip((V_PREF - v) / tau, -1., 1.))
     if brake_at is not None and t >= brake_at:
       a_model = -0.5
-    # the host passes last frame's cruise candidate, then builds this frame's
-    e2e = ctl.update(build_sm(v), a_model, a_cruise, **ENGAGED)
+    # the host passes last frame's cruise candidate at the approach pace, then builds this frame's
+    e2e = ctl.update(build_sm(v), a_model, min(a_cruise, c.approach_accel(v, V_CRUISE)), **ENGAGED)
     a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, DT)
     out = min(e2e, a_cruise)
     a_act += DT / ACTUATOR_TAU * (out - a_act)

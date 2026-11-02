@@ -668,7 +668,7 @@
               "key": "ExperimentalModeSetSpeed",
               "widget": "toggle",
               "title": "Set Speed Assist",
-              "description": "Drive toward your set speed and following distance as legacy chill mode does whenever the driving model holds back. The model still makes every slowdown.",
+              "description": "Drive toward your set speed and following distance whenever the driving model holds back. The model still makes every slowdown. The onroad button and a long press of the distance button switch it too.",
               "visibility": [
                 {
                   "type": "capability",
@@ -676,19 +676,6 @@
                   "equals": true
                 }
               ],
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "has_longitudinal_control",
-                  "equals": true
-                }
-              ]
-            },
-            {
-              "key": "ExperimentalMode",
-              "widget": "toggle",
-              "title": "Driving Model Gas and Brakes",
-              "description": "On by default. The driving model drives the gas and brakes as it thinks a human would, including stopping for red lights and stop signs. Off is legacy chill mode, which holds your set speed and follows the car ahead.",
               "enablement": [
                 {
                   "type": "capability",

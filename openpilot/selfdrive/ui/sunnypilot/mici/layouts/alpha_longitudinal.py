@@ -25,19 +25,15 @@ class AlphaLongitudinalLayoutMici(NavScroller):
                                                        "This may turn off Automatic Emergency Braking (AEB)."))
     self._set_speed_toggle = BigParamControlSP(tr("set speed assist"), "ExperimentalModeSetSpeed",
                                                description=tr("The driving model often cruises below your set speed and follows farther back.\n" +
-                                                              "This drives as legacy chill mode does whenever the model holds back.\n" +
-                                                              "The model still makes every slowdown."))
-    # the opt-out from the driving model (UIStateZP.legacy_chill)
-    self._chill_toggle = BigToggle(tr("legacy chill mode"), toggle_callback=ui_state.set_legacy_chill,
-                                   description=tr("The older way to drive the gas and brakes: hold your set speed and follow the car ahead.\n" +
-                                                    "It won't stop for red lights or stop signs.\n" +
-                                                    "Off, the default, lets the driving model drive them."))
+                                                              "This drives toward them whenever the model holds back.\n" +
+                                                              "The model still makes every slowdown.\n" +
+                                                              "Long press home or hold the distance button to switch it."))
 
     self._refresh_toggles = (
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ExperimentalModeSetSpeed", self._set_speed_toggle),
     )
-    self._scroller.add_widgets([item for _, item in self._refresh_toggles] + [self._chill_toggle])
+    self._scroller.add_widgets([item for _, item in self._refresh_toggles])
 
     # onroad too, for devices powered only with the car on; never mid-engagement
     self._alpha_long_toggle.set_enabled(lambda: not ui_state.engaged)
@@ -54,14 +50,12 @@ class AlphaLongitudinalLayoutMici(NavScroller):
     CP = ui_state.CP
     has_long = CP is not None and ui_state.has_longitudinal_control
     self._alpha_long_toggle.set_visible(CP is not None and CP.alphaLongitudinalAvailable and not ui_state.is_release)
-    self._chill_toggle.set_enabled(CP is None or has_long)
-    # only acts on the driving model's gas and brakes: locked in chill, keeping its value
-    self._set_speed_toggle.set_superseded(not has_long or ui_state.legacy_chill)
+    # only acts on openpilot longitudinal control: locked without it, keeping its value
+    self._set_speed_toggle.set_superseded(not has_long)
 
   def _refresh(self):
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
-    self._chill_toggle.set_checked(ui_state.legacy_chill)
 
   def _on_alpha_long(self, state: bool):
     if state:

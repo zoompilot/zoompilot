@@ -25,8 +25,8 @@ def set_lane_center_mode(params, mode: int) -> None:
 
 class UIStateZP:
   """zoompilot's additions to UIStateSP: jetlink's snapshot and the USB port it holds, the
-  torque bar's rail scale, the ICBM start lock, the brand the settings gate on and experimental
-  mode, which upstream retired, and the home screens' model name."""
+  torque bar's rail scale, the ICBM start lock, the brand the settings gate on, Set Speed Assist's
+  switch and the home screens' model name."""
 
   def __init__(self):
     self.icbm_start_locked: bool = False
@@ -41,9 +41,8 @@ class UIStateZP:
     # lane lines: a torque tune saturates at the rail, below the carcontroller's full scale
     self.torque_utilization: float = 0.0
     self._steer_rail_schedule = None
-    # experimental (end-to-end) longitudinal: as selfdrived runs it onroad, the setting offroad
-    self.experimental_mode: bool = False
-    self._experimental_mode_setting: bool = False
+    # Set Speed Assist (ExperimentalModeSetSpeed), the quick toggles' switch since chill mode went
+    self.speed_assist: bool = False
     # the carrying model's short name for the home screens; None with HomeShowActiveModel off
     self.home_model_name: str | None = None
     # lane center assist's debug readout on the comma 4
@@ -54,13 +53,9 @@ class UIStateZP:
     self._accelerator_state_name = str(self.sm['modelDataV2SP'].zoompilot.acceleratorState)
     self._update_torque_utilization()
     self._update_icbm_start_lock()
-    if self.started and self.sm.recv_frame['selfdriveStateSP'] >= self.started_frame:
-      self.experimental_mode = self.sm['selfdriveStateSP'].zoompilot.experimentalMode
-    else:
-      self.experimental_mode = self._experimental_mode_setting
 
   def update_params(self) -> None:
-    self._experimental_mode_setting = self.params.get_bool("ExperimentalMode")
+    self.speed_assist = self.params.get_bool("ExperimentalModeSetSpeed")
     self.blendful_readout = lane_center_mode(self.params) == 2
     self._steer_rail_schedule = get_steer_rail_schedule(self.CP) if self.CP is not None else None
     # on the 5 Hz params pass, not per frame in a layout; a fitted chestnut owns chestnut_state
@@ -74,20 +69,19 @@ class UIStateZP:
     from openpilot.selfdrive.ui.sunnypilot.home_model import carrying_short_name
     self.home_model_name = carrying_short_name() if self.params.get_bool("HomeShowActiveModel") else None
 
-  def set_experimental_mode(self, on: bool) -> None:
-    """The setting, from a toggle or a long press; selfdrived picks it up within a second."""
-    self.params.put_bool("ExperimentalMode", on, block=True)
-    self._experimental_mode_setting = on
-
-  # Upstream retired the experimental/chill switch with chill itself, so the driving model drives the
-  # gas and brakes. zoompilot keeps chill as the opt-out, "legacy chill mode": the off of the same
-  # ExperimentalMode param, so nobody's setting moved. The settings show it as legacy chill.
   @property
-  def legacy_chill(self) -> bool:
-    return not self._experimental_mode_setting
+  def speed_assist_active(self) -> bool:
+    return self.has_longitudinal_control and self.speed_assist
 
-  def set_legacy_chill(self, on: bool) -> None:
-    self.set_experimental_mode(not on)
+  def set_speed_assist(self, on: bool) -> None:
+    """The setting; the planner and selfdrived's alert pick it up within a second."""
+    self.params.put_bool("ExperimentalModeSetSpeed", on, block=True)
+    self.speed_assist = on
+
+  def toggle_speed_assist(self) -> None:
+    """The quick toggles: mici home's long press and the tizi onroad button."""
+    if self.has_longitudinal_control:
+      self.set_speed_assist(not self.speed_assist)
 
   def set_alpha_longitudinal(self, on: bool) -> None:
     """The setting, offroad or disengaged onroad. card reads it at fingerprint, so onroad it

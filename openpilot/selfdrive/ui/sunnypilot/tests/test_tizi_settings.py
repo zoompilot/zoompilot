@@ -9,7 +9,6 @@ The tizi (comma three / 3X) settings: the top of Cruise owns the alpha switch
 Its own module: the big UI is chosen at import, so it cannot share a window with the mici
 tests.
 """
-import itertools
 import os
 
 import pytest
@@ -35,7 +34,7 @@ def test_moved_switches_appear_once(params):
 
   alpha = AlphaLongitudinalToggles()
   assert [key for key, _ in alpha._refresh_toggles] == ["AlphaLongitudinalEnabled", "ExperimentalModeSetSpeed"]
-  assert alpha.items[-1] is alpha._chill_toggle
+  assert alpha.items == [item for _, item in alpha._refresh_toggles]
 
 
 def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
@@ -58,20 +57,7 @@ def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
   params.remove("ExperimentalModeSetSpeed")
 
 
-def test_legacy_chill_toggle_needs_no_confirm(params, monkeypatch):
-  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
-  from openpilot.system.ui.lib.application import gui_app
-
-  pushed = []
-  monkeypatch.setattr(gui_app, "push_widget", pushed.append)
-  layout = AlphaLongitudinalToggles()
-  for chill in (False, True):
-    layout._chill_toggle.action_item.toggle._callback(chill)
-    assert params.get_bool("ExperimentalMode") is not chill  # chill is the param's off
-  assert not pushed
-
-
-def test_assists_grey_out_without_long_or_in_chill(params, monkeypatch):
+def test_assists_grey_out_without_long(params, monkeypatch):
   from opendbc.car.structs import car
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
   from openpilot.selfdrive.ui.ui_state import ui_state
@@ -79,31 +65,44 @@ def test_assists_grey_out_without_long_or_in_chill(params, monkeypatch):
   monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=True))
   params.put_bool("ExperimentalModeSetSpeed", True, block=True)
   layout = AlphaLongitudinalToggles()
-  for has_long, chill in itertools.product((True, False), repeat=2):
+  for has_long in (True, False):
     monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
-    layout._chill_toggle.action_item.set_state(chill)
     layout.update_state()
-    assert layout._set_speed_toggle.action_item.enabled == (has_long and not chill)
+    assert layout._set_speed_toggle.action_item.enabled == has_long
   assert params.get_bool("ExperimentalModeSetSpeed")  # locked, not cleared
   params.remove("ExperimentalModeSetSpeed")
 
 
-def test_onroad_button_switches_experimental_mode(params, monkeypatch):
-  from openpilot.selfdrive.ui.sunnypilot.onroad.exp_button import ExpButton
+def test_onroad_button_switches_speed_assist(params, monkeypatch):
+  from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_button import SpeedAssistButton
   from openpilot.selfdrive.ui.ui_state import ui_state
 
-  button = ExpButton(192, 144)
+  button = SpeedAssistButton(192)
   monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
-  for start in (True, False):
-    button._experimental_mode = start
-    button._handle_mouse_release(None)
-    assert params.get_bool("ExperimentalMode") is (not start)
-    assert button._held_or_actual_mode() is (not start)  # shown until selfdrived publishes it
+  try:
+    for start in (True, False):
+      ui_state.set_speed_assist(start)
+      button._handle_mouse_release(None)
+      assert params.get_bool("ExperimentalModeSetSpeed") is (not start)
+      assert ui_state.speed_assist is (not start)
 
-  monkeypatch.setattr(ui_state, "has_longitudinal_control", False)
-  button._experimental_mode = True
-  button._handle_mouse_release(None)
-  assert params.get_bool("ExperimentalMode") is True
+    monkeypatch.setattr(ui_state, "has_longitudinal_control", False)
+    ui_state.set_speed_assist(True)
+    button._handle_mouse_release(None)
+    assert params.get_bool("ExperimentalModeSetSpeed") is True
+  finally:
+    params.remove("ExperimentalModeSetSpeed")
+
+
+@pytest.mark.parametrize("speed_assist", [True, False])
+def test_onroad_button_draws(params, monkeypatch, speed_assist):
+  import pyray as rl
+  from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_button import SpeedAssistButton
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "speed_assist", speed_assist)
+  button = SpeedAssistButton(192)
+  button.render(rl.Rectangle(0, 0, 192, 192))
 
 
 def test_onroad_button_tap_leaves_the_sidebar(params, monkeypatch):
@@ -122,5 +121,5 @@ def test_onroad_button_tap_leaves_the_sidebar(params, monkeypatch):
 
   view = View()
   assert view._touch_valid()
-  monkeypatch.setattr(type(view._hud_renderer._exp_button), "is_pressed", property(lambda self: True))
+  monkeypatch.setattr(type(view._hud_renderer._speed_assist_button), "is_pressed", property(lambda self: True))
   assert not view._touch_valid()

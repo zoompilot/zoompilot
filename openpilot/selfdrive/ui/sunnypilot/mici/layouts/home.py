@@ -9,10 +9,9 @@ import math
 import pyray as rl
 
 from openpilot.selfdrive.ui.mici.layouts.home import MiciHomeLayout, HOME_PADDING
-from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import EXPERIMENTAL_ICON
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import SpeedAssistIcon
 from openpilot.selfdrive.ui.ui_state import ui_state, ChestnutState
 from openpilot.system.ui.lib.application import FontWeight, TextAlignment
-from openpilot.system.ui.widgets.icon_widget import IconWidget
 from openpilot.system.ui.widgets.label import UnifiedLabel, gui_label
 
 MODEL_FONT_SIZE = 32
@@ -25,18 +24,13 @@ class MiciHomeLayoutSP(MiciHomeLayout):
   def __init__(self):
     super().__init__()
     self._openpilot_label = UnifiedLabel("zoompilot", font_size=88, font_weight=FontWeight.AUDIOWIDE, max_width=480, wrap_text=False)
-    # zoompilot keeps upstream's retired long press to switch experimental mode
-    self.set_long_press_callback(self._toggle_experimental_mode)
-    # upstream's status bar icon, after the network icon, retired with chill mode
-    self._experimental_icon = IconWidget(EXPERIMENTAL_ICON, (48, 48))
-    self._experimental_icon.set_visible(lambda: ui_state.has_longitudinal_control and ui_state.experimental_mode)
-    self._status_bar_layout.add_widget(self._experimental_icon)
+    # upstream's retired long press, which switched experimental mode, switches Set Speed Assist
+    self.set_long_press_callback(ui_state.toggle_speed_assist)
+    # in the status bar after the network icon, where upstream showed experimental mode
+    self._speed_assist_icon = SpeedAssistIcon(48)
+    self._speed_assist_icon.set_visible(lambda: ui_state.speed_assist_active)
+    self._status_bar_layout.add_widget(self._speed_assist_icon)
     self._status_bar_layout.widgets.insert(2, self._status_bar_layout.widgets.pop())
-
-  @staticmethod
-  def _toggle_experimental_mode():
-    if ui_state.has_longitudinal_control:
-      ui_state.set_experimental_mode(not ui_state.experimental_mode)
 
   def _set_chestnut_visibility(self):
     usb_connected = ui_state.usb_connected
