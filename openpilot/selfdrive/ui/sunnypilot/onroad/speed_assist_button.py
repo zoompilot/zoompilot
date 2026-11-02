@@ -11,11 +11,11 @@ each switch.
 """
 import pyray as rl
 
-from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge_centered
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge_on_dial
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
 
-GAUGE_HEIGHT = 84  # inside the 192 px button with the wheel's old margin
+GAUGE_HEIGHT = 96  # concentric with the button: the swoosh's outer edge ~60 px from its centre, inside the ring
 OFF_ALPHA = 0.35
 RING_WIDTH = 8
 RING_COLOR = rl.Color(0x16, 0x7F, 0x40, 0xFF)  # the engaged border's green (augmented_road_view)
@@ -48,6 +48,6 @@ class SpeedAssistButton(Widget):
     rl.draw_circle(center_x, center_y, radius, self._black_bg)
     if ui_state.speed_assist:
       rl.draw_ring(rl.Vector2(center_x, center_y), radius - RING_WIDTH, radius, 0, 360, 96, rl.color_alpha(RING_COLOR, alpha))
-      draw_gauge_centered(center_x, center_y, GAUGE_HEIGHT, alpha)
+      draw_gauge_on_dial(center_x, center_y, GAUGE_HEIGHT, alpha)
     else:
-      draw_gauge_centered(center_x, center_y, GAUGE_HEIGHT, OFF_ALPHA * alpha)
+      draw_gauge_on_dial(center_x, center_y, GAUGE_HEIGHT, OFF_ALPHA * alpha)

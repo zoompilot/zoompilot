@@ -93,7 +93,15 @@ def draw_gauge(x: float, y: float, height: float, alpha: float = 1.0) -> None:
 
 
 def draw_gauge_centered(cx: float, cy: float, height: float, alpha: float = 1.0) -> None:
+  """Its ink box centred on (cx, cy), to sit beside other icons."""
   draw_gauge(cx - GAUGE_ASPECT * height / 2, cy - height / 2, height, alpha)
+
+
+def draw_gauge_on_dial(cx: float, cy: float, height: float, alpha: float = 1.0) -> None:
+  """The dial's centre on (cx, cy), for a round button: dial, swoosh and button ring share a centre,
+  where centring the ink box would set the dial low and right under the swoosh."""
+  s = height / (_BOTTOM - _TOP)
+  draw_gauge(cx + _LEFT * s, cy + _TOP * s, height, alpha)
 
 
 class SpeedAssistIcon(Widget):
