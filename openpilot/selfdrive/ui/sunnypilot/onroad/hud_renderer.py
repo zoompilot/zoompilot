@@ -10,6 +10,7 @@ from openpilot.common.constants import CV
 from openpilot.selfdrive.ui import UI_BORDER_SIZE
 from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import TorqueBarZP
 from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui import DeveloperUiRenderer, DeveloperUiState, get_bottom_dev_ui_offset
+from openpilot.selfdrive.ui.sunnypilot.onroad.confidence_ball import ConfidenceBallTizi
 from openpilot.selfdrive.ui.sunnypilot.onroad.long_indicator import LongIndicatorTizi
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_button import SpeedAssistButton
 from openpilot.selfdrive.ui.sunnypilot.onroad.road_name import RoadNameRenderer
@@ -45,6 +46,7 @@ class HudRendererSP(HudRenderer):
     self._torque_bar = TorqueBarZP(scale=3.0, always=True, show_bar=lambda: ui_state.torque_bar)
     self._speed_assist_button = SpeedAssistButton(EXP_BUTTON_SIZE)
     self._long_indicator = LongIndicatorTizi()
+    self._confidence_ball = ConfidenceBallTizi()
 
     self.pcm_cruise_speed: bool = True
     self.show_icbm_status: bool = False
@@ -144,6 +146,8 @@ class HudRendererSP(HudRenderer):
       button_y = rect.y + UI_BORDER_SIZE
       self._speed_assist_button.render(rl.Rectangle(button_x, button_y, EXP_BUTTON_SIZE, EXP_BUTTON_SIZE))
     self._long_indicator.render(rect)
+    if ui_state.confidence_ball:
+      self._confidence_ball.render(rect)
 
     # always rendered: lane center's gauge shows under it even with the bar itself off
     torque_rect = rect

@@ -192,3 +192,43 @@ def test_developer_ui_shows_lane_center_push(trust, curvature, side):
   assert (shown.label, shown.unit) == ("LANE CTR", "" if side is None else "cm")
   cm = round(abs(pull_at_lookahead(curvature, 25.0)) * 100)
   assert shown.value == ("-" if side is None else f"{side}{cm}")
+
+
+@pytest.mark.parametrize("rhd", [False, True])
+def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monkeypatch, rhd):
+  from types import SimpleNamespace
+
+  import pyray as rl
+  from openpilot.selfdrive.ui.onroad.hud_renderer import UI_CONFIG
+  from openpilot.selfdrive.ui.sunnypilot.onroad import confidence_ball
+  from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
+  from openpilot.selfdrive.ui.sunnypilot.onroad.long_indicator import STACK_GAP, long_indicator_top
+  from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
+
+  monkeypatch.setattr(ui_state, "sm", {"driverMonitoringState": SimpleNamespace(isRHD=rhd)})
+  monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
+  for name in ("draw_rectangle_rounded", "draw_rectangle_rounded_lines_ex"):
+    monkeypatch.setattr(confidence_ball.rl, name, lambda *a: None)
+  drawn = []
+  monkeypatch.setattr(confidence_ball, "draw_ball", lambda cx, cy, *a: drawn.append((cx, cy)))
+  ball = confidence_ball.ConfidenceBallTizi()
+  rect = rl.Rectangle(0, 0, 2160, 1080)
+  monitor = driver_monitor_rect(rect, rhd)
+  half = confidence_ball.RADIUS + confidence_ball.FRAME_PAD
+
+  def render_at(confidence):
+    ball._confidence_filter.x = confidence
+    drawn.clear()
+    ball._render(rect)
+    return drawn
+
+  assert render_at(1.0) == [(monitor.x + monitor.width / 2, UI_CONFIG.header_height + half)]  # sure: top, in the monitor's column
+  assert render_at(0.0)[0][1] == pytest.approx(long_indicator_top(rect, rhd) - STACK_GAP - half)  # down to the car and bars
+  assert render_at(-0.5) == []  # disengaged: faded out
+
+
+def test_confidence_ball_is_a_visuals_toggle(params):
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.visuals import VisualsLayout
+
+  assert "ConfidenceBall" in VisualsLayout()._toggle_defs
+  assert params.get_bool("ConfidenceBall") is False  # off by default

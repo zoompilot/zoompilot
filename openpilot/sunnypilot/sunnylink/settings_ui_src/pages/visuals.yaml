@@ -22,6 +22,12 @@ sections:
     description: Display steering arc on the driving screen when lateral control is enabled.
     visibility:
     - $ref: '#/macros/hide_on_mici'
+  - key: ConfidenceBall
+    widget: toggle
+    title: Confidence Ball
+    description: "Shows the model's confidence as a ball on your side of the screen, as on the comma 4: higher is more confident, and while engaged it is green, then yellow, then red as confidence drops."
+    visibility:
+    - $ref: '#/macros/hide_on_mici'
   - key: ShowTurnSignals
     widget: toggle
     title: Display Turn Signals

@@ -1508,6 +1508,22 @@
               ]
             },
             {
+              "key": "ConfidenceBall",
+              "widget": "toggle",
+              "title": "Confidence Ball",
+              "description": "Shows the model's confidence as a ball on your side of the screen, as on the comma 4: higher is more confident, and while engaged it is green, then yellow, then red as confidence drops.",
+              "visibility": [
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "capability",
+                    "field": "device_type",
+                    "equals": "mici"
+                  }
+                }
+              ]
+            },
+            {
               "key": "ShowTurnSignals",
               "widget": "toggle",
               "title": "Display Turn Signals",
