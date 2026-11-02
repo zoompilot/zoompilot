@@ -1,4 +1,4 @@
-zoompilot vUNRELEASED
+zoompilot v2026.11.02-17
 ========================
 * Synced with sunnypilot of 2026-10-29, through openpilot of 2026-10-16.
 * Cruise
@@ -7,7 +7,7 @@ zoompilot vUNRELEASED
   * Toggle Set Speed Assist: hold the distance button, long press home or tap the onroad button.
   * Alpha longitudinal coasts more, and can be toggled onroad while disengaged.
 * Steering
-  * New Lane Center Assist feature in Models, helps keep car in lane center
+  * New Lane Center Assist feature in Models, helps keep car in lane center.
   * MADS settings renamed to When to Steer, more intuitive naming.
   * Road edge lane change block: new silent option.
 * comma 4
@@ -22,7 +22,7 @@ zoompilot vUNRELEASED
 * Mazda
   * Steering tuning from reverse engineering work. thx @braind84
   * Alpha longitudinal: smoother acceleration, earlier braking, fewer downshifts, faster launch from stop.
-  * Alpha longitudinal: initializes faster after ignition
+  * Alpha longitudinal: initializes faster after ignition.
   * Easier to override steering, same resistance at all speeds.
   * 2017 Mazda 3 2.5 L and non-US 2026 CX-5 recognized automatically.
 * Toyota TSS2: Smooth Longitudinal (alpha).
