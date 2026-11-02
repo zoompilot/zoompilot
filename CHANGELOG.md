@@ -8,6 +8,7 @@ zoompilot vUNRELEASED
   * Set Speed Assist indicated with icon when enabled.
   * Alpha longitudinal coasts more, and can be toggled onroad while disengaged.
 * Steering
+  * MADS settings renamed to When to Steer, named for what turns steering on.
   * New Lane Center Assist (alpha) in Models.
   * Road edge lane change block: new silent option.
 * comma 4
