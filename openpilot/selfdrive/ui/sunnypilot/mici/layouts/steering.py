@@ -1,0 +1,342 @@
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+"""
+
+from opendbc.car.structs import car
+from opendbc.sunnypilot.car.interfaces import has_bsm
+from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import (
+  BigButtonSP,
+  BigMultiParamToggleSP,
+  BigParamControlSP,
+  BigParamOption,
+  speed_unit,
+)
+from openpilot.system.ui.sunnypilot.lib.switch import Switch
+from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.widgets.scroller import NavScroller
+from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, get_mads_limited_brands
+from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AUTO_LANE_CHANGE_TIMER, AutoLaneChangeMode
+from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import LEVEL_OFF, read_level
+from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeMode, read_road_edge_mode
+from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import TUNE_PARAM_BY_SIZE, jerk_aware_has_effect, versions_by_label
+from openpilot.system.ui.lib.application import gui_app
+
+MADS_STEERING_MODE_LABELS = [tr("remain"), tr("pause"), tr("disengage")]
+# the engagement tile's pill for each MadsSteeringMode
+MADS_BRAKE_BADGES = [tr("brake: remain"), tr("brake: pause"), tr("brake: off")]
+# LaneChangeSmoothing stores the index into this list (lane_change_smoothing.LEVELS order, off first)
+LC_LEVEL_LABELS = [tr("off"), tr("fast"), tr("medium"), tr("slow"), tr("extra slow")]
+# RoadEdgeLaneChangeEnabled stores the index into this list (relc.RoadEdgeMode)
+ROAD_EDGE_LABELS = [tr("off"), tr("audible"), tr("silent")]
+
+# Keys match the stored modes, including -1 for off. Reuse the controller's timer values.
+ALC_LABELS = {
+  AutoLaneChangeMode.OFF: tr("off"),
+  AutoLaneChangeMode.NUDGE: tr("nudge"),
+  AutoLaneChangeMode.NUDGELESS: tr("nudgeless"),
+} | {mode: f"{AUTO_LANE_CHANGE_TIMER[mode]:g} {tr('s')}" for mode in
+     (AutoLaneChangeMode.HALF_SECOND, AutoLaneChangeMode.ONE_SECOND,
+      AutoLaneChangeMode.TWO_SECONDS, AutoLaneChangeMode.THREE_SECONDS)}
+
+
+def _on_off(val: bool) -> str:
+  return "on" if val else "off"
+
+
+def _alc_label(v: int) -> str:
+  return ALC_LABELS.get(v, ALC_LABELS[AutoLaneChangeMode.NUDGE])
+
+
+class SteeringLayoutMici(NavScroller):
+  """Steering settings for MADS, lane changes, blinker pause, and torque control."""
+
+  def __init__(self):
+    super().__init__()
+
+    # None forces the initial cleanup pass.
+    self._prev_mads_limited: bool | None = None
+
+    # Cache state used by enable callbacks each frame.
+    self._mads_limited = False
+    self._alc_val = AutoLaneChangeMode.NUDGE
+    self._torque_allowed = False
+    self._enforce_torque = False
+
+    self._mads_settings_btn = BigButtonSP(tr("when to steer"))
+    self._lane_change_btn = BigButtonSP(tr("lane change"))
+    self._blinker_settings_btn = BigButtonSP(tr("blinker pause"))
+    self._torque_settings_btn = BigButtonSP(tr("torque control"))
+    self._nnlc_toggle = BigParamControlSP(tr("nnlc"), "NeuralNetworkLateralControl",
+                                          description=tr("Neural Network Lateral Control.\n" +
+                                                         "Steers with a neural network instead of the torque controller."))
+
+    for btn in [self._mads_settings_btn, self._lane_change_btn, self._blinker_settings_btn, self._torque_settings_btn]:
+      btn.set_subtitle_font_size(24)
+
+    self._scroller.add_widgets([
+      self._mads_settings_btn, self._lane_change_btn,
+      self._blinker_settings_btn,
+      self._torque_settings_btn, self._nnlc_toggle,
+    ])
+
+    self._mads_toggle = BigParamControlSP(tr("steer without cruise"), "Mads",
+                                          description=tr("Lets zoompilot steer while cruise control is off.\n" +
+                                                         "When off, steering and cruise engage and disengage together."))
+    self._mads_toggle.set_enabled(ui_state.is_offroad)
+    # Read the live toggle so dependent controls update in the same frame.
+    self._mads_main_cruise = BigParamControlSP(tr("steer when cruise on"), "MadsMainCruiseAllowed",
+                                               depends_on=self._mads_engagement_applies,
+                                               description=tr("Turning cruise on with its on/off button also turns steering on.\n" +
+                                                              "Cars without a lane keep button need this on to steer."))
+    self._mads_unified = BigParamControlSP(tr("steer when cruise set"), "MadsUnifiedEngagementMode",
+                                           depends_on=self._mads_engagement_applies,
+                                           description=tr("Setting or resuming a cruise speed also turns steering on.\n" +
+                                                          "Steering then stays on until you switch it off or turn off the car."))
+    # a limited platform fixes both, and the fixed values still apply
+    for item in (self._mads_main_cruise, self._mads_unified):
+      item.set_enabled(lambda: not self._mads_limited)
+    self._mads_steering = BigMultiParamToggleSP(tr("steering on brake"), "MadsSteeringMode", MADS_STEERING_MODE_LABELS,
+                                                description=tr("What steering does when you press the brake.\n" +
+                                                               "Remain keeps steering. Pause resumes it when you let go.\n" +
+                                                               "Disengage turns steering off."))
+    # Mazda trims with the physical TJA button: it becomes the only lateral switch, so main
+    # cruise and unified engagement stop touching MADS. Fingerprint cannot tell, so ask.
+    self._mads_tja = BigParamControlSP(tr("tja button"), "MazdaTjaButton", depends_on=lambda: self._mads_toggle._checked,
+                                       description=tr("The wheel's TJA button becomes the only steering switch.\n" +
+                                                      "The MRCC button then only controls cruise.\n" +
+                                                      "Turn on only if your car has the button."))
+    self._mads_tja.set_enabled(ui_state.is_offroad)
+    self._mads_tja.set_visible(self._is_mazda)
+    self._mads_view = self._mads_settings_btn.link_sub_panel([self._mads_toggle, self._mads_main_cruise, self._mads_unified,
+                                                              self._mads_steering, self._mads_tja])
+
+    # AutoLaneChangeTimer stores a mode from -1 through 5, not a boolean.
+    self._lc_timer = BigMultiParamToggleSP(tr("auto lane change"), "AutoLaneChangeTimer",
+                                           list(ALC_LABELS.values()), values=list(ALC_LABELS), off_index=0,
+                                           description=tr("Nudge: signal, then nudge the wheel to change lanes.\n" +
+                                                          "Nudgeless changes lanes as soon as you signal. A time waits that long first.\n" +
+                                                          "Off: zoompilot never changes lanes."))
+    self._lc_bsm = BigParamControlSP(tr("bsm delay"), "AutoLaneChangeBsmDelay",
+                                     depends_on=lambda: self._bsm_applies(self._alc_val) and self._car_has_bsm(),
+                                     description=tr("Waits an extra second after the blind spot clears."))
+    self._lc_road_edge = BigMultiParamToggleSP(tr("road edge block"), "RoadEdgeLaneChangeEnabled", ROAD_EDGE_LABELS, off_index=0,
+                                               description=tr("Blocks a lane change toward a road edge the model sees.\n" +
+                                                              "Silent shows the alert without the chime."))
+    # off = stock; every level is a slower lane change than stock
+    self._lc_level = BigMultiParamToggleSP(tr("lane change") + "\n" + tr("smoothing"), "LaneChangeSmoothing", LC_LEVEL_LABELS, off_index=0,
+                                           description=tr("Makes lane changes slower and smoother.\n" +
+                                                          "Off is stock. Every other pace is slower."))
+    self._lc_view = self._lane_change_btn.link_sub_panel([self._lc_timer, self._lc_bsm, self._lc_road_edge,
+                                                          self._lc_level])
+
+    # BlinkerPauseLateralControl is the picker's off; the speed is stored in the display unit
+    self._blinker_speed = BigParamOption(tr("blinker pauses steering"), "BlinkerMinLateralControlSpeed",
+                                         min_value=5, max_value=255, value_change_step=5,
+                                         label_callback=lambda v: tr("under {} {}").format(v, speed_unit()), picker_unit=speed_unit,
+                                         switch=Switch("BlinkerPauseLateralControl", False, tr("off")),
+                                         description=tr("Pauses steering while you signal below this speed, so you can turn by hand."))
+    self._blinker_delay = BigParamOption(tr("blinker delay"), "BlinkerLateralReengageDelay",
+                                         min_value=0, max_value=10,
+                                         label_callback=lambda v: f"{v} " + tr("seconds"), picker_unit=tr("seconds"),
+                                         description=tr("How long steering waits to resume after the blinker turns off."))
+    self._blinker_delay.set_enabled(lambda: not self._blinker_speed.switched)
+    self._blinker_view = self._blinker_settings_btn.link_sub_panel([self._blinker_speed, self._blinker_delay])
+
+    self._torque_toggle = BigParamControlSP(tr("enable torque control"), "EnforceTorqueControl",
+                                            description=tr("Steers with torque control, using zoompilot's tunes.\n" +
+                                                           "The tune version, self tune and custom tune settings need it on."))
+    self._torque_toggle.set_enabled(lambda: self._torque_allowed and ui_state.is_offroad() and
+                                    not ui_state.params.get_bool("NeuralNetworkLateralControl"))
+
+    # Jerk-aware control is independent of EnforceTorqueControl on torque-native cars.
+    # NNLC and the v2 tune use the same controller path, so they disable this option
+    # (v2 only when every model size runs it; see torque_tune.jerk_aware_has_effect).
+    self._jerk_aware_toggle = BigParamControlSP(tr("jerk aware"), "LateralJerkTorqueController",
+                                                description=tr("Looks ahead at planned steering to reduce sudden corrections.\n" +
+                                                               "The wheel moves more smoothly through turns."))
+    self._jerk_aware_toggle.set_enabled(lambda: ui_state.is_offroad() and
+                                        not ui_state.params.get_bool("NeuralNetworkLateralControl"))
+    self._jerk_aware_toggle.set_superseded(lambda: not jerk_aware_has_effect(ui_state.params))
+
+    # An unset version resolves through the param default. Keep a fallback for unreadable metadata.
+    tq_versions = versions_by_label() or {tr("default"): 2.0}
+    # one tune per model size; controlsd swaps them as modelV2.big changes
+    v2_note = tr("v2 turns in earlier for curves and makes fewer highway corrections.")
+    self._tq_versions = [BigMultiParamToggleSP(tr("tune version") + "\n" + size, TUNE_PARAM_BY_SIZE[big],
+                                               list(tq_versions), values=list(tq_versions.values()),
+                                               description=driver + "\n" + v2_note)
+                         for big, size, driver in ((False, tr("small models"), tr("The steering tune used while a small model drives.")),
+                                                   (True, tr("big models"), tr("The steering tune used while a big model drives.")))]
+
+    self._tq_self_tune_btn = BigButtonSP(tr("self tune"))
+    self._tq_self_tune_btn.set_subtitle_font_size(24)
+    # Third-level panels do not run this layout's update loop, so gate their controls directly.
+    self._tq_self_tune = BigParamControlSP(tr("enable self-tune"), "LiveTorqueParamsToggle",
+                                           description=tr("Learns how your car steers as you drive and tunes to match.\n" +
+                                                          "It learns each speed range separately."))
+    # torqued drops the live estimate while manual realtime overrides it
+    self._tq_self_tune.set_enabled(ui_state.is_offroad)
+    self._tq_self_tune.set_superseded(self._tq_overridden)
+    # torqued reads both settings at startup.
+    self._tq_relaxed = BigParamControlSP(tr("less restrict"), "LiveTorqueParamsRelaxedToggle", depends_on=self._tq_live_applies,
+                                         description=tr("Self-tune learns from fewer samples.\n" +
+                                                        "It accepts values further from the car's defaults."))
+    self._tq_relaxed.set_enabled(ui_state.is_offroad)
+    self._tq_self_tune_view = self._tq_self_tune_btn.link_sub_panel([self._tq_self_tune, self._tq_relaxed])
+
+    self._tq_custom_btn = BigButtonSP(tr("custom tune"))
+    self._tq_custom_btn.set_subtitle_font_size(24)
+    self._tq_custom = BigParamControlSP(tr("enable custom tuning"), "CustomTorqueParams",
+                                        description=tr("Use your own lateral acceleration and friction as the starting tune.\n" +
+                                                       "Self-tune still learns from there unless manual realtime is on."))
+    self._tq_custom.set_enabled(ui_state.is_offroad)
+    self._tq_manual_rt = BigParamControlSP(tr("manual realtime"), "TorqueParamsOverrideEnabled",
+                                           depends_on=lambda: self._tq_custom._checked,
+                                           description=tr("Steers with your values at every speed, ignoring self-tune.\n" +
+                                                          "Changes apply within a few seconds, even while driving."))
+    self._tq_lat_accel = BigParamOption(tr("lat accel"), "TorqueParamsOverrideLatAccelFactor",
+                                        min_value=1, max_value=500, label_callback=lambda x: f"{x / 100} m/s\u00b2",
+                                        picker_label_callback=lambda x: f"{x / 100}", float_param=True, picker_unit="m/s\u00b2",
+                                        description=tr("Lateral acceleration factor: how much the car turns per unit of torque.\n" +
+                                                       "Higher values steer with less torque."))
+    self._tq_friction = BigParamOption(tr("friction"), "TorqueParamsOverrideFriction",
+                                       min_value=1, max_value=100, label_callback=lambda x: f"{x / 100}",
+                                       picker_label_callback=lambda x: f"{x / 100}", float_param=True,
+                                       description=tr("How much steering friction the controller pushes through first.\n" +
+                                                      "Higher values add more torque for small corrections."))
+    for opt in (self._tq_lat_accel, self._tq_friction):
+      opt.set_enabled(lambda: self._tq_custom._checked)
+    self._tq_custom_view = self._tq_custom_btn.link_sub_panel([self._tq_custom, self._tq_manual_rt, self._tq_lat_accel, self._tq_friction])
+
+    self._tq_items_rest = [self._tq_self_tune_btn, self._tq_custom_btn]
+    for item in self._tq_items_rest:
+      item.set_enabled(lambda: self._enforce_torque)
+    # controlsd builds both tunes at startup.
+    for item in self._tq_versions:
+      item.set_enabled(ui_state.is_offroad)
+      item.set_superseded(lambda: not self._enforce_torque)  # torque-tuned cars run v0 without it
+    self._tq_view = self._torque_settings_btn.link_sub_panel([self._torque_toggle, self._jerk_aware_toggle,
+                                                              *self._tq_versions] + self._tq_items_rest)
+
+  def _update_state(self):
+    super()._update_state()
+
+    self._nnlc_toggle.refresh()
+
+    # an angle car's torque params are cleared by ui_state's _enforce_constraints
+    torque_allowed = self._torque_allowed = (ui_state.CP is not None and
+                                             ui_state.CP.steerControlType != car.CarParams.SteerControlType.angle)
+
+    mads_on = ui_state.params.get_bool("Mads")
+    offroad = ui_state.is_offroad()
+    self._mads_settings_btn.set_enabled(offroad)
+    if not mads_on:
+      self._mads_settings_btn.set_value(tr("tied to cruise"))
+    else:
+      # pills name what turns steering on, then what the brake does; the TJA button replaces the cruise ones
+      tja = self._is_mazda() and ui_state.params.get_bool("MazdaTjaButton")
+      cruise = _on_off(not tja and ui_state.params.get_bool("MadsMainCruiseAllowed"))
+      unified = _on_off(not tja and ui_state.params.get_bool("MadsUnifiedEngagementMode"))
+      steer_idx = ui_state.params.get("MadsSteeringMode", return_default=True) or 0
+      brake = MADS_BRAKE_BADGES[min(steer_idx, len(MADS_BRAKE_BADGES) - 1)]
+      badges = [(tr("cruise on"), cruise), (tr("cruise set"), unified),
+                (tr("tja"), _on_off(tja)), (brake, "on")]
+      self._mads_settings_btn.set_badges(badges)
+
+    blinker_on = ui_state.params.get_bool("BlinkerPauseLateralControl")
+    if not blinker_on:
+      self._blinker_settings_btn.set_disabled()
+    else:
+      speed_val = ui_state.params.get("BlinkerMinLateralControlSpeed", return_default=True) or 0
+      delay_val = ui_state.params.get("BlinkerLateralReengageDelay", return_default=True) or 0
+      self._blinker_settings_btn.set_badges([(tr("enabled"), "on"), (tr("pause"), f"{speed_val}{speed_unit()}"), (tr("delay"), f"{delay_val}s")])
+
+    alc_val = self._alc_val = int(ui_state.params.get("AutoLaneChangeTimer", return_default=True) or AutoLaneChangeMode.NUDGE)
+    # Hide the BSM delay when inactive without discarding the stored preference.
+    lc_bsm = _on_off(ui_state.params.get_bool("AutoLaneChangeBsmDelay") and self._bsm_applies(alc_val))
+    road_edge = _on_off(read_road_edge_mode(ui_state.params) != RoadEdgeMode.OFF)
+    lc_level = read_level(ui_state.params)
+    if alc_val <= AutoLaneChangeMode.OFF and lc_bsm == "off" and road_edge == "off" and lc_level == LEVEL_OFF:
+      self._lane_change_btn.set_disabled()
+    else:
+      auto_badge = _alc_label(alc_val) if alc_val > AutoLaneChangeMode.OFF else "off"
+      self._lane_change_btn.set_badges([(tr("auto"), auto_badge), (tr("bsm-delay"), lc_bsm),
+                                        (tr("road-edge"), road_edge), (tr("smooth"), LC_LEVEL_LABELS[lc_level])])
+
+    enforce_torque = self._enforce_torque = ui_state.params.get_bool("EnforceTorqueControl")
+    jerk_aware = ui_state.params.get_bool("LateralJerkTorqueController")
+    self_tune_on = ui_state.params.get_bool("LiveTorqueParamsToggle")
+    custom_on = ui_state.params.get_bool("CustomTorqueParams")
+
+    self._torque_settings_btn.set_enabled(torque_allowed)
+    if not enforce_torque and not jerk_aware:
+      self._torque_settings_btn.set_disabled()
+    else:
+      # set_badges hides entries whose value is "off".
+      self._torque_settings_btn.set_badges([(tr("enabled"), _on_off(enforce_torque)), (tr("jerk-aware"), _on_off(jerk_aware)),
+                                            (tr("self-tune"), _on_off(self_tune_on)), (tr("custom"), _on_off(custom_on))])
+    self._nnlc_toggle.set_enabled(torque_allowed and offroad and not enforce_torque and not jerk_aware)
+
+    self._update_mads_state()
+    self._update_torque_state(self_tune_on, custom_on)
+
+  def _update_mads_state(self):
+    # Apply safe defaults when the detected platform limits MADS operation.
+    is_mads_limited = self._mads_limited = bool(ui_state.CP is not None and ui_state.CP_SP is not None and
+                                                get_mads_limited_brands(ui_state.CP, ui_state.CP_SP, ui_state.params))
+    if is_mads_limited and self._prev_mads_limited is not True:
+      ui_state.params.remove("MadsMainCruiseAllowed")
+      ui_state.params.put_bool("MadsUnifiedEngagementMode", True)
+      ui_state.params.put("MadsSteeringMode", MadsSteeringModeOnBrake.DISENGAGE)
+    self._prev_mads_limited = is_mads_limited
+
+    # The platform lockout cannot be expressed as a control dependency.
+    self._mads_steering.set_enabled(not is_mads_limited)
+    self._mads_steering.set_superseded(not ui_state.params.get_bool("Mads"))
+
+  @staticmethod
+  def _is_mazda() -> bool:
+    return ui_state.offroad_brand() == "mazda"
+
+  @staticmethod
+  def _bsm_applies(alc_val: int) -> bool:
+    """Return whether the selected lane-change mode uses the BSM delay."""
+    return alc_val > AutoLaneChangeMode.NUDGE
+
+  def _mads_engagement_applies(self) -> bool:
+    """Main cruise and unified engagement do nothing with MADS off, or with the TJA button owning lateral."""
+    # _is_mazda reads params, so only once the TJA toggle is on
+    return self._mads_toggle._checked and not (self._mads_tja._checked and self._is_mazda())
+
+  def _tq_overridden(self) -> bool:
+    return self._tq_custom._checked and self._tq_manual_rt._checked
+
+  def _tq_live_applies(self) -> bool:
+    return self._tq_self_tune._checked and not self._tq_overridden()
+
+  @staticmethod
+  def _car_has_bsm() -> bool:
+    return ui_state.CP is not None and has_bsm(ui_state.CP, ui_state.CP_SP)
+
+  def _update_torque_state(self, self_tune_on: bool, custom_on: bool):
+    # Controls refresh themselves; the parent only maintains summary badges.
+    if not gui_app.widget_in_stack(self._tq_view):
+      return
+
+    if not self_tune_on:
+      self._tq_self_tune_btn.set_disabled()
+    else:
+      self._tq_self_tune_btn.set_badges([(tr("enabled"), "on"), (tr("less-restrict"), _on_off(ui_state.params.get_bool("LiveTorqueParamsRelaxedToggle")))])
+
+    if not custom_on:
+      self._tq_custom_btn.set_disabled()
+    else:
+      manual_rt = _on_off(ui_state.params.get_bool("TorqueParamsOverrideEnabled"))
+      # Float params return physical values and already fall back to declared defaults.
+      lat_val = ui_state.params.get("TorqueParamsOverrideLatAccelFactor", return_default=True)
+      fric_val = ui_state.params.get("TorqueParamsOverrideFriction", return_default=True)
+      self._tq_custom_btn.set_badges([(tr("enabled"), "on"), (tr("realtime"), manual_rt), (f"{lat_val}m/s\u00b2", "on"), (str(fric_val), "on")])

@@ -1,0 +1,161 @@
+"""
+Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+
+This file is part of sunnypilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+"""
+from enum import IntEnum
+
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
+from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_moves_speed_limits
+from openpilot.system.ui.lib.multilang import tr, tr_noop
+from openpilot.system.ui.sunnypilot.lib.styles import style
+from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, simple_button_item_sp
+from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.widgets.scroller_tici import Scroller
+
+
+class PanelType(IntEnum):
+  CRUISE = 0
+  SLA = 1
+
+
+ACC_ENABLED_DESCRIPTION = tr_noop("Enable custom Short & Long press increments for cruise speed increase/decrease.")
+ACC_NOLONG_DESCRIPTION = tr_noop("This feature can only be used with zoompilot longitudinal control enabled.")
+ACC_PCMCRUISE_DISABLED_DESCRIPTION = tr_noop("This feature is not supported on this platform due to vehicle limitations.")
+ONROAD_ONLY_DESCRIPTION = tr_noop("Start the vehicle to check vehicle compatibility.")
+
+
+class CruiseLayout(Widget):
+  def __init__(self):
+    super().__init__()
+    self._current_panel = PanelType.CRUISE
+    self._speed_limit_layout = SpeedLimitSettingsLayout(lambda: self._set_current_panel(PanelType.CRUISE))
+    self._alpha_long = AlphaLongitudinalToggles()
+
+    items = self._initialize_items()
+    self._scroller = Scroller(items, line_separator=True, spacing=0)
+
+  def _initialize_items(self):
+
+    self.scc_v_toggle = toggle_item_sp(
+      title=tr("Slow for Curves: Vision"),
+      description=tr("Use vision path predictions to estimate the appropriate speed to drive through turns ahead."),
+      param="SmartCruiseControlVision")
+
+    self.scc_m_toggle = toggle_item_sp(
+      title=tr("Slow for Curves: Map"),
+      description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
+      param="SmartCruiseControlMap")
+
+    self.custom_acc_toggle = toggle_item_sp(
+      title=tr("Custom ACC Speed Increments"),
+      description="",
+      param="CustomAccIncrementsEnabled",
+      callback=self._on_custom_acc_toggle)
+
+    self.custom_acc_short_increment = option_item_sp(
+      title=tr("Short Press Increment"),
+      param="CustomAccShortPressIncrement",
+      min_value=1, max_value=10, value_change_step=1,
+      inline=True)
+
+    self.custom_acc_long_increment = option_item_sp(
+      title=tr("Long Press Increment"),
+      param="CustomAccLongPressIncrement",
+      value_map={1: 1, 2: 5, 3: 10},
+      min_value=1, max_value=3, value_change_step=1,
+      inline=True)
+
+    self.sla_settings_button = simple_button_item_sp(
+      button_text=lambda: tr("Speed Limit"),
+      button_width=800,
+      callback=lambda: self._set_current_panel(PanelType.SLA)
+    )
+
+    items = [
+      *self._alpha_long.items,
+      self.scc_v_toggle,
+      self.scc_m_toggle,
+      self.sla_settings_button,
+      self.custom_acc_toggle,
+      self.custom_acc_short_increment,
+      self.custom_acc_long_increment,
+    ]
+    return items
+
+  def _render(self, rect):
+    if self._current_panel == PanelType.SLA:
+      self._speed_limit_layout.render(rect)
+    else:
+      self._scroller.render(rect)
+
+  def show_event(self):
+    self._set_current_panel(PanelType.CRUISE)
+    self._scroller.show_event()
+    self._alpha_long.refresh()
+    self.custom_acc_toggle.show_description(True)
+
+  def _set_current_panel(self, panel: PanelType):
+    self._current_panel = panel
+    if panel == PanelType.SLA:
+      self._speed_limit_layout.show_event()
+
+  def _update_state(self):
+    super()._update_state()
+    self._alpha_long.update_state()
+
+    if ui_state.CP is not None and ui_state.CP_SP is not None:
+      has_icbm = ui_state.has_icbm
+      has_long = ui_state.has_longitudinal_control
+
+      icbm_sla = icbm_moves_speed_limits(has_long, has_icbm, ui_state.speed_limit_mode)
+      self.sla_settings_button.set_right_value(tr("icbm") if icbm_sla else "", style.GREEN)
+
+      if has_long or has_icbm:
+        # engaged with ICBM off, only turning these off is allowed (ui_state.icbm_turn_on_allowed)
+        def allowed(item, key):
+          return ui_state.icbm_turn_on_allowed(key, not item.action_item.get_state())
+        self.custom_acc_toggle.action_item.set_enabled(((has_long and not ui_state.CP.pcmCruise) or has_icbm) and
+                                                      allowed(self.custom_acc_toggle, "CustomAccIncrementsEnabled"))
+        self.scc_v_toggle.action_item.set_enabled(allowed(self.scc_v_toggle, "SmartCruiseControlVision"))
+        self.scc_m_toggle.action_item.set_enabled(allowed(self.scc_m_toggle, "SmartCruiseControlMap"))
+      else:
+        self.custom_acc_toggle.action_item.set_enabled(False)
+        self.scc_v_toggle.action_item.set_enabled(False)
+        self.scc_m_toggle.action_item.set_enabled(False)
+
+    else:
+      has_icbm = has_long = False
+
+    show_custom_acc_desc = False
+
+    if ui_state.is_offroad():
+      new_custom_acc_desc = tr(ONROAD_ONLY_DESCRIPTION)
+      show_custom_acc_desc = True
+    else:
+      if has_long or has_icbm:
+        if has_long and ui_state.CP.pcmCruise and not has_icbm:
+          new_custom_acc_desc = tr(ACC_PCMCRUISE_DISABLED_DESCRIPTION)
+          show_custom_acc_desc = True
+        else:
+          new_custom_acc_desc = tr(ACC_ENABLED_DESCRIPTION)
+      else:
+        new_custom_acc_desc = tr(ACC_NOLONG_DESCRIPTION)
+        show_custom_acc_desc = True
+        self.custom_acc_toggle.action_item.set_state(False)
+
+    if self.custom_acc_toggle.description != new_custom_acc_desc:
+      self.custom_acc_toggle.set_description(new_custom_acc_desc)
+      if show_custom_acc_desc:
+        self.custom_acc_toggle.show_description(True)
+
+    self._on_custom_acc_toggle(self.custom_acc_toggle.action_item.get_state())
+
+  def _on_custom_acc_toggle(self, state):
+    self.custom_acc_short_increment.set_visible(state)
+    self.custom_acc_long_increment.set_visible(state)
+    self.custom_acc_short_increment.action_item.set_enabled(self.custom_acc_toggle.action_item.enabled)
+    self.custom_acc_long_increment.action_item.set_enabled(self.custom_acc_toggle.action_item.enabled)

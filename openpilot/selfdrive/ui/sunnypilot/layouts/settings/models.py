@@ -1,0 +1,433 @@
+"""
+Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+
+This file is part of sunnypilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+"""
+import re
+import time
+import pyray as rl
+
+from openpilot.cereal import custom
+from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_selected_bundle, resolve_bundle_by_ref
+from openpilot.common.constants import CV
+from openpilot.selfdrive.ui.ui_state import device, ui_state
+from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import lane_center_mode, set_lane_center_mode
+from openpilot.selfdrive.ui.sunnypilot.accelerator_link import LINK_MODE_TITLES, big_model_note, link_mode, link_status, \
+  link_toggle_meaningful, standin_model
+from openpilot.selfdrive.ui.sunnypilot.model_info import (big_model_state, bundles_for_source, carrying_model, default_model_name,
+                                                           model_cache_size_mb, queued_name, refresh_in_progress, refresh_model_list)
+from openpilot.sunnypilot.jetlink_adapter import KEYS, MODES
+from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.widgets import DialogResult, Widget
+from openpilot.system.ui.widgets.confirm_dialog import alert_dialog, ConfirmDialog
+from openpilot.system.ui.widgets.scroller_tici import Scroller
+from openpilot.system.ui.widgets.toggle import ON_COLOR
+
+from openpilot.system.ui.sunnypilot.lib.styles import style
+from openpilot.system.ui.sunnypilot.lib.switch import Switch
+from openpilot.system.ui.sunnypilot.lib.utils import NoElideButtonAction, ScrollingButtonAction
+from openpilot.system.ui.sunnypilot.widgets.list_view import ListItemSP, option_item_sp, multiple_button_item_sp
+from openpilot.system.ui.sunnypilot.widgets.download_status import download_status_item
+from openpilot.system.ui.sunnypilot.widgets.tree_dialog import TreeOptionDialog, TreeNode, TreeFolder
+
+if gui_app.sunnypilot_ui():
+  from openpilot.system.ui.sunnypilot.widgets.list_view import button_item_sp as button_item
+
+
+class ModelsLayout(Widget):
+  def __init__(self):
+    super().__init__()
+    self.model_manager = None
+    self.model_dialog = None
+    self._selection_source = None
+    self._downloading = False
+    self._verifying = False
+    self._clearing = False
+    self._refreshing = False
+    self._refresh_start: float | None = None
+    self._last_note = None
+    self._link_status = None
+    self.last_cache_calc_time = 0
+
+    self._initialize_items()
+
+    self.clear_cache_item.action_item.set_value(f"{self.calculate_cache_size():.2f} MB")
+
+    self._scroller = Scroller(self.items, line_separator=True, spacing=0)
+
+  def _initialize_items(self):
+    self.small_model_item = ListItemSP(
+      title=tr("Small Model"),
+      description="",
+      action_item=ScrollingButtonAction(tr("SELECT")),
+      callback=lambda: self._open_source_dialog("qcom")
+    )
+
+    self.big_model_item = ListItemSP(
+      title=tr("Big Model"),
+      action_item=ScrollingButtonAction(tr("SELECT")),
+      callback=lambda: self._open_source_dialog("chestnut")
+    )
+
+    # param-bound; disabled onroad in _refresh_accelerator_items, since the
+    # gadget changes only once the car is parked
+    self.accelerator_link_item = multiple_button_item_sp(
+      tr("Jetlink"),
+      self._link_description(""),
+      buttons=[lambda m=m: tr(LINK_MODE_TITLES[m]) for m in MODES],
+      param=KEYS.link, button_width=300, inline=False)
+
+    self.download_item = download_status_item(lambda: tr("Download") if self._downloading else tr("Model Status"))
+
+    self.refresh_item = button_item(tr("Refresh Model List"),
+                                    lambda: tr("FETCHING...") if self._refreshing else tr("REFRESH"), "",
+                                    self._refresh_models)
+
+    self.clear_cache_item = ListItemSP(
+      title=tr("Clear Model Cache"),
+      description="",
+      action_item=NoElideButtonAction(lambda: tr("CLEARING...") if self._clearing else tr("CLEAR")),
+      callback=self._clear_cache
+    )
+
+    self.cancel_download_item = button_item(lambda: tr("Cancel Verification") if self._verifying else tr("Cancel Download"),
+                                            tr("Cancel"), "",
+                                            lambda: ui_state.params.remove("ModelManager_DownloadRef"))
+
+    # zoompilot: LaneTurnDesire is the step below the slowest speed, LagdToggle the step below the shortest delay
+    self.lane_turn_value_control = option_item_sp(tr("Lane Turn Desires"), "LaneTurnValue", 500, 2000,
+                                                  tr("With your blinker on at or below this speed, the car plans a turn in that direction at the " +
+                                                     "nearest drivable path. This prevents situations (like at red lights) where the car might plan " +
+                                                     "the wrong turn direction. Default is 19 mph."),
+                                                  int(round(100 / CV.MPH_TO_KPH)), None, True, "", style.BUTTON_ACTION_WIDTH, None, True,
+                                                  lambda v: f"{int(round(v / 100 * (CV.MPH_TO_KPH if ui_state.is_metric else 1)))}" +
+                                                            f" {'km/h' if ui_state.is_metric else 'mph'}",
+                                                  switch=Switch("LaneTurnDesire", False, tr("Off")))
+
+    self.delay_control = option_item_sp(tr("Steer Delay"), "LagdToggleDelay", 5, 50, "",
+                                        1, None, True, "", style.BUTTON_ACTION_WIDTH, None, True, lambda v: f"{v / 100:.2f}s",
+                                        switch=Switch("LagdToggle", True, tr("Live")))
+
+    blendful_desc = tr("Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear." +
+                             " Yields around obstacles. The blue line and the gauge under the torque bar show the strength and direction of" +
+                             " correction. The developer UI shows the exact adjustment in cm.")
+    self.blendful_toggle = multiple_button_item_sp(tr("Lane Center Assist (Alpha)"), blendful_desc,
+                                                   buttons=[tr("Off"), tr("On")], button_width=300,
+                                                   callback=lambda i: set_lane_center_mode(ui_state.params, i), inline=False)
+
+    # stored in m/s, stepped by whole display units
+    self.small_steering_control = option_item_sp(tr("Small Model Steering"), "SmallModelSteering", 0, 900,
+                                                 tr("With a big model, the small model steers below this speed. It is steadier when slow. " +
+                                                    "Default is 11 mph (18 km/h). Not available with the Default model."),
+                                                 int(round(100 * CV.MPH_TO_MS)), None, lambda: ui_state.active_runner_tinygrad, "",
+                                                 style.BUTTON_ACTION_WIDTH, None, True,
+                                                 lambda v: f"{round(v / 100 * (CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH))}" +
+                                                           f" {'km/h' if ui_state.is_metric else 'mph'}" if v else tr("Off"))
+
+    self.camera_offset = option_item_sp(tr("Adjust Camera Offset"), "CameraOffset", -35, 35,
+                                        tr("Virtually shift camera's perspective to move model's center to Left(+ values) or Right (- values)"),
+                                        1, None, True, "", style.BUTTON_ACTION_WIDTH, None, True,
+                                        lambda v: f"{v / 100:.2f} m")
+
+    # as the comma 4 panel: jetlink and small model steering just before refresh
+    self.items = [self.small_model_item, self.big_model_item, self.cancel_download_item, self.download_item,
+                  self.blendful_toggle, self.lane_turn_value_control, self.delay_control, self.camera_offset,
+                  self.accelerator_link_item, self.small_steering_control, self.refresh_item, self.clear_cache_item]
+    self._refresh_accelerator_items()
+
+  @staticmethod
+  def _link_description(status: str) -> str:
+    what = tr("Run big models over a connected device running Jetlink. Turns off ADB.")
+    return f"{what} {status}".strip()
+
+  def _refresh_accelerator_items(self):
+    # the setting is a param read, so this rides the half-second tick
+    self.accelerator_link_item.set_visible(link_toggle_meaningful())
+    self.accelerator_link_item.action_item.set_selected_button(MODES.index(link_mode()))
+    self.accelerator_link_item.action_item.set_enabled(ui_state.is_offroad())
+    status = link_status()
+    if status != self._link_status:
+      self._link_status = status
+      self.accelerator_link_item.set_description(self._link_description(status))
+
+  def _update_lagd_description(self, lagd_toggle: bool):
+    desc = tr("Live learns your car's steering response time as you drive, the stock openpilot experience. " +
+              "A number is a fixed software delay instead. Default is Live.")
+    if lagd_toggle:
+      desc += f"<br>{tr('Live Steer Delay:')} {ui_state.sm['lateralDelay'].lateralDelay:.3f} s"
+    elif ui_state.CP is not None:
+      sw = float(ui_state.params.get("LagdToggleDelay", return_default=True))
+      cp = ui_state.CP.steerActuatorDelay
+      desc += f"<br>{tr('Actuator Delay:')} {cp:.2f} s + {tr('Software Delay:')} {sw:.2f} s = {tr('Total Delay:')} {cp + sw:.2f} s"
+    self.delay_control.set_description(desc)
+
+  @staticmethod
+  def calculate_cache_size():
+    return model_cache_size_mb()
+
+  def _clear_cache(self):
+    def _callback(response):
+      if response == DialogResult.CONFIRM:
+        ui_state.params.put_bool("ModelManager_ClearCache", True)
+
+    dialog = ConfirmDialog(tr("This will delete ALL downloaded models from the cache except the currently active model. Are you sure?"),
+                           tr("Clear Cache"), callback=_callback)
+    gui_app.push_widget(dialog)
+
+  def _refresh_models(self):
+    refresh_model_list()
+    self._refresh_start = time.monotonic()
+
+  def _handle_bundle_download_progress(self):
+    self.cancel_download_item.set_visible(False)
+    self._downloading = False
+    self._verifying = False
+    self.download_item.set_visible(True)
+
+    self._clearing = ui_state.params.get_bool("ModelManager_ClearCache")
+    if self._clearing:
+      self.last_cache_calc_time = 0.0  # refresh the size as soon as clearing finishes
+    elif (current_time := time.monotonic()) - self.last_cache_calc_time > 0.5:
+      self.last_cache_calc_time = current_time
+      self.clear_cache_item.action_item.set_value(f"{self.calculate_cache_size():.2f} MB")
+      self._refresh_accelerator_items()
+
+    bundle = self.model_manager.selectedBundle if self.model_manager else None
+    progresses = [model.artifact.downloadProgress for model in bundle.models if model.artifact.fileName] if bundle else []
+    if not progresses or bundle.status not in (custom.ModelManagerSP.DownloadStatus.downloading,
+                                               custom.ModelManagerSP.DownloadStatus.failed):
+      self.download_item.action_item.update(name="", segments=self._slot_segments())
+      return
+
+    self.cancel_download_item.set_visible(ui_state.params.get("ModelManager_DownloadRef") is not None)
+    if bundle.status == custom.ModelManagerSP.DownloadStatus.downloading:
+      device._reset_interactive_timeout()
+
+    state = self._download_row_state(progresses, bundle.internalName)
+    if queued := queued_name(bundle.ref):
+      state["name"] += f"  |  {queued} {tr('queued')}"
+    self.download_item.action_item.update(**state)
+    self._downloading = self.download_item.action_item.downloading
+    ds = custom.ModelManagerSP.DownloadStatus
+    self._verifying = any(getattr(p.status, 'raw', p.status) == ds.verifying for p in progresses)
+
+  def _slot_segments(self):
+    """small and big slots side by side; green marks the slot whose pick is actually
+    driving (runner-matched, so a failed Default big greens neither slot), an empty
+    slot shows its default."""
+    big_state = big_model_state()
+    carry_source, carry_internal, _ = carrying_model()
+    segments = []
+    for source, label in (("qcom", tr("small")), ("chestnut", tr("big"))):
+      if segments:
+        segments.append(("|", rl.GRAY, None, None))
+      bundle = get_selected_bundle(ui_state.params, source)
+      name = bundle.internalName if bundle else default_model_name(source)
+      color = ON_COLOR if (source == carry_source and name == carry_internal) else rl.LIGHTGRAY
+      name = "● " + name
+      if source == "chestnut":
+        if big_state == 'failed':
+          color = rl.RED
+        elif big_state == 'loading':
+          color = rl.GOLD
+      segments.append((label, rl.GRAY, None, None))
+      segments.append((name, color, None, None))
+    return segments
+
+  @staticmethod
+  def _set_item_note(item, text):
+    # a description renders only while shown; hide before clearing or the
+    # empty description keeps its visible state
+    if text:
+      item.set_description(text)
+      item.show_description(True)
+    else:
+      item.show_description(False)
+      item.set_description("")
+
+  def _status_note(self) -> str:
+    """The failover story for the Model Status row. A chestnut's is one-way big ->
+    small and runner-matched: a Default big can only fall back to the Default
+    small (stock modeld), a custom big has no automatic fallback yet.
+    Jetlink's goes both ways, all drive."""
+    view = ui_state.jetlink_view
+    accelerator = view is not None
+    if not (ui_state.chestnut_present or accelerator):
+      return ""
+    fallback_name = default_model_name("qcom")
+    state = big_model_state()
+    if accelerator:
+      # named by jetlink: the slot's pick, or its default, which can be
+      # newer than the chestnut's. The small model the user picked drives in
+      # its place, so it reads like a Default big
+      big_name = view.model or tr("The big model")
+      big_is_default = True
+      if small := get_selected_bundle(ui_state.params, "qcom"):
+        fallback_name = small.internalName
+    else:
+      big_bundle = get_selected_bundle(ui_state.params, "chestnut")
+      big_name = big_bundle.internalName if big_bundle else default_model_name("chestnut")
+      big_is_default = big_bundle is None
+    if state == 'failed':
+      if big_is_default:
+        return tr("Big model unavailable, {} is driving until the next drive.").format(fallback_name)
+      return tr("Big model unavailable until the next drive.")
+    if state == 'loading':
+      if big_is_default:
+        return tr("{} drives until the big model is ready.").format(fallback_name)
+      return tr("Getting the big model ready.")
+    if state == 'ready':
+      # the swap window, not the model, is what is missing now: it opens when
+      # nothing is in control
+      return tr("{} is ready. Disengage fully, then re-engage to switch.").format(big_name)
+    if accelerator and not view.ready:
+      if standin := standin_model():
+        # the last model the Jetson built drives until the pick is downloaded and built
+        return tr("{} drives until {} is ready.").format(standin, big_name)
+      return tr("{} will drive when Jetlink is ready.").format(big_name)
+    if accelerator:
+      # it rejoins all drive and a drop is announced as it happens, so there is
+      # no "until the next drive" to warn of
+      return tr("{} will drive.").format(big_name)
+    if big_is_default:
+      return tr("{} will drive. If it fails during a drive, {} takes over until the next drive.").format(big_name, fallback_name)
+    return tr("{} will drive when the chestnut is ready.").format(big_name)
+
+  @staticmethod
+  def _download_row_state(progresses, name: str) -> dict:
+    """Maps a bundle's artifact progress to DownloadStatusAction.update kwargs."""
+    # .raw: _DynamicEnum equals its int but does not hash like it
+    statuses = {getattr(p.status, 'raw', p.status) for p in progresses}
+    progress = sum(p.progress for p in progresses) / len(progresses)
+    ds = custom.ModelManagerSP.DownloadStatus
+
+    if any(p.canceling for p in progresses):
+      return {"name": name, "downloading": True, "progress": progress, "status_text": tr("canceling...")}
+    if ds.failed in statuses:
+      # close.png is authored black and a tint cannot lift it, hence close2
+      return {"name": name, "status_text": tr("download failed"), "text_color": rl.RED, "icon": "icons/close2.png"}
+    if ds.verifying in statuses:
+      return {"name": name, "downloading": True, "progress": progress, "status_text": tr("verifying")}
+    if ds.downloading in statuses:
+      speed = max((p.speed for p in progresses), default=0.0)
+      status_text = f"{speed / 1024 ** 2:.1f} MB/s" if speed > 0 else "--.- MB/s"
+      return {"name": name, "downloading": True, "progress": progress, "status_text": status_text}
+    if statuses <= {ds.downloaded, ds.cached}:
+      return {"name": name, "text_color": ON_COLOR, "icon": "icons/checkmark.png"}
+    # circled_slash is authored grey; tinting it again only darkens it
+    return {"name": name, "text_color": rl.GRAY, "icon": "icons/circled_slash.png", "icon_color": rl.WHITE}
+
+  def _on_model_selected(self, result):
+    if result != DialogResult.CONFIRM:
+      self.model_dialog = None
+      return
+    selected_ref = self.model_dialog.selection_ref
+    self.model_dialog = None
+    if selected_ref == "Default":
+      if self._selection_source in ACTIVE_BUNDLE_KEYS:
+        ui_state.params.remove(ACTIVE_BUNDLE_KEYS[self._selection_source])
+      return
+    if selected_bundle := self._resolve_selected_bundle(selected_ref):
+      ui_state.params.put("ModelManager_DownloadRef", selected_bundle.ref)
+
+  def _resolve_selected_bundle(self, ref):
+    source_bundles = {source: bundles_for_source(source) for source in ("qcom", "chestnut")}
+    resolved = resolve_bundle_by_ref(ref, source_bundles)
+    return resolved[0] if resolved else None
+
+  @staticmethod
+  def _bundle_to_node(bundle, noted: bool = False):
+    # a big model's line says whether the Jetson has built it or the comma has it
+    note = big_model_note(bundle.ref) if noted else None
+    name = f"{bundle.displayName} · {note}" if note else bundle.displayName
+    return TreeNode(bundle.ref, {'display_name': name, 'short_name': bundle.internalName})
+
+  def _get_folders(self, favorites, bundles, noted: bool = False):
+    folders = {}
+    for bundle in bundles:
+      folders.setdefault(next((ov_ride.value for ov_ride in bundle.overrides if ov_ride.key == "folder"), ""), []).append(bundle)
+
+    folders_list = []
+    for folder, folder_bundles in sorted(folders.items(), key=lambda x: max((bundle.index for bundle in x[1]), default=-1), reverse=True):
+      folder_bundles.sort(key=lambda bundle: bundle.index, reverse=True)
+      name = folder + (f" - (Updated: {m.group(1)})" if folder_bundles and (m := re.search(r'\(([^)]*)\)[^(]*$', folder_bundles[0].displayName)) else "")
+      folders_list.append(TreeFolder(name, [self._bundle_to_node(bundle, noted) for bundle in folder_bundles]))
+
+    if favorites and (fav_bundles := [bundle for bundle in bundles if bundle.ref in favorites]):
+      folders_list.insert(0, TreeFolder("Favorites", [self._bundle_to_node(bundle, noted) for bundle in fav_bundles]))
+    return folders_list
+
+  def _open_source_dialog(self, source):
+    self._selection_source = source
+    favs = ui_state.params.get("ModelManager_Favs")
+    favorites = set(favs.split(';')) if favs else set()
+    folders_list = self._source_folders(favorites, source)
+    if not folders_list:
+      gui_app.push_widget(alert_dialog(tr("No models are available for this hardware yet. Connect to the internet and refresh the model list.")))
+      return
+    self.model_dialog = TreeOptionDialog(tr("Select a Model"), folders_list, self._slot_active_ref(source), "ModelManager_Favs",
+                                         get_folders_fn=lambda favs: self._source_folders(favs, source), on_exit=self._on_model_selected)
+    gui_app.push_widget(self.model_dialog)
+
+  def _source_folders(self, favorites, source):
+    bundles = bundles_for_source(source)
+    if not bundles:
+      return []
+    folders_list = [TreeFolder("", [TreeNode("Default", {'display_name': default_model_name(source)})])]
+    folders_list.extend(self._get_folders(favorites, bundles, noted=source == "chestnut"))
+    return folders_list
+
+  @staticmethod
+  def _slot_active_ref(source: str) -> str:
+    bundle = get_selected_bundle(ui_state.params, source)
+    return bundle.ref if bundle else "Default"
+
+  def _update_state(self):
+    for control in (self.lane_turn_value_control, self.delay_control):
+      control.action_item.refresh()
+    live_delay: bool = self.delay_control.action_item.switched
+    # the comma 4's debug ui option reads as on: the 3X shows the push in its developer UI
+    self.blendful_toggle.action_item.set_selected_button(min(lane_center_mode(ui_state.params), 1))
+
+    new_step = int(round(100 / CV.MPH_TO_KPH)) if ui_state.is_metric else 100
+    if self.lane_turn_value_control.action_item is not None and self.lane_turn_value_control.action_item.value_change_step != new_step:
+      self.lane_turn_value_control.action_item.value_change_step = new_step
+    self.small_steering_control.action_item.value_change_step = int(round(100 * (CV.KPH_TO_MS if ui_state.is_metric else CV.MPH_TO_MS)))
+
+    self._update_lagd_description(live_delay)
+    self.model_manager = ui_state.sm["modelManagerSP"]
+    self._handle_bundle_download_progress()
+
+    carry_source, _, carry_display = carrying_model()
+    for item, item_source in ((self.small_model_item, "qcom"), (self.big_model_item, "chestnut")):
+      bundle = get_selected_bundle(ui_state.params, item_source)
+      name = bundle.displayName if bundle else default_model_name(item_source)
+      color = ON_COLOR if (item_source == carry_source and name == carry_display) else style.ITEM_TEXT_VALUE_COLOR
+      item.action_item.set_value(name, color)
+
+    note = self._status_note()
+    if note != self._last_note:
+      self._last_note = note
+      self._set_item_note(self.download_item, note)
+
+    offroad = ui_state.is_offroad()
+    self.small_model_item.action_item.set_enabled(offroad)
+    self.big_model_item.action_item.set_enabled(offroad)
+    self.accelerator_link_item.action_item.set_enabled(offroad)
+    self.small_model_item.set_description("" if offroad else tr("Only available when vehicle is off, or always offroad mode is on"))
+
+    # manager is offroad-only, so an onroad clear would never be serviced
+    self.clear_cache_item.action_item.set_enabled(offroad and not self._downloading and not self._clearing)
+
+    # manager is offroad-only, so a refresh queued onroad would never be serviced
+    self._refreshing = refresh_in_progress(self._refresh_start)
+    self.refresh_item.action_item.set_enabled(offroad and not self._downloading and not self._refreshing)
+
+  def _render(self, rect):
+    self._scroller.render(rect)
+
+  def show_event(self):
+    self._scroller.show_event()
+    self._last_note = None  # re-expand the failover note every time the page opens

@@ -1,0 +1,75 @@
+"""
+Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+
+This file is part of sunnypilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+"""
+
+from openpilot.cereal import custom
+from opendbc.car.structs import car
+from openpilot.common.constants import CV
+from openpilot.common.params import Params
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import CONFIRM_SPEED_THRESHOLD
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode as SpeedLimitMode
+from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_applicable
+
+
+def compare_cluster_target(v_cruise_cluster: float, target_set_speed: float, is_metric: bool) -> tuple[bool, bool]:
+  speed_conv = CV.MS_TO_KPH if is_metric else CV.MS_TO_MPH
+  v_cruise_cluster_conv = round(v_cruise_cluster * speed_conv)
+  target_set_speed_conv = round(target_set_speed * speed_conv)
+
+  req_plus = v_cruise_cluster_conv < target_set_speed_conv
+  req_minus = v_cruise_cluster_conv > target_set_speed_conv
+
+  return req_plus, req_minus
+
+
+def confirm_needed_for_change(cluster_conv: int, target_conv: int, is_metric: bool) -> bool:
+  """The confirm-speed-threshold rule, shared by the pcm SLA machine and the cruise
+  arbiter: below CST a limit change always prompts; at/above it, a new target >= CST
+  applies without confirmation. Inputs are display-unit integers."""
+  cst = CONFIRM_SPEED_THRESHOLD[is_metric]
+  if cluster_conv < cst:
+    return True
+  return target_conv < cst
+
+
+def settle_conv(v_cap: float, cluster_conv: int, is_metric: bool) -> int:
+  """The display speed an SLA cap (m/s) leaves the car at, shared by the pcm SLA machine and
+  the cruise arbiter, which announce only when it moves. The cap limits the plan, it never
+  lifts it past the set speed; an unset cap (V_CRUISE_UNSET, 255 m/s) never wins the min."""
+  return min(round(v_cap * (CV.MS_TO_KPH if is_metric else CV.MS_TO_MPH)), cluster_conv)
+
+
+def pcm_machine_owns_sla(CP: car.CarParams, icbm_active: bool) -> bool:
+  """The plannerd SLA machine runs where openpilot commands acceleration, the car's ECU keeps
+  the setpoint on its cluster, and nothing can move that setpoint but the driver: it confirms
+  through the driver setting the required-max speed. Everywhere else the setpoint is
+  reachable, by openpilot writing it (non-pcmCruise) or by the ICBM buttons (Mazda alpha long
+  while ICBM is active), and the card-side cruise arbiter owns the session. icbm_active is
+  card's decision this frame (icbm_latch), so the owner can change between engagements."""
+  return bool(CP.openpilotLongitudinalControl and CP.pcmCruise and not icbm_active)
+
+
+def set_speed_limit_assist_availability(CP: car.CarParams, CP_SP: custom.CarParamsSP, params: Params | None = None) -> bool:
+  if params is None:
+    params = Params()
+
+  is_release = params.get_bool("IsReleaseSpBranch")
+  disallow_in_release = CP.brand == "tesla" and is_release
+  always_disallow = CP.brand == "rivian"
+  allowed = True
+
+  if disallow_in_release or always_disallow:
+    allowed = False
+
+  # stock ACC reaches the setpoint only through the ICBM buttons, which assist brings up
+  if not CP.openpilotLongitudinalControl and not icbm_applicable(CP, CP_SP):
+    allowed = False
+
+  if not allowed:
+    if params.get("SpeedLimitMode", return_default=True) == SpeedLimitMode.assist:
+      params.put("SpeedLimitMode", int(SpeedLimitMode.warning), block=True)
+
+  return allowed

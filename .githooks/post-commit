@@ -1,0 +1,6 @@
+#!/bin/sh
+# git-lfs post-commit, for core.hooksPath=.githooks. op setup installs git-lfs into the venv.
+[ -x .venv/bin/git-lfs ] && exec .venv/bin/git-lfs post-commit "$@"
+command -v git-lfs >/dev/null 2>&1 && exec git lfs post-commit "$@"
+echo >&2 "git-lfs not found: run tools/op.sh setup or install git-lfs"
+exit 2

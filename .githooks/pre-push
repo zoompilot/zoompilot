@@ -1,0 +1,6 @@
+#!/bin/sh
+# git-lfs pre-push, for core.hooksPath=.githooks. op setup installs git-lfs into the venv.
+[ -x .venv/bin/git-lfs ] && exec .venv/bin/git-lfs pre-push "$@"
+command -v git-lfs >/dev/null 2>&1 && exec git lfs pre-push "$@"
+echo >&2 "git-lfs not found: run tools/op.sh setup or install git-lfs"
+exit 2

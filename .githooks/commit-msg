@@ -1,0 +1,41 @@
+#!/bin/sh
+# commit-msg hook for zoompilot. Install with: git config core.hooksPath .githooks
+#
+# Rejects AI or session attribution trailers, subjects over 72 characters and em
+# dashes anywhere in the message. Warns (does not reject) when the subject has no
+# "area:" prefix. Commit messages are upstream style: terse, no attribution.
+
+msg_file="$1"
+fail=0
+
+# Strip comment lines and the scissors block a verbose commit appends.
+body=$(sed -e '/^# ------------------------ >8 ------------------------$/,$d' -e '/^#/d' "$msg_file")
+subject=$(printf '%s\n' "$body" | sed -e '/./,$!d' | sed -n '1p')
+
+if printf '%s\n' "$body" | grep -Eqi '^(Claude-Session:|Co-Authored-By: *Claude|Generated with)'; then
+  echo "commit-msg: AI or session attribution is not allowed (Claude-Session, Co-Authored-By: Claude, Generated with)" >&2
+  fail=1
+fi
+
+# U+2014 EM DASH; grep -F on the UTF-8 bytes so this does not depend on the locale.
+if printf '%s\n' "$body" | grep -Fq "$(printf '\342\200\224')"; then
+  echo "commit-msg: em dash found; use a plain dash, comma or colon" >&2
+  fail=1
+fi
+
+subject_len=$(printf '%s' "$subject" | wc -m | tr -d ' ')
+if [ "$subject_len" -gt 72 ]; then
+  echo "commit-msg: subject is $subject_len characters, limit is 72" >&2
+  fail=1
+fi
+
+case "$subject" in
+  Merge\ *|Revert\ *|fixup!*|squash!*) ;;
+  *)
+    if ! printf '%s\n' "$subject" | grep -Eq '^[a-z0-9_./-]+(, *[a-z0-9_./-]+)*: '; then
+      echo "commit-msg: warning: subject has no area: prefix (e.g. \"car: ...\", \"ui: ...\")" >&2
+    fi
+    ;;
+esac
+
+exit $fail

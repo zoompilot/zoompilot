@@ -1,0 +1,853 @@
+# Mazda longitudinal (alpha long): evidence and design notes
+
+This is the measurement record behind the Mazda longitudinal port in `opendbc/car/mazda/`
+(`carcontroller.py`, `carstate.py`, `longitudinal.py`, `mazdacan.py`, `radar_interface.py`,
+`values.py`) and the panda side in `opendbc/safety/modes/mazda.h`. The source comments say what
+the code does; the route ids, frame counts and distributions that justify each constant live
+here. Route ids are the dongle-side segment names used in `tools/mazda_long/test_data/`; "wire
+frame" means one 50 Hz CRZ_INFO frame, "frame" alone means one 100 Hz control frame. Every
+engaged-mode number was measured on a 2022 Mazda CX-5 unless a route says otherwise.
+
+## Bus topology
+
+Openpilot silences the stock radar (UDS address 0x764) and stands in for it. The radar's frames
+are CRZ_INFO (0x21b, the accel command), CRZ_CTRL (0x21c, cruise state), a static frame 0x499
+and six track slots 0x361 to 0x366. The synthetic copies are sent on bus 0 (the car) and bus 2
+(the camera) because the panda only forwards received frames between those buses, never its
+own transmissions. CRZ_EVENTS (the dash setpoint) and PEDALS (the body ECU's cruise state) are
+owned by other ECUs and keep transmitting through the takeover, which is what lets engagement
+stay with the car (`pcmCruise = True`).
+
+## Radar takeover: the UDS session latch
+
+The radar does not implement COMMUNICATION_CONTROL (0x28 replies NRC 0x11), so upstream's
+`disable_ecu()` cannot be used. A DIAGNOSTIC_SESSION_CONTROL request for the programming
+session (`02 10 02`) stops all of its periodic frames. The radar stays silent as long as tester
+present (`02 3e 80`) keeps arriving at 2 Hz and falls back to the default session on its S3
+timeout (about 5 s) otherwise. The programming session disables AEB while it is in effect. The
+port starts a silencing episode pre-motion only; a fresh session started with the car rolling
+(forced offroad exit, process restart) waits for the next stop. A moving request behind a
+developer param (`MazdaMovingTakeover`) was removed on 2026-10-10 before it was ever validated on
+car; recover it from history if a radar's moving handover is ever recorded. Comma's own
+`disable_ecu()` runs at `CI.init()` at whatever speed the car is at, so a moving request has
+upstream precedent; what does not is this radar's answer to it.
+
+The radar answers every session request within about 10 ms. Route 000000fe t+15.0: request
+`02 10 02`, positive response `06 50 02` carrying P2* = 5.0 s. P2* is the diagnostic response
+timeout, not the S3 inactivity timeout, which was observed separately. Because
+the session manager consumes the response on the same control frame it arrives, no freshness
+window is needed on RADAR_UDS_RESPONSE. NRC 0x78 (response pending) is the one negative response
+a UDS client waits through rather than fails on, and `radar_session_refused` excludes it. Any
+other negative response fails the silencing episode immediately; a radar that answers nothing at
+all is given `RADAR_SESSION_LIMIT_FRAMES` (10 s) and then the episode gives up for the drive, and stock
+keeps the bus.
+
+The panda allows exactly two UDS transmissions to 0x764: tester present and session control for
+sessions 0x01 and 0x02. Flashing services stay blocked.
+
+### FSC settle gate
+
+The radar takeover waits for the camera (FSC) to finish booting, then `FSC_SETTLE_T` (1 s, two
+CAM_LANEINFO frames) of settled frames. It is the last thing alpha long's readiness waits on.
+
+The gate used to be 10 s, then 7 s, for a supposed camera radar-presence check: one setup drive
+(route 1a) latched an i-ACTIVSENSE fault after the radar went quiet 1.9 s past the camera's
+settle. The camera firmware (GSH7-67XK2-K) has no such check. It receives only 0x21B and the
+tracks 0x361-0x366 from the radar, sends no diagnostics to it, and their ~5 s timeouts reach
+only the AEB monitors, never the LKA fail-safe latch, which is rebuilt in RAM every boot. Route
+1a's fault was the EPS: 0x241 LKAS_FAULT rose 0.3 s after openpilot's first crawl-speed steer
+request, and the camera latched 5.55 s later on its "EPS fault held 5 s" rule (the first-activation
+crawl fault). The ~15 min persistence is the EPS's. The 1 s gate is on-car pending: validate on
+cold boots (15 min or more powered down) logging 0x241 bit 53 and 0x243 ERR_BIT_1/2.
+
+The settle signal is CAM_LANEINFO.NO_ERR_BIT, a pure boot marker that clears at 2.8 to 6.0 s
+after boot and is never set again while driving. A latched fault (ERR_BIT) also shows the boot
+marker clear, so ERR_BIT holds the timer at zero as well. Before the first CAM_LANEINFO frame
+the parser reads all-zero, which would count as settled, so freshness starts stale and only a
+received frame clears it.
+
+CAM_LANEINFO is a roughly 2 Hz message. The longest period measured across 26 or more segments on
+two cars is 0.563 s. A freshness window shorter than one period reads
+every inter-frame gap as a dropout, zeroes the settle timer each time, and the teardown gate never
+opens. `CAM_LANEINFO_FRESH_T` is 1.5 s, 2.7x the longest observed period, and still catches a real
+camera dropout.
+
+### Tried and rejected: BIT2 as a settle input
+
+CAM_LANEINFO.BIT2 used to gate the settle timer together with NO_ERR_BIT. It is byte-identical to
+NO_ERR_BIT on every frame of the 40 alpha-long routes the gate was developed against, so it
+carried no information there. Another CX-5 2022 with identical camera firmware (GSH7-67XK2-U)
+then cold-booted with BIT2 latched high and NO_ERR_BIT clear for a whole ignition cycle. That
+pinned the timer at zero, the radar was never silenced, and the two-master guard held accFaulted
+for the entire drive with nothing to tell the driver why. BIT2 was removed from the gate.
+
+### Session state machine
+
+`RadarSessionManager` has four states: STOCK (radar broadcasting, nothing transmitted),
+SILENCING (requesting the programming session), SILENCED (radar quiet, tester present plus
+synthetic frames) and HANDBACK (requesting the default session, synthetic frames continue).
+It was split out of the acceleration and standstill code (2026-09-09) because radar ownership
+had three independent representations: the controller's state machine, CarState's silence
+timer and the toggle monitor's reading of accFaulted. Stock-long configurations issue no session
+traffic. Of 371 Mazda startup captures (74 alpha long, 297 stock long), 59 of the 60 with
+programming-session requests carry the `06 50 02` response on the main bus. At the split 524
+Mazda and 234 main-repo tests passed with the golden TX fixture unchanged; a replay of recorded
+startup CAN checks the software's decisions only, not the ECU's answer to a changed request.
+
+The controller runs the session (it sends the UDS and the synthetic frames). carstate reads its
+outcome, `control_active`, `handback_active` and `handback_failed`, on its next update through the
+same object, which CarInterface hands it at construction. Until 2026-10 the controller wrote those
+three back into CarState attributes instead.
+
+Setup waits for the settle gate and never pulls the radar out from under an active stock MRCC
+engagement (a driver who pressed SET before the gate passed on a warm boot); the driver has to
+disengage first. The gate reads the raw PEDALS engagement, not the public flag held blocked
+during startup. Adopting a radar that is already quiet without having silenced it (a process
+restart after a takeover) disables nothing and may proceed anywhere, but "quiet" there is the
+full guard window (`STOCK_RADAR_GUARD_T`), not the 50 ms alive window; see the gap census below.
+
+The manager reports where ownership stands through the stock ECU transition contract
+(`opendbc/sunnypilot/car/stock_ecu.py`, one state: starting, parkToTakeOver, stockCruiseOn,
+ready, restoring, restored, failed), which card publishes on `carStateSP.zoompilot.stockEcu`
+for the engage-press alert (`stockEcuNotReady`). A refusal is definitive for the drive.
+Undoing our own unanswered request (the car pulling away, a refusal)
+latches nothing; only the lifecycle's ordered hand-back keeps the radar stock, and only while
+the request stands. Route 0000020d, the
+forced-offroad exit at 113 km/h on 2026-09-10, is the case the contract was built on: the
+session sat in STOCK for 115 s with nothing on screen while the driver engaged stock MRCC three
+times looking for cruise.
+
+A radar heard again while SILENCED is an S3 recovery (tester present not landing for 5 s) or a
+radar that was never really silenced. Two masters is the hazard, so the synthetic frames stop
+either way. The session request is gated exactly like the first teardown, because it disables
+AEB when it lands and a broadcasting radar is a working one: at a stop it is re-requested at
+once; moving, stock keeps the bus (carstate's accFaulted takes longitudinal down) until the next
+stop. This has never been observed on the car. The only stock CRZ_INFO ever heard after a
+takeover, in 10 of 25 alpha-long routes, was the ordered hand-back's own answer, 80 ms after the
+`10 01` request.
+
+### Teardown and hand-back
+
+The hand-back to stock has to complete while the openpilot processes are still running: pandad
+blocks TX within about 100 ms of an onroad cycle starting. So the hand-back is driven from the
+control loop off `CC_SP.stockEcuHandBack`, and the process restart is requested only once the
+session manager (`radar_session.py`) has seen sustained stock traffic after its default-session
+request (`handback_completed`); a default-session acknowledgement alone does not prove the
+periodic frames are back. A hand-back the radar never answers is a failure
+(`handback_failed`) after `RADAR_SESSION_LIMIT_FRAMES`: diagnostics stop, the alpha-long toggle does
+not cycle on it, and a late recovery can still complete it. The toggle monitor reads the
+manager's result through card; it no longer infers "stock radar heard" from accFaulted.
+
+Every software stop goes through the same hand-back, brokered by `stock_ecu_handback.py` as one
+correlated request/result pair (`StockEcuHandBackRequest` `{id}`, `StockEcuHandBackResult`
+`{id, outcome}`). hardwared holds `OnroadCycleRequested` (calibration reset, restart-needed
+toggles) and `OffroadModeRequested` (forced offroad), manager holds `DoReboot` / `DoShutdown` / `DoUninstall`; a second consumer joins an
+open request. Forced offroad proceeds only on restored or notNeeded and stays open on failed
+(neutral replacement traffic continues, a late recovery completes it, the exit button withdraws
+it); every other stop proceeds on any answer; either proceeds after 15 s with no answer at all. `OffroadMode` is written by hardwared alone, because pandad reads it and drops the panda's
+ignition within 100 ms; remote writes are blocked and the sunnylink toggle is bound to the
+request param. These stops are served moving or not, since they happen either way: route 0000020c
+handed the radar back at 117.7 km/h in 0.63 s (request 569.566, `06 50 01` 569.572, stock
+traffic 569.652, restored 569.756) with no fault bit and no degraded-radar signature afterwards.
+Ignition off and power loss cannot be held: the radar recovers through S3 on its own.
+
+Once a hand-back has run to completion the radar stays stock for the rest of the process
+(`handback_completed`). The producer's contract is to hold the assert until the process exits;
+the latch is the backstop for one that does not, because a dropped assert would otherwise read as
+a withdrawal and, parked with the gate still passed, re-silence the radar right before shutdown.
+That is the unattended S3 recovery the hand-back exists to prevent. A hand-back withdrawn before
+the restart (toggle flipped back) returns to STOCK once the in-flight default-session request
+completes, so a toggle reversal never alternates sessions, and re-runs the normal takeover.
+
+Synthetic radar frames keep flowing through the hand-back so the camera never sees a radar gap.
+They carry disengaged commands there, with the driver's main-switch state preserved.
+
+In `mazda.h` the replaced-radar addresses are deliberately `check_relay = false`. That mechanism
+exists for harness-blocked ECUs that are silent from ignition on, and any RX after 1 s latches a
+permanent relay_malfunction. This radar is software-silenced mid-session: alive for the first
+10 s or so by design and deliberately overlapped during the ordered hand-back, so the relay check
+would fault every boot. The two-master guard lives in carstate instead.
+
+## Stock radar gap census and the two-master guard
+
+Stock CRZ_INFO runs at 50 Hz. Over 7.25M stock frames across 166 routes the inter-arrival gap is
+p99.9 30.6 ms and p99.99 31.0 ms, but 9 gaps ran past 50 ms and 2 past 100 ms, the longest
+105.7 ms, one of them mid-drive at speed (route 0000002d seg 28). A stock radar therefore drops
+2 to 5 frames in a row a handful of times per 40 h.
+
+`STOCK_RADAR_ALIVE_T` (0.05 s) is only the SILENCING to SILENCED handover (we asked for the
+session and the radar stopped) and the accFaulted watch. It is not enough to adopt a quiet radar
+we never silenced: adopting on one of those gaps put synthetic CRZ_INFO on the bus under a live
+radar, two masters, and then, when the radar was heard again 2 to 3 frames later, sent the
+programming-session request at speed. Adoption waits out `STOCK_RADAR_GUARD_T` instead, about 12x
+the longest gap ever observed.
+
+### Main is the main switch; the guard gates cruise
+
+`cruiseState.available` follows the MRCC main switch (PEDALS arming) from the first frame, and
+the panda's `acc_main_on` reads the same PEDALS sample in its rx hook. Lateral (MADS) needs only
+that, so a driver who presses MAIN while the radar is still stock has lateral at once, through
+the takeover (the body keeps its arming across the radar's silence: route 0000020a, armed at
+t+13.6, radar silenced t+13.96, still armed until the driver's cancel at t+14.1) and after it.
+The radar guard gates cruise alone: `cruiseState.enabled` is blocked until the radar is owned,
+and the panda's `controls_allowed` needs a SET-qualified engaged edge in any case.
+
+Until 2026-09-11 both machines held main low until their own radar-silence guard completed (the
+panda's clocked 50 PEDALS frames from our first synthetic CRZ_INFO, the software's derived to
+finish 0.27 s later), so lateral waited for the takeover. On a parked-only configuration that
+was the whole drive until the first stop: route 0000021b, three minutes with neither axis and
+nothing on screen. The ordering that derivation protected still holds, by construction rather
+than by timer: one PEDALS sample arms both machines, so the software's MADS edge trails the
+panda's by the CAN to carstate to controller to panda pipeline and can never lead it into a
+panda still rejecting 0x243. The ERR_BIT_1 starvation of routes 00000116 and 00000117
+(2026-08-27) came from the two machines gating main on different guards: the panda's edge fired
+at boot (MRCC main persists over ignition), was consumed and exited long before the software
+engaged, and the software's whole MADS window then transmitted into rejections. Arming late is
+harmless: the panda holds its armed edge until pandad's 1 Hz MADS heartbeat has disagreed three
+times.
+
+### The block wears two hats
+
+Before the first teardown of the drive the block is the expected boot phase (FSC settle plus UDS
+handover, 10 to 15 s), not a fault. Holding `enabled` blocked keeps engagement out; a SET press
+gets the stockEcuNotReady alert. Raising accFaulted here showed a permanent "Cruise Fault: Restart
+the Car" on every start for a condition that clears by itself. After the radar has been silenced
+once, hearing it again is a real two-master conflict (dropped tester present, S3 recovery) and
+is a real accFaulted. The ordered hand-back is masked out of it (the session's `handback_active`),
+and a hand-back that timed out raises it on its own (`handback_failed`).
+
+Ownership is established by the silence guard and then held on the controller's claim: the bus
+witnesses (PEDALS 200 ms, ENGINE_DATA 100 ms, the CANParser's own ten-period validity) decide
+whether radar silence is evidence at all, a dead or blipping bus is never adopted as a silenced
+radar, and a blip while owned neither revokes availability nor re-runs the guard on recovery.
+A radar that positively acknowledged this episode's programming request has left its application
+for the bootloader, so its guard is `STOCK_RADAR_ACK_GUARD_T`; any stock CRZ_INFO after the
+acknowledgement voids it and the full guard applies. The first programming request goes out on
+entering the takeover, retries at the UDS cadence after it.
+
+### Tried and rejected: gating availability alone
+
+The guard used to ride on `cruiseState.available` alone. MADS engages off the enabled edge but
+only ever releases off an availability falling edge, so pinning availability low held the engage
+path open while shutting every off-switch: a stock MRCC engage inside the guard window latched
+lateral on with no way out short of ignition off (route 00000057 t+13.7 to 37.7; a cancel at
+t+28.9 did nothing). Both halves were then gated together until 2026-09-11; now availability is
+honest and only `enabled` is gated, the reverse split, which is safe: MADS engages off main with
+every off-switch live, and the enabled edge cannot arrive before ownership. Adopting a live
+engagement the instant the guard lifts would be an engage the driver never asked for, so the
+stock state has to pass through idle once before `cruiseState.enabled` may follow it
+(`cruise_enabled_blocked`).
+
+## MRCC state semantics under openpilot longitudinal
+
+### PEDALS as the cruise state source
+
+The radar teardown silences the radar-owned CRZ_CTRL frame, so cruise state comes from PEDALS
+(0x165): ACC_OFF (bit 2) means MRCC is armed but idle, ACC_ACTIVE (bit 3) means engaged.
+Main follows arming and falls once both bits have been low for `MAIN_OFF_DEBOUNCE_SAMPLES` (10
+samples of the 100 Hz PEDALS frame, 0.1 s), brake or no brake. Carstate counts PEDALS samples rather
+than its own frames, so it and the panda rx hook (`MAZDA_MAIN_OFF_DEBOUNCE`) drop main on the same
+sample. The wheel's main button sets MODE_X, MODE_Y or both: MODE_Y alone is a main-on on both the
+KE and the 2022 CX-5 (59 of 59 logged), MODE_X alone the KE's main-off (route_ke_0b). A main that
+falls on one side only is what produced "Controls Mismatch: Lateral" on
+route 000001c9--0b2a64a214 seg 0: main toggled at a red light with the brake held, the software
+dropped lateral, the panda kept it, and the next main press found `acc_main_on` already high.
+
+Until 2026-10-07 both sides instead held a both-low sample under braking, for a brake-only bit
+dropout, and let it land only within 0.5 s of a press that explained it. Every main-off source
+it did not list became a bug: a cancel mashed under braking (route 7f9e3ff336 t+484 to 488), the
+KE's main-off, which is MODE_X alone with no CAN_OFF (route_ke_0b seg 3; at a stop MADS stayed on
+until the brake came up), and a main-off with no button on the bus at all (000001f0--b507914e9e
+seg 0 t+10.69). A scan of 4026 segments found no both-low run that recovered on its own, under
+braking or otherwise, so the debounce guards a dropout that has not been seen.
+
+### Panda engagement qualifier
+
+The panda arms `controls_allowed` only on an ACC_ACTIVE rising edge backed by a recent RES, SET_P
+or SET_M press, the hyundai_common form: ACC_ACTIVE alone can be the body answering frames we
+fabricate. Across a 104-engagement census every logged engagement shows the press 30 to 70 ms
+before PEDALS.ACC_ACTIVE rises, with zero genuine button-less engagements, so
+`MAZDA_ENGAGE_BTN_WINDOW` of 10 CRZ_BTNS frames (1 s at 10 Hz) is generous. The tx hooks already
+drop engaged-claiming frames while controls are not allowed, so this is defense in depth.
+
+The CRZ_INFO ACC_ACTIVE bit (bit 33) is gated on `controls_allowed` the way CRZ_CTRL's CRZ_ACTIVE
+is. There is no deadlock: the body raises PEDALS.ACC_ACTIVE off the SET press 10 to 20 ms before
+the first ACC_ACTIVE = 1 frame in every logged engagement, so `controls_allowed` leads the bit.
+
+### cruiseState.standstill
+
+PEDALS.STANDSTILL is the PCM's "wheels are stopped" bit, not a stock-ACC hold state, so it stays
+set for exactly as long as the car is not moving. LongControl gates its starting condition on
+`cruiseState.standstill`, so reporting it under openpilot longitudinal deadlocked every stop:
+long control could not leave stopping until the car moved, and the car could not move until long
+control left stopping. The stock MRCC is not in the loop under alpha long, so there is no stock
+standstill to report; Hyundai and Tesla report False for the same reason.
+
+The standstill signal itself comes off ENGINE_DATA.SPEED (<= 0.1 kph) while vEgo comes off
+WHEEL_SPEEDS, because the panda's `vehicle_moving` reads the same ENGINE_DATA field and the two
+must agree on when the car counts as stopped. The roughly 0.03 m/s disagreement with vEgo at the
+stop is the price of that parity.
+
+### Cancel while the stock radar still owns the bus
+
+Under op-long, controlsd raises `cruiseControl.cancel` whenever `cruiseState.enabled` has no
+matching `CC.enabled`. While the stock radar still owns the bus (the pre-teardown settle window,
+and the silencing-failed stay-stock fallback) that engagement is the driver's own stock MRCC,
+and the 10 Hz CANCEL would turn its main off within about 100 ms. The controller leaves it alone
+until the radar has been silenced once; the teardown gate already waits out a stock engagement.
+The deeper fix is carstate not reporting a stock engagement as `cruiseState.enabled` under op-long
+at all, which needs an audit of every enabled consumer first.
+
+### The cancel settle wait
+
+Upstream's controller waits 70 ms before its first CANCEL, but only while the brake is pressed,
+to keep a press of ours from landing after the car has already cancelled on the brake: a CANCEL
+with cruise off is the stock main-off. The wheel CANCEL is the same race without the brake.
+It disengages openpilot through MADS's `manualLongitudinalRequired` 60 to 90 ms before the radar
+answers the press, the car still reports cruise on in between, and controlsd raises
+`cruiseControl.cancel` for those 6 to 10 frames. Every one of the five wheel cancels on 2026-09-30
+(routes 00000260, 269, 26a, 26b) had our press go out in the same 10 ms as the radar going
+inactive. The two main-offs that day were the driver's own second press.
+
+The controller now waits `CANCEL_SETTLE_T` (0.2 s) of sustained request before any first press,
+whatever disengaged openpilot. A request the car answers itself never produces a press; a real
+desync, where openpilot has dropped out and the car keeps cruising, is cancelled 0.2 s later than
+before, which is the cost upstream already accepted under braking. Tests: `TestCancelSettle` in
+`test_mazda_buttons.py`; the golden capture moved one frame, the first press of its cancel phase.
+
+### Speed Limit Assist and ICBM under alpha long
+
+Alpha long changes who commands acceleration, not who keeps the set speed: the body still owns
+the cluster setpoint and the wheel buttons still move it. So the same machinery as stock cruise
+owns the speed limit session, the card-side cruise arbiter with the ICBM servo walking the dash,
+and plannerd mirrors it. Nothing Mazda-specific decides this; two predicates do:
+
+- `icbm_applicable(CP, CP_SP)` (intelligent_cruise_button_management/helpers.py): ICBM applies
+  where the platform declares it and the car's ECU keeps the setpoint, which is every
+  button-actuated car under stock cruise and, under openpilot longitudinal, only `pcmCruise`
+  ports. ICBM has no toggle: it runs there while a feature that needs it is on (demand.py; under
+  alpha long that is Speed Limit Assist or custom increments), and card's latch publishes the
+  decision as `carStateSP.zoompilot.icbmActivation` (icbm.md, Activation).
+- `pcm_machine_owns_sla(CP, icbm_active)` (speed_limit/helpers.py): the plannerd SLA machine, which
+  confirms through the driver setting the required-max cluster speed (70/80 mph), keeps only the
+  cars whose setpoint nobody but the driver can move: `openpilotLongitudinalControl` and
+  `pcmCruise` with ICBM not running. The planner, the arbiter's `applicable` and the pre-active
+  alert text all read it.
+
+Under alpha long the servo differs in two ways (`OP_LONG_PLANNER_SOURCES`): a curve target from
+Smart Cruise never walks the dash, because the planner slows the car itself and the dash keeps
+the arbiter's setpoint (the driver's, or the adopted limit); and decel overshoot is off, since
+the gap trick drives a stock ACC's own deceleration. A speed limit session walks the dash
+exactly as under stock cruise. Tests: `TestAlphaLong` in test_icbm_sla_session.py,
+`TestOpenpilotLongitudinal` in test_icbm_servo.py, the applicability matrix in
+test_cruise_arbiter.py and test_speed_limit_availability.py.
+
+With ICBM not running, alpha long is an ordinary pcm-op-long car: the plannerd machine and its
+required-max confirm, as on Toyota. Since ICBM runs on demand, assist on a Mazda always brings it
+up, so that machine now only runs on pcm-op-long cars without ICBM. The 2026-09-12 capture (2025 CX-5, release build, set speed
+56 kph in a 25 mph zone, plan capped at the limit with the confirm prompt up) is that machine
+doing what upstream designed; ICBM is the way to have the dash follow the limit instead.
+
+### Gas override
+
+The CRZ_INFO engaged bits follow `CC.enabled` the way Honda drives ACC_CONTROL's CONTROL_ON: a gas
+press is an override, not a disengagement, so enabled holds while controlsd drops `longActive`
+and the command goes to zero. Clearing the bits mid-decel takes the PCM out of ACC mode as the
+driver adds throttle, so a light pedal input lands as a lurch and a rev flare. Stock MRCC holds
+the bits through 9 of 11 decel overrides (`analyze_gas_override.py`, 576 stock segments).
+
+### Stock forward collision display
+
+CAM_EMPTY (0x21d) leaves its idle 0x7f status only while the camera is actively showing the
+collision display (route 0000004d t+213; zero episodes in 50 h of stock cruising), so
+`stockFcw` is derived from it together with the DBC-named CAM_PEDESTRIAN warning bits. Upstream
+maps no alert to stockFcw for Mazda. `stockAeb` stays unmapped because no candidate signal has
+ever activated.
+
+## CRZ_INFO checksum
+
+CRZ_INFO.CHKSUM is the inverted sum of the first seven bytes, with the two event bits left out of
+the sum: STOPPING (byte 5, mask 0x04) and RESUME_UNLATCHING (byte 6, mask 0x40). This was
+verified against 1.67M stock frames with zero mismatches, including all 9,681 stop-bit frames
+and all 269 unlatch-pulse frames.
+
+Before the fix the port summed the unlatch bit, which made every pulse frame it ever sent
+checksum-invalid by exactly 0x40. The camera latched the SCBS trio about 3 frames into each
+pulse, 11 of 11 releases across every radar-content variant tried (route 132 closed the case,
+falsifying the 0x364 template theory), while the body, which does not validate the sum, still
+answered the pulse. Route 00000139 was the first drive with the corrected sum: one pulse, camera
+clean. The fix shipped 2026-08-30.
+
+### Standby patterns
+
+Only an engaged CRZ_INFO frame carries a live command. Armed-idle pegs the command field exactly
+like the main-off standby: 47,752 of 47,752 stock armed-idle frames carry raw 8190 (3.998 m/s2
+after the 4096 offset). Armed-idle also sets bit 47 and advertises ACC_SET_ALLOWED whenever the
+brake is up so the dash accepts SET; the brake is stock's one observed gate on it (99.9% of
+armed-idle frames follow BRAKE_ON). The panda allows the two standby shapes byte-exactly
+(checksum included) instead of decoding them as a huge accel command; ACC_ACTIVE (data[4] bit 1)
+stays required-low on that allowance so no engaged frame can ride it.
+
+ACCEL_CMD is 13 bits in raw units of 1/1024 m/s2 with a 4096 offset. Until 2026-10-20 the DBC
+read it at 0.001, so every plan accel went out 2.4% weak. The Mazda 6 radar firmware (GHP9-67Y10,
+the dealer image) packs the command at 1023.75 counts per m/s2, and stock's holds on our CX-5
+sit at raw -1024 and -410: -1.0 and -0.4 m/s2 at 1/1024, -1.024 and -0.41 at 0.001. Constants
+that reproduce a stock byte pattern kept their raw values through the change (the 8190 sentinel,
+the -1024 hold, -1, -260, 250, +25 per frame); the golden captures show those frames byte for
+byte unchanged. The panda window is the ISO one, +2.0 / -3.5 m/s2 (`ACCEL_MAX` / `ACCEL_MIN`),
+raw +2048 / -3584; stock MRCC itself commands down to raw -3891 (-3.8 m/s2) in lead stops.
+
+## Stop-and-go
+
+### Design
+
+`StandstillHold` holds the car stopped until the plan asks to move, the way Toyota and Honda do
+it: both upstream ports drive the standstill request straight off the plan and off car feedback
+with no timers in the path. Toyota clears its request on `actuators.accel > 0` and re-asserts
+it whenever the plan is not asking to move; Honda asserts STANDSTILL for exactly as long as long
+control is in its stopping state. Neither substitutes a canned command for the plan's own.
+LongControl already parks at `CP.stopAccel` while stopping, which for this car is the stock hold
+value: stock MRCC holds raw -1024 at a stop, so `stopAccel = -1.0` and the plan's value is sent
+as-is. Nothing in the machine latches; `holding` is recomputed every frame.
+
+`AccelShaper` (also in `longitudinal.py`) turns the plan into the CRZ_INFO command: the release
+ramp and breakaway below, the slew, ceiling, build and lift limits, then the hold's own commands.
+The controller only feeds it and sends the result.
+
+### Body hold and the relax
+
+Once STOPPING has held a stop for a few seconds, the body ECU takes the standstill hold over and
+holds the brakes itself. It says so in EPB.HOLD_STATE (0x79 byte 2, low nibble: 2 idle, 3
+holding, 5 releasing), and that is what stock relaxes on, not on any schedule: across 43 stock
+holds the radar dropped STOPPING and relaxed within 0 to 40 ms of HOLDING in every one. The body
+usually takes the hold 3.3 to 4.5 s after standstill (1.5 to 11 s across the corpus).
+`ACCEL_HOLD_LATCHED` (-1/1024 m/s2, raw -1) is the relaxed value sent once the car has the brakes.
+Stock drops CRZ_CTRL.ACC_ACTIVE_2 together with the relax.
+
+GEAR.BRAKE_HOLD is Auto Hold. With Auto Hold armed it joins the body's hold 10 to 30 ms after
+HOLDING and lights HOLD on the dash; 15 of the 43 stock holds never had it, and stock relaxed and
+released those exactly the same way. So `CS.body_hold` is either signal: HOLD_STATE carries the
+handshake on every hold-capable body whatever the Auto Hold setting, and BRAKE_HOLD on its own is
+still a held car. If the body never takes the hold, the port keeps braking at the plan's value for
+as long as the stop lasts. That is all there is on the 2016.5 CX-5 KE, whose body has no
+standstill hold: HOLD_STATE stays 0 there, where the hold-capable bodies read 0x3 in the high
+nibble.
+
+Until 2026-10-01 the port keyed on BRAKE_HOLD alone, which broke every car with Auto Hold off. It
+kept STOPPING and hold-grade braking on the wire under a body that already held, then released on
+the never-latched path with no unlatch pulse, the one thing the body lets go on. The CX-9 that sat
+still under a positive command (route 09) has a hold-capable body and Auto Hold off (driver stops of
+up to 41 s in route 04, BRAKE_HOLD never set), which matches that failure; an rlog of a
+CX-9 stop would confirm it. `tools/mazda_long/acc_hold_census.py` reproduces the stock census and
+`tools/mazda_long/replay_standstill_hold.py` checks a drive against it.
+
+### Release grammar
+
+RESUME_UNLATCHING at the release comes in two families (33-pulse census over the stock corpus,
+release grammar scan of 2026-08-27):
+
+- a body-latched hold pulses 6 to 11 wire frames (0.12 to 0.20 s, mode 9) while the command
+  ramps off the relaxed -0.001; nothing stock ever pulsed longer than 0.20 s
+- a never-latched stop only blips 1 to 6 wire frames (mostly 2 to 3), starting about 3 wire
+  frames after the stop bits drop, once the command has relax-jumped into its release band
+
+`RESUME_UNLATCH_LATCHED_FRAMES` is 0.18 s, 9 wire frames, the latched-family mode. The never-latched
+blip is not emitted: nothing is latched there, so it unlatches nothing. Dropping it was originally
+an SCBS workaround from when every pulse the port emitted latched the camera; that is fixed at the
+source (see the checksum section), so restoring stock's blip is a free choice now, gated on a drive
+rather than on the fault.
+
+Stock never puts STOPPING and RESUME_UNLATCHING on the wire together: its stop bits are already
+dropped when the pulse fires, every release. A re-hold while a pulse is still playing therefore
+waits the pulse out, and a pulse is never restarted while one is playing (stock pulses exactly
+once per release).
+
+### The pulse is immediate
+
+The pulse is the release protocol; the body answers nothing else. Deferring it behind silence
+(route 0000011d, 0.3 s) and behind a +0.15 m/s2 nudge (route 0000012c, 2.0 s, three latched
+stops) both left GEAR.BRAKE_HOLD untouched for the whole window, and the body then dropped it
+within 2 to 3 wire frames of the fallback pulse every time. So a latched release pulses
+immediately; waiting only added dead time to every resume.
+
+The body has answered every latched pulse the port has sent: GEAR.BRAKE_HOLD dropped 30 to 51 ms
+into all 10 (routes 103, 115, 118, 11d, 12c x3, 132, 139, fe). If it ever misses one, the command
+would sit pinned at the relaxed hold under a positive plan until the driver's pedal, because the
+carcontroller never lets a latched release climb while the body holds. So a latched release whose
+body is still holding `RESUME_REPULSE_FRAMES` (1.0 s, about 20x the slowest answer ever seen) after the
+pulse gets exactly one more, the same tuple as the first (stop bits down, command at raw -1,
+unlatch set), the only shape stock has for a latched release. Stock itself never pulses twice, so
+a second retry has no attested shape behind it. The window restarts from zero whenever the body
+lets go, so it counts only an unbroken run of the body ignoring us.
+
+### Release debounce
+
+The plan flapping across zero at a held standstill (a lead inches forward and stops) used to fire
+a fresh RESUME_UNLATCHING pulse per flap and re-assert the stop bits mid-pulse, a combination
+stock never emits. The plan must ask to move for `RELEASE_DEBOUNCE_FRAMES` (0.2 s) before the hold
+releases. Stock's own releases lag the lead's departure by at least this much: all 23 latched
+releases show the lead already opening at >= +0.31 m/s at the pulse, about 0.2 s into a typical
+drive-off. The driver's pedal is not debounced; it outranks the hold immediately.
+
+### Gas-pedal release
+
+The plan asking for acceleration releases the hold, and so does the driver's pedal, the way
+Toyota's PCM lets the pedal outrank its standstill request. Holding the stop bits against the
+throttle until the car physically moved put an out-of-protocol release on the bus, stop bits
+dropping at speed with no unlatch pulse (route 0000004d t+210.9). Stock keeps STOPPING strictly
+to the final creep: 2,078 rolling STOPPING frames in the corpus, all below 0.55 m/s.
+
+A gas-ended hold emits no pulse: stock's one captured gas-ended hold drops the stop bits with no
+pulse at all, the pedal being the resume authority. Suppressing it was also an SCBS workaround
+(route 00000103 t+163.8 latched on a gas release), and that half is obsolete now the checksum is
+fixed. What is left is one stock capture, so if a gassed-out latched hold is ever slow to let go,
+this is the first thing to revisit.
+
+### Release command shape
+
+The release command follows stock's shape, not a slew off the hold value. At a never-latched
+release stock relax-jumps the command in one frame from the hold value into a -0.27 to -0.18
+start (pulse-frame commands span -0.269 to -0.111 across the whole corpus) and then ramps about
++25 raw per 50 Hz frame straight through the drive-off; a latched release ramps at the same rate
+off the relaxed raw -1. Hence `ACCEL_RELEASE_BAND` = raw -260 (-0.254 m/s2) and
+`ACCEL_RELEASE_RAMP` = 25 raw per frame (1.22 m/s3).
+
+Slewing up from the -1024 hold instead kept hold-grade braking on the wire beneath the release pulse
+(route 00000053 t+714.8), and pre-ramping toward the plan crossed zero inside the pulse
+(route 00000100 t+353). The band between those two edges is what the camera accepts. While the
+plan is braking the hold command is the plan's own, but the moment it turns positive the hold
+freezes where it is: stock never lets ACCEL_CMD climb while STOPPING is asserted.
+
+A latched release does not start climbing until the body lets go: stock pins the command at
+raw -1 until the body releases in every latched release of the corpus.
+
+`ACCEL_RESUME_PULSE_MAX` (0.25 m/s2) is the ACCEL_CMD ceiling while a latched release's pulse
+plays: stock's latched releases peak at +0.24 to +0.25 m/s2 (raw +182 / +195) in the pulse tail,
++0.34 worst case. Never-latched blips would be capped at zero, since stock's command is still
+negative in every never-latched pulse frame of the corpus. The floor of -0.001 during the pulse
+does real work on a re-hold that lands while the pulse is still playing: the pulse runs out and
+the re-hold's braking stays off the pulse frames.
+
+### Breakaway
+
+The ramp hands the command back the moment it catches the plan, which assumes the plan's own
+value is enough to get the car rolling. It is not always. On the EPS-swapped CX-9 the plan parked
+at +0.42 to +0.47 behind a lead 2.5 m ahead and the car sat dead still for the whole 1.5 s the
+command was held there, until the driver used the pedal (route 00000009--ad9e22f986 t+452.9).
+The CX-5 releases in the corpus only ever broke away once the command had climbed past +1.0
+(route_118 t+581.6, the only clean corpus breakaway: last still frame at +1.17, first rolling
+frame at +1.07). It was not the grade: the accelerometer puts that stop at +0.41 deg nose-up,
+0.07 m/s2 of gravity, effectively flat (the three stops the driver gassed out of were on up to
++2.4 deg). So the ramp keeps climbing past the plan for as long as the car is still stopped.
+LongControl cannot do this itself: Mazda runs the default ki of 0, so its pid state emits the
+plan's a_target verbatim with no integrator to wind up against a car that is not moving.
+
+The ceiling (`ACCEL_BREAKAWAY_MAX` = 1.45 m/s2) is stock's own. Over all 31 stock stop-to-go
+episodes in the corpus (the whole population; stock MRCC is rarely still engaged at a
+standstill), the command on the last still frame, i.e. what the car actually broke away at:
+
+    body-latched  (n=21): min +0.405  p25 +0.810  median +0.958  max +1.425
+    never-latched (n=10): min -0.001  p25 +0.213  median +0.665  max +1.416
+
+Stock then carries on to a median +1.38 / max +1.94 through the drive-off. Pulling away from a
+stop is a firm request on this car, not a creep: a ceiling below about +1.0 sits under stock's
+own median and would leave the CX-9 exactly where it was. +1.45 clears every breakaway stock has
+ever needed here. The override still only climbs until the car moves, and one never-latched stock
+release moved at -0.001, pure creep. The roughly 0.3 s actuator dead time carries the command
+about 0.38 past the value that actually broke the car free before standstill clears, which is
+why the cap is what bounds the worst case.
+
+Past stock's release frames the climb runs at `ACCEL_BREAKAWAY_RAMP` (2.5 m/s3), about twice
+stock's 1.22, for as long as the car is still stopped. Stock's ramp only adds time there: nothing
+moves until the command reaches the breakaway value. Our 2026-10-30/31 launches took 1.36 s from the
+plan asking to go until the car moved: 0.2 s debounce, 0.2 s up from the relax band, about 0.6 s
+at stock's rate up to the breakaway, then the car's own 0.3 s. The first 0.2 s after the release
+(`RELEASE_SHAPE_FRAMES`) stays on stock's rate, because every stock release pulse, never-latched
+or latched, falls inside it and those are the frames the camera checks. The quicker climb saves
+about 0.2 s at a +0.5 breakaway and 0.35 s at +0.8, and it overshoots further before standstill
+clears (about +0.75 instead of +0.38), which the two caps still bound. Once the car rolls, the
+ramp to the plan is stock's again.
+
+The climb gives up after `BREAKAWAY_FRAMES` (3.0 s), so a car held by something we cannot see
+(a kerb, a steep grade, a foot on the brake) settles back onto the plan instead of being leaned
+on indefinitely.
+
+The climb is also bounded relative to the plan (`ACCEL_BREAKAWAY_OVERSHOOT` = 0.75 m/s2), so a
+small plan (a lead 4 m ahead barely rolling) is not turned into a full-authority launch at it.
+Our own engaged breakaways (14 across routes 53, 100, 115, 118, 12c, 132, 139, fe, plan vs wire
+on the last still frame) break away at a wire command of +0.79 to +1.16 whatever the plan asked,
+0.11 to 1.17: route 00000132 t+207 (lead 3.9 m, plan +0.11) moved with the ramp at +1.16, route
+0000012c t+461 (plan +0.35) at +1.14, and the plan >= +0.9 releases with the ramp still below the
+plan. Corrected for the 0.3 s dead time, the command the body actually answered in the 132 case
+was about +0.78, i.e. about +0.67 above its plan; stock's own latched breakaways sit at p25
++0.744 / median +0.958 (34 episodes, re-scanned 2026-09-01). +0.75 keeps the smallest plan seen
+reaching stock's p25 (+0.11 to a cap of +0.86) and the CX-9's +0.47 reaching +1.22, while a plan
+of +0.11 no longer climbs to +1.45.
+
+What the corpus does not settle is the CX-9 itself: its qlog carries no CAN, so the body hold
+and the stop bits are unobservable there. The likelier cause is a body hold the port could not
+see (Body hold and the relax), which no amount of asking harder would cure. An rlog would settle
+it.
+
+### Tried and rejected: a lead-distance cap on the breakaway
+
+0x364 was occupied at only 4 of 34 stock breakaways (one close lead, 4.6 m, released at +0.455),
+too thin to size a second knob the plan already encodes.
+
+### Command slew limits and the stock acceleration envelope
+
+The plan-following command is slew limited, asymmetrically on purpose. The windup limit
+(`ACCEL_WINDUP_LIMIT`, 4.0 m/s3) is what keeps the command from dumping the brake in one frame,
+the driver-felt problem; a tight winddown limit would delay real braking for no measured
+benefit, so `ACCEL_WINDDOWN_LIMIT` is -10.0 m/s3. 4.0 sits above the p99 of the plan's own
+up-slew on the reporter's route (p99 +3.2, p99.9 +6.3, max +34 m/s3), so it only clips
+state-transition steps. Toyota uses 4.0 both ways. `accel_last` is tracked through overrides too,
+so taking control back when the driver lifts off ramps in instead of stepping, and the reported
+`actuators.accel` is what went on the wire (clip, hold values, slew and the override zero), not
+the plan.
+
+Above zero the command is additionally shaped to what stock MRCC does
+(`tools/mazda_long/accel_profile.py`, 158 stock routes, 1298 stock accelerating episodes against
+302 of ours). Two things separate the two systems, and neither is the plant: the car answers the
+command with a gain of 1.07 and about 0.6 s of lag whoever sends it. It also corrects for grade
+itself (aEgo loses only about a quarter of g*sin(pitch) at a fixed command), and its gain scatters
++/-20% run to run with the torque converter, so the port runs no integrator and no pitch feedforward.
+
+- **Build rate.** Stock raises a positive command by at most +12 raw per 50 Hz frame, 0.6 m/s3,
+  in 99.3% of rising frames at every speed above about 5 m/s; the only faster ramp is its 1.25
+  m/s3 pull-away from a stop. Our plan reached the same peaks with p90 rising jerk of 1.2 to 1.7
+  m/s3, and the driver reads that as aggressive throttle. `ACCEL_BUILD_V` over `ACCEL_BUILD_BP`
+  applies that shape to the positive part of the command: 1.25 m/s3 below 3 m/s (stock's own
+  pull-away ramp), 0.8 m/s3 from 6 to 12 m/s, a third quicker than stock on purpose, and
+  stock's own 0.6 from 20 m/s up. In town stock's slowness on a lead pulling away is mostly its
+  dash walk and radar lag, which the plan does not have, and 0.8 is the largest rate that still
+  sits inside stock's rising-jerk distribution (p99 0.65 to 0.93 by bin). At highway speed the
+  quicker build only reached a kickdown sooner (2026-10-30 drives), so it is stock's there.
+  It governs only the region above zero: brake release below zero keeps the 4.0 m/s3 windup,
+  because stock's own brake release has a p99 tail near 2 m/s3 and holding the brake longer
+  than the plan asks is the wrong failure.
+- **Lift-off.** The other half of the harshness is set-speed capture: the plan dropped from
+  +1.1 to +0.45 in half a second on the reporter's route and the car overshot. Stock lifts the
+  throttle at no more than 40 raw per 50 Hz frame, 2.0 m/s3, in 99.98% of falling positive
+  frames (p99.9 by bin 1.2 to 2.5 over a 0.2 s window). `ACCEL_LIFT_LIMIT` applies that rate
+  while the plan itself is still at or above zero, i.e. throttle modulation. A plan asking for
+  brake bypasses it and drops at the winddown limit, so braking is never delayed.
+- **Ceiling.** Stock's accelerating command (p99, no lead) peaks at 1.77 m/s2 around 4 m/s and
+  falls to 1.45 at 9, 1.05 at 14, 0.83 at 18 and 0.65 to 0.71 from 22 m/s up. Upstream's cruise
+  profile sits close to that curve, but the MPC and e2e candidates are only clipped at
+  `ACCEL_MAX` (2.0) and our wire reached 2.0 below 5 m/s and 1.06 at 15 to 20 m/s.
+  `ACCEL_CEILING_V` over `ACCEL_CEILING_BP` caps the wire at stock's envelope. It is a tuning
+  cap inside the panda's +2000 raw safety limit, not a replacement for it.
+- **Gap to the set speed.** Stock's command also depends on how far under the set speed the car
+  is. With no lead at 20 to 24 m/s its p50 / p90 is 0.31 / 0.37 m/s2 for a 0.5 to 1.5 m/s
+  shortfall, 0.41 / 0.44 for 1.5 to 3, 0.51 / 0.55 for 3 to 5 and 0.64 / 0.76 for 5 to 10
+  (1.94M stock frames); 16 to 20 m/s is within a few hundredths. Upstream's cruise candidate is
+  `clip(v_cruise - v_ego, -0.5, 2.0)` since chill mode was removed (#39097), so any shortfall of
+  2 m/s asks for 2.0, and Set Speed Assist lifts experimental mode to the same answer. On the
+  four 2026-10-30 drives the wire sat on the 0.8 speed ceiling closing 1.5 to 3 m/s gaps and the
+  car kicked down 24 times in 13.7 engaged minutes, mostly 6>5>4 at 18 to 21 m/s; 23 of them came
+  from the lift toward chill's answer, none from the model. This car's kickdowns (CAN 0x202 RPM,
+  0x228 GEAR_BOX) sit at about 0.35 m/s2 in sixth and 0.42 in fifth from 14 to 24 m/s.
+  From 2026-10-30 to 11-01 `get_pid_accel_limits` capped the command at the speed ceiling scaled
+  by the gap, between stock's p50 and p90. It only ever bound Set Speed Assist's lift (the model's
+  own request was above it 0.0% of 16 post-cap minutes), so the same law now caps Set Speed
+  Assist's floor in the planner for every car (`approach_accel`, e2e-set-speed.md), and this port
+  keeps only the speed ceiling. The first post-cap drive (00000062) went from 1.44 to 1.09 kickdowns a minute.
+
+Replaying all three over the logged plans of our 17 alpha-long routes moves the p90 rising jerk
+from 1.0 to 1.7 m/s3 onto the 0.8 line in every bin from 5 m/s up and trims the peaks by 0.05 to
+0.1 m/s2; the no-lead median peak is unchanged. The stop-and-go paths are untouched: the breakaway ramp and
+the latched release pulse keep their own ceilings, and the golden capture differs only in the
+engaged-and-accelerating phases.
+
+Honda Nidec caps accel by speed in its carcontroller the same way (`NIDEC_MAX_ACCEL_V`), Toyota
+rate limits the PCM command, and sunnypilot's Hyundai tune runs a jerk-limited integrator in
+the carcontroller; shaping at the wire keeps the shared planner byte-identical to upstream.
+
+### The resume button
+
+Under openpilot longitudinal the hold is released in-protocol (stop bits drop, RESUME_UNLATCHING
+pulses, the command ramps positive), which is what the car's own MRCC does: across 23 stock
+body-latched-hold releases with cruise engaged, 0 put a RES press on the bus and all 23 pulsed
+RESUME_UNLATCHING (`tools/mazda_long/scan_stock_release.py`). Toyota, Honda and Hyundai gate
+their resume button off `openpilotLongitudinalControl` the same way. Pressing it under op-long
+would also put a second writer on CRZ_BTNS at the release, which ICBM owns.
+
+## High-beam relay
+
+The camera's high-beam request is CAM_LANEINFO (0x440) BIT2: it rises when the camera wants the
+lamps high, the stock lamps follow within 0.2 s, and the stock radar relays it to CRZ_CTRL bit 13
+(`NEW_SIGNAL_3` in the DBC), on which the body raises the lamps and lights the cluster's green
+HBC light. With the radar silenced the controller relays the bit itself from
+carstate's `hbc_request`, read only from a fresh CAM_LANEINFO frame. BIT2 is also the auto
+high-beam arming bit, which is why it is not a settle input (above).
+
+## Lead on the dash, empty tracks
+
+The camera needs the silenced radar's frames on the bus, not its objects, so the static frame and
+six tracks are the stock empty capture, the shape of the upstream port. The cluster draws the
+lead from CRZ_CTRL: RADAR_HAS_LEAD follows `leadVisible`, and RADAR_LEAD_RELATIVE_DISTANCE is
+stock's closeness bucket, 3 behind a stopped lead and 2 while following. It follows perception,
+engaged or not, as stock does. Stock shows has_lead = 1 with every slot empty in only 8 of 1.1M
+frames, so this pairing is the one thing here not attested by stock; watch for camera faults.
+
+Earlier builds also put the vision lead in 0x364. A vision lead moves like no radar track: the
+range wanders metres at the model rate, and a lane change teleports it (route
+4a3fe2b0e8aec968/0000006d: 27.7 to 45.2 m in one frame, and the object a lane over at the
+capture's -8 degree angle). A 2018 CX-5 (B61L camera) latched CAM_LKAS ERR_BIT_1 and ERR_BIT_2
+on the highway with that track and no EPS fault; route 0000002e with alpha long off was clean.
+Smoothing it into a radar-like track (danger-unstable 0f9cd48e11) was replaced by sending no
+object at all. The stop-and-go grammar (STOPPING, RESUME_UNLATCHING, ACC_ACTIVE_2) is carried by
+CRZ_INFO and CRZ_CTRL alone.
+
+### Track frame content
+
+`RADAR_STATIC_MSG` and the six `RADAR_TRACK_MSGS` are byte-exact captures from a 0x764 radar with
+no objects in view; only the counter nibble in the last byte changes. The panda allows exactly
+those bytes plus the counter, so an occupied 0x364 is blocked engaged or not.
+
+## Radar gap guard on the stock radar interface
+
+When openpilot is not running longitudinal, `radar_interface.py` feeds the stock radar's tracks
+to radard. The six tracks 0x361 to 0x366 arrive at 10 Hz on bus 0. 0x361 to 0x364 carry
+stationary and moving objects with a reliable RELV_OBJ. 0x365 and 0x366 appear to be
+moving-vehicle-only slots whose RELV_OBJ uses a different, undecoded encoding, so they are
+excluded: without a valid vRel, radard's Kalman filter and lead matching cannot track them and a
+NaN velocity would poison downstream consumers. An empty slot sets all three of DIST_OBJ (raw
+4095), ANG_OBJ (raw 2046) and RELV_OBJ (raw -16) to their sentinels; the full triple is required
+because each sentinel alone is a reachable real value (relv raw -16 is -1.0 m/s). The measured
+distribution is in the radar test file.
+
+The 2016-20 CX-9 is the one Mazda whose radar does not put the 0x361 to 0x366 tracks on bus 0,
+so its platform config claims no radar bus; claiming one would leave radard waiting on a parser
+that never goes valid.
+
+The G46L (`G46L_RADAR_FW`), the 2016.5-era radar an EPS-swapped older body can keep, is the other
+radar with no tracks on bus 0, whatever its platform claims, so a detected G46L runs vision-only
+(`MazdaFlags.G46L_RADAR`). Its one frame, 0x499, is fully static: no counter, no checksum. Alpha
+long is offered on it because its own capture exists, and the controller sends that frame alone
+in place of the 2022 family's static and track frames. The firmware string is stored unpadded
+and matched with nulls stripped, so UDS padding cannot break the match.
+
+## Alpha-long availability rule
+
+Alpha long follows the EPS, not the model: it needs an EPS that can hold the wheel through a
+stop, so any Mazda carrying the 2022 CX-5 EPS (`MazdaFlags.STEER_TO_ZERO_EPS`) with a radar bus
+may try it. A stock older EPS cuts lateral below 45 kph, so stop-and-go would run unsteered. The
+CX-5 2022 is the car every engaged-mode constant was measured on. The CX-9 2021 was checked to
+share the wire format (route 00000004: identical CRZ_INFO checksum and rates over 54k frames,
+radar UDS at 0x764, same FSC camera firmware GSH7-67XK2-U); the other GEN1 platforms share the
+DBC and are assumed to. Note that a stock CX-9 2021 carries EPS firmware TC3M-3210X-A-00, which is
+not in `STEER_TO_ZERO_EPS_FW`, so under the EPS-keyed rule only a CX-9 with the swapped 2022 CX-5
+EPS is offered alpha long (see mazda-fingerprinting.md).
+
+`longitudinalActuatorDelay` is 0.5 s, Honda's, GM's and Hyundai's value. The maneuver report on
+route 21d103861daeed11/0000005f (2026-11-01) and four stock brake steps agree on the friction brake:
+after a brake step of any size the car reaches -0.5 m/s2 at 0.75 to 0.85 s and -1.0 at about 1.0 s,
+then builds about 3 m/s3 to near -1.9 and about 1.3 m/s3 beyond, so -2.0 is the brake that arrives
+quickly. Only the first -0.3 or so (engine braking) comes sooner, at 0.36 to 0.38 s. Gas answers in
+0 to 0.2 s, but the wire's own build rate limits it. The delay is how far ahead the planner and the
+model read the plan, so 0.5 starts a jerk-limited brake about 0.14 s earlier than the old 0.36 did.
+A larger or steeper brake command does not start the friction brake any sooner, and stock never
+steps its own brake command (0 of 94 stock brake onsets), so the command shape stays as it is.
+
+## Cruise button management (ICBM)
+
+The body ECU registers at most about one discrete press per 200 ms; a tighter cadence makes it
+drop presses (measured about 0.93 mph per press at 5 Hz vs about 0.47 at 9 Hz, so faster sending
+gives a slower dash). CRZ_BTNS runs at 10 Hz on the wire (99 to 101 ms for about 95% of 7.2k
+inter-frame gaps, route 0b), with extra event frames only on press edges, and the wheel's CTR
+increments by 1 on every frame including those, never repeating a value. A genuinely held button
+just keeps its bit set on the regular 10 Hz cadence, so hold frames are paced at `HOLD_PERIOD`
+(0.1 s), which mimics a real hold and guarantees the +1 counter offset is unique (a fresh genuine
+counter lands between consecutive sends).
+
+ICBM frames are suppressed while cancel or resume are in flight or while the driver is holding
+the wheel cancel button: its interleaved cancel = 0 frames otherwise race the driver's cancel = 1
+frames and the body ECU drops the cancel intent. CAN_OFF has to raise a cancel button event for
+the same reason, or ICBM's readiness gate never learns the driver is cancelling. On the CX-5 2022
+the wheel "+" button toggles SET_P, not RES; RES is the resume button (route
+0000019c--84a5408a38 seg 2/3: holding "+" emits SET_P = 1 and the body ECU increments CRZ_SPEED).
+
+CRZ_EVENTS.CRZ_SPEED is the held speed, and the dash shows it exactly on every cluster measured
+(North American imperial, metric CX-9, metric export CX-5). An Oceania cluster shows it over-read,
+displayed = held / 0.98 + 1 km/h (ADR speedometer calibration, indicated never below true;
+a New Zealand CX-9 2021, four samples, zero residual, zoompilot/opendbc#7). The dash number is
+what the buttons step and ICBM reads, so on a JM0 VIN (`MazdaFlagsSP.OCEANIA_CLUSTER`) carstate
+publishes it as `cruiseState.speedCluster`.
+
+## Camera alert passthrough
+
+`create_alert_command` passes the camera's own CAM_LANEINFO state through untouched, the way
+Toyota's `create_ui_command` preserves every stock signal it does not own; letting the packer zero
+ERR_BIT hid camera-asserted error state from the car. The TJA mode fields are the exception:
+under openpilot the camera's own TJA/CTS state machine churns against steering it did not
+command (TJA_TRANSITION toggled 442 times in 22 min on route 0000010b) and relaying that flapped
+the dash lane indicators, so those two stay zeroed.
+
+## Constants
+
+| Constant | Value | Measurement | Routes |
+| --- | --- | --- | --- |
+| `LONG_STEP` | 2 frames (50 Hz) | stock CRZ_INFO / CRZ_CTRL rate | corpus |
+| `RADAR_STEP` | 10 frames (10 Hz) | stock radar static and track rate | corpus |
+| `RADAR_UDS_STEP` | 50 frames (2 Hz) | tester present cadence, well inside S3 = 5 s | 000000fe |
+| `FSC_SETTLE_T` | 1.0 s | two CAM_LANEINFO frames past the boot marker; no camera radar check exists (10 s, then 7 s, until 2026-10-30) | FSC firmware, route 1a |
+| `CAM_LANEINFO_FRESH_T` | 1.5 s | 2.7x the longest CAM_LANEINFO period, 0.563 s over 26+ segments, two cars | corpus |
+| `STOCK_RADAR_ALIVE_T` | 0.05 s | stock gap p99.99 31.0 ms | 7.25M frames, 166 routes |
+| `STOCK_RADAR_GUARD_T` | 1.27 s | about 12x the longest stock gap (105.7 ms); the value every engaged drive ran on | 0000002d seg 28 |
+| `STOCK_RADAR_ACK_GUARD_T` | 0.25 s | the guard after the radar's `06 50 02` to our request (7 ms after it, 0x21B stops with it); 2.4x the longest stock gap | 0000001a, 00000025 |
+| `RADAR_SESSION_LIMIT_FRAMES` | 10.0 s | per-episode UDS budget | design |
+| `MAZDA_ENGAGE_BTN_WINDOW` | 10 CRZ_BTNS frames | press 30 to 70 ms before ACC_ACTIVE, 104 engagements | corpus |
+| `MAIN_OFF_DEBOUNCE_SAMPLES` | 10 PEDALS samples (0.1 s) | no self-recovering both-low run in 4026 segments; main-off lands 0.1 s late | corpus |
+| `CANCEL_SETTLE_T` | 0.2 s | the car answers its own cancels 60 to 90 ms after openpilot disengages on them; the request lasted 6 to 10 frames on all five wheel cancels | 00000260, 269, 26a, 26b |
+| `MAZDA_MAIN_OFF_DEBOUNCE` | 10 PEDALS samples | `MAIN_OFF_DEBOUNCE_SAMPLES` | derived |
+| `RESUME_UNLATCH_LATCHED_FRAMES` | 0.18 s (9 wire frames) | latched pulses 6 to 11 wire frames, mode 9 | 33-pulse census |
+| `RESUME_REPULSE_FRAMES` | 1.0 s | body answered all 10 pulses in 30 to 51 ms | 103, 115, 118, 11d, 12c, 132, 139, fe |
+| `RELEASE_DEBOUNCE_FRAMES` | 0.2 s | lead opening >= +0.31 m/s at all 23 stock latched pulses | corpus |
+| `ACCEL_HOLD_LATCHED` | raw -1 (-1/1024 m/s2) | stock relaxes 0 to 40 ms after HOLD_STATE goes HOLDING, 43 of 43 | 43 stock holds |
+| `ACCEL_RESUME_PULSE_MAX` | raw 250 (0.244 m/s2) | stock latched pulse tail +0.24 to +0.25, +0.34 worst | corpus |
+| `ACCEL_RELEASE_BAND` | raw -260 (-0.254 m/s2) | stock never-latched relax target -0.27 to -0.18 | corpus |
+| `ACCEL_RELEASE_RAMP` | 1.22 m/s3 | +25 raw per 50 Hz frame | corpus |
+| `ACCEL_BREAKAWAY_MAX` | 1.45 m/s2 | stock last-still-frame command max +1.425 (n=31) | corpus |
+| `BREAKAWAY_FRAMES` | 3.0 s | give-up bound on an unseen holder | design |
+| `ACCEL_BREAKAWAY_OVERSHOOT` | 0.75 m/s2 | 132 case +0.67 above plan; stock p25 +0.744 | 132, 12c, 34 stock episodes |
+| `ACCEL_BREAKAWAY_RAMP` | 2.5 m/s3 | still-stopped climb after the 0.2 s release frames; stock's rate spent ~0.6 s of a 1.36 s launch reaching breakaway | 60, 62, 0000005f |
+| `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3; brake region only | reporter's route |
+| `ACCEL_BUILD_V` | 1.22 to 0.8 m/s3 over 3 to 6 m/s | stock +12 raw per 50 Hz frame (0.59) in 99.3% of rising frames, taken a third quicker; the release ramp pulling away | 158 stock routes |
+| `ACCEL_LIFT_LIMIT` | -2.0 m/s3 | stock throttle lift <= 40 raw per frame in 99.98% of falling positive frames | 158 stock routes |
+| `ACCEL_CEILING_V` | 1.5, 1.75, 1.45, 0.95, 0.85, 0.65 m/s2 at 0, 4, 9, 14, 18, 25 m/s | stock accelerating command p99 by speed, no lead; 14 m/s eased from 1.05 after 4>3 kickdowns near 3000 rpm (2026-10-31) | 158 stock routes |
+| `ACCEL_WINDDOWN_LIMIT` | -10.0 m/s3 | clips only p99.9+ steps | reporter's route |
+| `stopAccel` | -1.0 m/s2 | stock hold raw -1024 | corpus |
+| `longitudinalActuatorDelay` | 0.5 s | friction brake -0.5 m/s2 at 0.75-0.85 s after any step | 0000005f maneuvers, 4 stock steps |
+| `HOLD_PERIOD` | 0.1 s | CRZ_BTNS 10 Hz, 99 to 101 ms for 95% of 7.2k gaps | 0b |
+| `MAZDA_LONG_LIMITS` | +2048 / -3584 raw | ISO window; stock reaches raw -3891 | corpus |
+
+## Tried and rejected
+
+- Adopting a quiet radar on the 50 ms alive window: two masters on a stock frame gap, then a
+  session request at speed. Adoption waits the full guard.
+- Gating the two-master block on availability alone: lateral latched on with no exit
+  (route 00000057).
+- Raising accFaulted during the boot-phase block: a permanent cruise fault toast on every start.
+- BIT2 as a settle input: pinned the timer for a whole ignition on a second CX-5 2022.
+- `check_relay` on the replaced radar addresses: relay_malfunction every boot.
+- Deferring the latched unlatch pulse behind silence (0000011d) or a positive nudge (0000012c):
+  no body response until the pulse.
+- A second repulse: stock never pulses twice, no attested shape.
+- Emitting a pulse on a gas-pedal release: stock does not, and it once latched the camera
+  (00000103 t+163.8, under the old checksum).
+- Holding the stop bits against the throttle until motion: out-of-protocol release
+  (0000004d t+210.9).
+- Slewing the release command up from the -1024 hold (00000053 t+714.8) or pre-ramping toward the plan
+  (00000100 t+353): outside the band the camera accepts.
+- A lead-distance cap on the breakaway: 4 of 34 stock breakaways had 0x364 occupied.
+- Advertising the vision lead in the 0x364 track, in every form tried: tied to
+  engagement (0000004d t+212), with a fabricated stand-in over a vision gap (10.25 m ghost at
+  22 m/s), raw (lane-change teleport, 2018 CX-5 camera fault, 4a3fe 0000006d) and smoothed into a
+  radar-like track (0f9cd48e11). Empty tracks replaced all of them; the dash lead rides
+  RADAR_HAS_LEAD alone.
+- Reporting `cruiseState.standstill` under op-long: deadlocked every stop.
+- Relaying the camera's TJA mode fields: dash indicators flapped (0000010b).
+- Pressing RES to release a hold under op-long: stock never does (0 of 23), and it double-writes
+  CRZ_BTNS.

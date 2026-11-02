@@ -1,0 +1,29 @@
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+"""
+from types import SimpleNamespace
+
+from openpilot.cereal import custom
+from openpilot.selfdrive.car.helpers import convert_carControlSP
+
+
+class TestConvertCarControlSP:
+  def test_capnp_only_fields_do_not_crash(self):
+    """capnp CarControlSP can carry substructs and fields that have no field on the opendbc
+    dataclass; the converter must drop them instead of passing them as kwargs. 2026-10-04:
+    mads.lateralHeld was one, and card crashed on its first control step of every drive.
+    zoompilot.laneChangeSmoothing is one now, beside the icbmHold opendbc does carry."""
+    msg = custom.CarControlSP.new_message()
+    msg.mads.enabled = True
+    msg.zoompilot.laneChangeSmoothing.jerkFactor = 0.5
+    msg.zoompilot.icbmHold = True
+    msg.leadOne.dRel = 12.5
+    struct_dict = {**msg.as_reader().to_dict(), 'capnpOnlySubstruct': {'gain': 0.5}}
+
+    out = convert_carControlSP(SimpleNamespace(to_dict=lambda: struct_dict))
+    assert out.mads.enabled is True
+    assert out.zoompilot.icbmHold is True
+    assert abs(out.leadOne.dRel - 12.5) < 1e-6

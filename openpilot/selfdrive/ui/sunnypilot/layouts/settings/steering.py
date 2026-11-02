@@ -1,0 +1,156 @@
+"""
+Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
+
+This file is part of sunnypilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+"""
+from opendbc.car.structs import car
+from enum import IntEnum
+
+from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.sunnypilot.lib.switch import Switch
+from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, simple_button_item_sp, option_item_sp, LineSeparatorSP
+from openpilot.system.ui.widgets.scroller_tici import Scroller
+from openpilot.system.ui.widgets import Widget
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering_sub_layouts.lane_change_settings import LaneChangeSettingsLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering_sub_layouts.mads_settings import MadsSettingsLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering_sub_layouts.torque_settings import TorqueSettingsLayout
+
+
+class PanelType(IntEnum):
+  STEERING = 0
+  MADS = 1
+  LANE_CHANGE = 2
+  TORQUE_CONTROL = 3
+
+
+class SteeringLayout(Widget):
+  def __init__(self):
+    super().__init__()
+
+    self._current_panel = PanelType.STEERING
+    self._lane_change_settings_layout = LaneChangeSettingsLayout(lambda: self._set_current_panel(PanelType.STEERING))
+    self._mads_settings_layout = MadsSettingsLayout(lambda: self._set_current_panel(PanelType.STEERING))
+    self._torque_control_layout = TorqueSettingsLayout(lambda: self._set_current_panel(PanelType.STEERING))
+
+    items = self._initialize_items()
+    self._scroller = Scroller(items, line_separator=False, spacing=0)
+
+  def _initialize_items(self):
+    self._mads_base_desc = tr("Lets zoompilot steer while cruise control is off. " +
+                              "When off, steering and cruise engage and disengage together.")
+    self._mads_limited_desc = tr("This car supports only some When to Steer settings.")
+    self._mads_full_desc = tr("This car supports all When to Steer settings.")
+    self._mads_check_compat_desc = tr("Start the vehicle to check vehicle compatibility.")
+
+    self._mads_toggle = toggle_item_sp(
+      param="Mads",
+      title=lambda: tr("Steer Without Cruise"),
+      description=self._mads_base_desc,
+    )
+    self._mads_settings_button = simple_button_item_sp(
+      button_text=lambda: tr("When to Steer"),
+      button_width=800,
+      callback=lambda: self._set_current_panel(PanelType.MADS)
+    )
+    self._lane_change_settings_button = simple_button_item_sp(
+      button_text=lambda: tr("Customize Lane Change"),
+      button_width=800,
+      callback=lambda: self._set_current_panel(PanelType.LANE_CHANGE)
+    )
+    # zoompilot: BlinkerPauseLateralControl is the step below the slowest speed
+    self._blinker_control_options = option_item_sp(
+      param="BlinkerMinLateralControlSpeed",
+      title=lambda: tr("Pause Lateral Control with Blinker"),
+      min_value=5,
+      max_value=255,
+      value_change_step=5,
+      description=lambda: tr("Pause lateral control with blinker when traveling below the desired speed selected."),
+      label_callback=lambda speed: f'{speed} {"km/h" if ui_state.is_metric else "mph"}',
+      switch=Switch("BlinkerPauseLateralControl", False, tr("Off")),
+    )
+    self._blinker_reengage_delay = option_item_sp(
+      param="BlinkerLateralReengageDelay",
+      title=lambda: tr("Post-Blinker Delay"),
+      min_value=0,
+      max_value=10,
+      value_change_step=1,
+      description=lambda: tr("Delay before lateral control resumes after the turn signal ends."),
+      label_callback=lambda delay: f'{delay} {"s"}'
+    )
+    self._torque_control_toggle = toggle_item_sp(
+      param="EnforceTorqueControl",
+      title=lambda: tr("Enforce Torque Lateral Control"),
+      description=lambda: tr("Enable this to enforce zoompilot to steer with Torque lateral control."),
+    )
+    self._torque_customization_button = simple_button_item_sp(
+      button_text=lambda: tr("Customize Torque Params"),
+      button_width=850,
+      callback=lambda: self._set_current_panel(PanelType.TORQUE_CONTROL)
+    )
+    self._nnlc_toggle = toggle_item_sp(
+      param="NeuralNetworkLateralControl",
+      title=lambda: tr("Neural Network Lateral Control (NNLC)"),
+      description=""
+    )
+
+    items = [
+      self._mads_toggle,
+      self._mads_settings_button,
+      LineSeparatorSP(40),
+      self._lane_change_settings_button,
+      LineSeparatorSP(40),
+      self._blinker_control_options,
+      self._blinker_reengage_delay,
+      LineSeparatorSP(40),
+      self._torque_control_toggle,
+      self._torque_customization_button,
+      LineSeparatorSP(40),
+      self._nnlc_toggle,
+    ]
+    return items
+
+  def _set_current_panel(self, panel: PanelType):
+    self._current_panel = panel
+
+  def _update_state(self):
+    super()._update_state()
+
+    torque_allowed = ui_state.CP is not None and ui_state.CP.steerControlType != car.CarParams.SteerControlType.angle
+    if ui_state.CP is not None:
+      mads_main_desc = self._mads_limited_desc if self._mads_settings_layout._mads_limited_settings() else self._mads_full_desc
+      self._mads_toggle.set_description(f"<b>{mads_main_desc}</b><br><br>{self._mads_base_desc}")
+    else:
+      self._mads_toggle.set_description(f"<b>{self._mads_check_compat_desc}</b><br><br>{self._mads_base_desc}")
+
+    self._mads_toggle.action_item.set_enabled(ui_state.is_offroad())
+    self._mads_settings_button.action_item.set_enabled(ui_state.is_offroad() and self._mads_toggle.action_item.get_state())
+    self._blinker_control_options.action_item.refresh()
+    self._blinker_reengage_delay.set_visible(not self._blinker_control_options.action_item.switched)
+
+    enforce_torque_enabled = self._torque_control_toggle.action_item.get_state()
+    nnlc_enabled = self._nnlc_toggle.action_item.get_state()
+    if enforce_torque_enabled and nnlc_enabled:
+      self._torque_control_toggle.action_item.set_state(False)
+      self._nnlc_toggle.action_item.set_state(False)
+      enforce_torque_enabled = False
+      nnlc_enabled = False
+    jerk_aware_enabled = ui_state.params.get_bool("LateralJerkTorqueController")
+    self._nnlc_toggle.action_item.set_enabled(ui_state.is_offroad() and torque_allowed and not enforce_torque_enabled and not jerk_aware_enabled)
+    self._torque_control_toggle.action_item.set_enabled(ui_state.is_offroad() and torque_allowed and not nnlc_enabled)
+    self._torque_customization_button.action_item.set_enabled(self._torque_control_toggle.action_item.get_state())
+
+  def _render(self, rect):
+    if self._current_panel == PanelType.LANE_CHANGE:
+      self._lane_change_settings_layout.render(rect)
+    elif self._current_panel == PanelType.MADS:
+      self._mads_settings_layout.render(rect)
+    elif self._current_panel == PanelType.TORQUE_CONTROL:
+      self._torque_control_layout.render(rect)
+    else:
+      self._scroller.render(rect)
+
+  def show_event(self):
+    self._set_current_panel(PanelType.STEERING)
+    self._scroller.show_event()
