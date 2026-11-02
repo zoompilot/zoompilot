@@ -7,6 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 The alpha switch and the modes that run on openpilot longitudinal control, at the top of the tizi
 Cruise panel. Developer drops its copy of the alpha switch (DeveloperLayoutSP) so it appears once.
 """
+from openpilot.selfdrive.ui.sunnypilot.longitudinal_mode import longitudinal_reachable
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
@@ -53,7 +54,8 @@ class AlphaLongitudinalToggles:
     CP = ui_state.CP
     has_long = CP is not None and ui_state.has_longitudinal_control
     self._alpha_long_toggle.set_visible(CP is not None and CP.alphaLongitudinalAvailable)
-    # only acts on openpilot longitudinal control: locked without it, keeping its value
+    self._set_speed_toggle.set_visible(longitudinal_reachable(ui_state))
+    # alpha off: locked, keeping its value
     self._set_speed_toggle.action_item.set_enabled(has_long)
 
   def refresh(self):

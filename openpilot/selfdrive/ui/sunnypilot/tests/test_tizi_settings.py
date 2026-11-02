@@ -73,6 +73,23 @@ def test_assists_grey_out_without_long(params, monkeypatch):
   params.remove("ExperimentalModeSetSpeed")
 
 
+@pytest.mark.parametrize(("alpha", "has_long", "visible"), [
+  (True, False, True),
+  (False, True, True),
+  (False, False, False),  # stock ACC only
+])
+def test_speed_assist_hidden_without_any_long(params, monkeypatch, alpha, has_long, visible):
+  from opendbc.car.structs import car
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=alpha, openpilotLongitudinalControl=has_long))
+  monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
+  layout = AlphaLongitudinalToggles()
+  layout.update_state()
+  assert layout._set_speed_toggle.is_visible == visible
+
+
 def test_onroad_button_switches_speed_assist(params, monkeypatch):
   from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_button import SpeedAssistButton
   from openpilot.selfdrive.ui.ui_state import ui_state
