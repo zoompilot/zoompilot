@@ -9,7 +9,7 @@ import math
 import pyray as rl
 
 from openpilot.selfdrive.ui.mici.layouts.home import MiciHomeLayout, HOME_PADDING
-from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import SpeedAssistIcon
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import LongitudinalIcon, SpeedAssistIcon
 from openpilot.selfdrive.ui.ui_state import ui_state, ChestnutState
 from openpilot.system.ui.lib.application import FontWeight, TextAlignment
 from openpilot.system.ui.widgets.label import UnifiedLabel, gui_label
@@ -26,11 +26,15 @@ class MiciHomeLayoutSP(MiciHomeLayout):
     self._openpilot_label = UnifiedLabel("zoompilot", font_size=88, font_weight=FontWeight.AUDIOWIDE, max_width=480, wrap_text=False)
     # upstream's retired long press, which switched experimental mode, switches Set Speed Assist
     self.set_long_press_callback(ui_state.toggle_speed_assist)
-    # in the status bar after the network icon, where upstream showed experimental mode
-    self._speed_assist_icon = SpeedAssistIcon(48)
+    # after the network icon, where upstream showed experimental mode: alpha longitudinal, then
+    # Set Speed Assist, each 40 px of ink like upstream's footer icons
+    self._long_icon = LongitudinalIcon()
+    self._long_icon.set_visible(lambda: ui_state.has_longitudinal_control)
+    self._speed_assist_icon = SpeedAssistIcon()
     self._speed_assist_icon.set_visible(lambda: ui_state.speed_assist_active)
-    self._status_bar_layout.add_widget(self._speed_assist_icon)
-    self._status_bar_layout.widgets.insert(2, self._status_bar_layout.widgets.pop())
+    for i, icon in enumerate((self._long_icon, self._speed_assist_icon)):
+      self._status_bar_layout.add_widget(icon)
+      self._status_bar_layout.widgets.insert(2 + i, self._status_bar_layout.widgets.pop())
 
   def _set_chestnut_visibility(self):
     usb_connected = ui_state.usb_connected

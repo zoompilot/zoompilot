@@ -5,17 +5,17 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
 The tizi onroad Set Speed Assist button, in the corner and shape of comma's ExpButton, which
-upstream retired with chill mode: its badge dimmed with the assist off, bright in a green ring with
+upstream retired with chill mode: its gauge dimmed with the assist off, bright in a green ring with
 it on, so the button names what it switches either way. No confirmation gate; selfdrived announces
 each switch.
 """
 import pyray as rl
 
-from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_badge
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge_centered
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
 
-BADGE_FONT_SIZE = 34  # fits the badge inside the 192 px button with the wheel's old margin
+GAUGE_HEIGHT = 84  # inside the 192 px button with the wheel's old margin
 OFF_ALPHA = 0.35
 RING_WIDTH = 8
 RING_COLOR = rl.Color(0x16, 0x7F, 0x40, 0xFF)  # the engaged border's green (augmented_road_view)
@@ -48,6 +48,6 @@ class SpeedAssistButton(Widget):
     rl.draw_circle(center_x, center_y, radius, self._black_bg)
     if ui_state.speed_assist:
       rl.draw_ring(rl.Vector2(center_x, center_y), radius - RING_WIDTH, radius, 0, 360, 96, rl.color_alpha(RING_COLOR, alpha))
-      draw_badge(center_x, center_y, BADGE_FONT_SIZE, alpha)
+      draw_gauge_centered(center_x, center_y, GAUGE_HEIGHT, alpha)
     else:
-      draw_badge(center_x, center_y, BADGE_FONT_SIZE, OFF_ALPHA * alpha)
+      draw_gauge_centered(center_x, center_y, GAUGE_HEIGHT, OFF_ALPHA * alpha)
