@@ -6,7 +6,7 @@ zoompilot vUNRELEASED
   * Dynamic Experimental Control is removed.
   * Set Speed Assist reaches set speed and follow distance at stock ACC pace (on by default).
   * Toggle Set Speed Assist: hold the distance button, long press home or tap the onroad button.
-  * A set speed gauge onroad shows Set Speed Assist is on.
+  * Set Speed Assist indicated with icon when enabled.
   * Alpha longitudinal coasts more.
   * Alpha longitudinal can be toggled onroad while disengaged.
 * Settings
