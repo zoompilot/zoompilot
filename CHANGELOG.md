@@ -1,4 +1,4 @@
-zoompilot v2026.11.02-17
+zoompilot v2026.11.02-18
 ========================
 * Synced with sunnypilot of 2026-10-29, through openpilot of 2026-10-16.
 * Cruise
