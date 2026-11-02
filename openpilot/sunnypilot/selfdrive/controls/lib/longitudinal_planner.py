@@ -72,10 +72,6 @@ class LongitudinalPlannerSP:
     self.a_cruise_prev = 0.
     self.v_ego = 0.
 
-  def is_e2e(self, sm: messaging.SubMaster) -> bool:
-    # zoompilot keeps chill (selfdrived_zp): the model's candidate only in experimental mode
-    return bool(self.CP.openpilotLongitudinalControl and sm['selfdriveStateSP'].zoompilot.experimentalMode)
-
   def _sla_owner(self, icbm: bool):
     # the machine exists only on pcm openpilot-long cars, where it owns SLA while ICBM is passive
     return self.sla_machine if self.sla_machine is not None and not icbm else self.sla_mirror
@@ -150,9 +146,9 @@ class LongitudinalPlannerSP:
 
   def update_e2e_target(self, sm: messaging.SubMaster, a_model: float, should_stop_model: bool,
                         reset_state: bool) -> tuple[float, bool]:
-    """The e2e candidate the host planner takes the minimum over. In chill it can never be the
-    minimum (cruise, listed first, wins a tie) and never asks to stop."""
-    is_e2e = self.is_e2e(sm)
+    """The e2e candidate the host planner takes the minimum over. Without openpilot longitudinal it
+    can never be the minimum (cruise, listed first, wins a tie) and never asks to stop."""
+    is_e2e = self.CP.openpilotLongitudinalControl
     # lateral acceleration from the measured steering: controlsd's curvature from the learned steer
     # ratio, angle offset and roll
     steer_lat_accel = sm['controlsState'].curvature * sm['carState'].vEgo ** 2

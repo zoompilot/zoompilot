@@ -56,6 +56,11 @@ def road_edge_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster
                Priority.LOW, VisualAlert.none, audible, 0.1)
 
 
+def speed_assist_switched_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  state = "On" if SelfdrivedZP.switched_to else "Off"
+  return NormalPermanentAlert(f"Speed Assist {state}", duration=1.5)
+
+
 def big_model_ready_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
   # an accelerator's comes a second after its swap, when the driver can engage;
   # its offer to switch is the one titled "Big Model Ready"
@@ -234,6 +239,11 @@ EVENTS_ZP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Restart the car",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, .2),
+  },
+
+  # Set Speed Assist switched, from the distance button or the UI (selfdrived_zp)
+  EventNameZP.speedAssistSwitched: {
+    ET.WARNING: speed_assist_switched_alert,
   },
 
   # an accelerator ready while something is in control: it swaps in only when

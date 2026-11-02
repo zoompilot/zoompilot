@@ -635,7 +635,6 @@ class SelfdriveD:
     mads.available = self.mads.enabled_toggle
     ss_sp.zoompilot.madsLateralHeld = self.mads.lateral_held
     ss_sp.zoompilot.icbmHold = self.icbm.fast_active
-    self.selfdrived_zp.publish(ss_sp)
 
     icbm = ss_sp.intelligentCruiseButtonManagement
     icbm.state = self.icbm.state

@@ -22,7 +22,7 @@ D_REL = 40.
 
 
 def lead_sm():
-  sm = build_sm(experimental_mode=True)
+  sm = build_sm()
   rs = messaging.new_message('radarState').radarState
   rs.leadOne.present = True
   rs.leadOne.dRel = D_REL

@@ -661,17 +661,31 @@ class TestLayoutsSurviveRender:
 
     render(MiciHomeLayoutSP())
 
-  def test_home_shows_experimental_mode_after_network(self, params, monkeypatch):
+  def test_home_shows_speed_assist_after_network(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.home import MiciHomeLayoutSP
     from openpilot.selfdrive.ui.ui_state import ui_state
 
     home = MiciHomeLayoutSP()
-    assert home._status_bar_layout.widgets[2] is home._experimental_icon
-    for has_long, experimental, shown in ((True, True, True), (True, False, False), (False, True, False)):
+    assert home._status_bar_layout.widgets[2] is home._speed_assist_icon
+    for has_long, speed_assist, shown in ((True, True, True), (True, False, False), (False, True, False)):
       monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
-      monkeypatch.setattr(ui_state, "experimental_mode", experimental)
-      assert home._experimental_icon.is_visible == shown
+      monkeypatch.setattr(ui_state, "speed_assist", speed_assist)
+      assert home._speed_assist_icon.is_visible == shown
     render(home)
+
+  def test_home_long_press_switches_speed_assist(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.home import MiciHomeLayoutSP
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
+    try:
+      for start in (True, False):
+        ui_state.set_speed_assist(start)
+        MiciHomeLayoutSP()._long_press_callback()
+        assert params.get_bool("ExperimentalModeSetSpeed") is (not start)
+        assert ui_state.speed_assist is (not start)
+    finally:
+      params.remove("ExperimentalModeSetSpeed")
 
   def test_home_knows_the_port_jetlink_holds(self, params, monkeypatch):
     # a Jetson enumerates as nothing comma knows; with the link holding the port it is not unknown
@@ -1012,7 +1026,7 @@ class TestAlphaLongSwitchMici:
 
 
 class TestAlphaLongitudinalPanelMici:
-  """The alpha switch, the e2e assists and legacy chill mode live under Cruise, once."""
+  """The alpha switch and the e2e assists live under Cruise, once."""
 
   def test_moved_switches_appear_once(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
@@ -1023,7 +1037,7 @@ class TestAlphaLongitudinalPanelMici:
 
     alpha = AlphaLongitudinalLayoutMici()
     assert [key for key, _ in alpha._refresh_toggles] == ["AlphaLongitudinalEnabled", "ExperimentalModeSetSpeed"]
-    assert alpha._scroller.items[-1] is alpha._chill_toggle
+    assert alpha._scroller.items == [item for _, item in alpha._refresh_toggles]
 
   def test_settings_opens_the_sp_panels(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
@@ -1039,12 +1053,12 @@ class TestAlphaLongitudinalPanelMici:
       buttons[label]._click_callback()
       assert type(pushed[-1]) is cls
 
-  @pytest.mark.parametrize(("has_long", "experimental", "badges"), [
+  @pytest.mark.parametrize(("has_long", "speed_assist", "badges"), [
     (True, True, ["speed assist"]),
-    (True, False, ["legacy chill"]),
+    (True, False, ["default"]),
     (False, True, None),  # alpha off: a grey "disabled" pill
   ])
-  def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, experimental, badges):
+  def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, speed_assist, badges):
     from opendbc.car.structs import car
     from openpilot.cereal import custom
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
@@ -1057,9 +1071,8 @@ class TestAlphaLongitudinalPanelMici:
     monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=has_long))
     monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
     monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
-    monkeypatch.setattr(ui_state, "experimental_mode", experimental)
     for param, _ in E2E_ASSISTS:
-      params.put_bool(param, True, block=True)
+      params.put_bool(param, speed_assist, block=True)
     try:
       cruise = CruiseLayoutMici()
       render(cruise)
@@ -1077,44 +1090,30 @@ class TestAlphaLongitudinalPanelMici:
       for param, _ in E2E_ASSISTS:
         params.remove(param)
 
-  def test_legacy_chill_mode_needs_no_confirm(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts import alpha_longitudinal
-    from openpilot.system.ui.lib.application import gui_app
-
-    pushed = []
-    monkeypatch.setattr(gui_app, "push_widget", pushed.append)
-    layout = alpha_longitudinal.AlphaLongitudinalLayoutMici()
-    for chill in (False, True):
-      layout._chill_toggle._toggle_callback(chill)
-      assert params.get_bool("ExperimentalMode") is not chill  # chill is the param's off
-    assert not pushed
 
 
 class TestOverriddenToggles:
   """A toggle another setting overrides draws a grey pill; one only locked onroad keeps its green one."""
 
-  @pytest.mark.parametrize("experimental", [False, True])
-  def test_e2e_toggles_lock_in_legacy_chill(self, params, monkeypatch, experimental):
+  @pytest.mark.parametrize("has_long", [False, True])
+  def test_e2e_toggles_lock_without_openpilot_long(self, params, monkeypatch, has_long):
     from opendbc.car.structs import car
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
     from openpilot.selfdrive.ui.ui_state import ui_state
 
-    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(openpilotLongitudinalControl=True))
-    monkeypatch.setattr(ui_state, "has_longitudinal_control", True)
+    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(openpilotLongitudinalControl=has_long))
+    monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
     params.put_bool("ExperimentalModeSetSpeed", True, block=True)
-    params.put_bool("ExperimentalMode", experimental, block=True)
-    ui_state.update_params()  # the UI's params tick, which legacy_chill reads
     try:
       layout = AlphaLongitudinalLayoutMici()
       layout._refresh()
       layout._update_state()
       toggle = layout._set_speed_toggle
-      assert toggle.enabled == experimental
+      assert toggle.enabled == has_long
       assert toggle._checked, "locking must keep the stored value"
-      assert toggle.superseded == (not experimental)
+      assert toggle.superseded == (not has_long)
     finally:
-      for key in ("ExperimentalModeSetSpeed", "ExperimentalMode"):
-        params.remove(key)
+      params.remove("ExperimentalModeSetSpeed")
 
   def test_onroad_lock_keeps_the_green_pill(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici

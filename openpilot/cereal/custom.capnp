@@ -549,9 +549,8 @@ struct SelfdriveStateZP @0xde02074862680d1d {
   # large moves (interleaved with the wheel's own frames it registers as paced presses, never
   # as a held button). sendButton keeps the direction.
   icbmHold @1 :Bool;
-  # Experimental (end-to-end) longitudinal, else chill: the ExperimentalMode param on openpilot
-  # long. Upstream deprecated selfdriveState.experimentalMode when it went experimental only.
-  experimentalMode @2 :Bool = true;
+  # The retired ExperimentalMode param (chill mode went 2026-11); older logs only.
+  experimentalModeDEPRECATED @2 :Bool = true;
 }
 
 struct CarParamsZP @0x89825c62ea259087 {
@@ -607,6 +606,7 @@ struct OnroadEventZP @0xeff60a9f4d5cb12f {
     longitudinalDisableChime @9;
     stockLkasArming @10;
     stockCruiseFailed @11;
+    speedAssistSwitched @12;
   }
 }
 

@@ -2,11 +2,10 @@ zoompilot vUNRELEASED
 ========================
 * Synced with sunnypilot of 2026-10-29, through openpilot of 2026-10-16.
 * Cruise
-  * Experimental is now the default with alpha longitudinal (openpilot).
-  * Legacy chill mode replaces the Experimental Mode toggle.
-  * Toggle chill: hold the distance button, or long press home.
+  * Experimental is the only mode with alpha longitudinal; chill mode is removed (openpilot).
   * Dynamic Experimental Control is removed.
   * Set Speed Assist toggle reaches set speed and follow distance (on by default).
+  * Toggle Set Speed Assist: hold the distance button, long press home or tap the onroad button.
   * Alpha longitudinal coasts more.
   * Alpha longitudinal can be toggled onroad while disengaged.
 * Settings
@@ -16,7 +15,7 @@ zoompilot vUNRELEASED
   * New Lane Center Assist (alpha) in Models.
   * Road edge lane change block: new silent option.
 * comma 4
-  * Confidence ball indicates experimental/chill mode.
+  * SPEED badge in the bottom right shows Set Speed Assist is on.
   * Models adds lane turn desires, steer delay and camera offset.
   * Home can show the active model (Display).
 * Mazda

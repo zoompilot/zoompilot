@@ -42,8 +42,8 @@ def no_lead_mpc(mpc) -> None:
 
 
 def planner_sm():
-  # the experimental gate's fixture: experimental mode, 20 m/s under a 100 km/h set speed; a model holding its pace
-  sm = build_sm(experimental_mode=True)
+  # the experimental gate's fixture: openpilot long, 20 m/s under a 100 km/h set speed; a model holding its pace
+  sm = build_sm()
   model = sm['modelV2'].as_builder()
   model.action.desiredAcceleration = MODEL_ACCEL
   sm['modelV2'] = model.as_reader()
