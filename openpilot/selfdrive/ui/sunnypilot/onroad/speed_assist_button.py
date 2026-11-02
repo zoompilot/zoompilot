@@ -48,6 +48,4 @@ class SpeedAssistButton(Widget):
     rl.draw_circle(center_x, center_y, radius, self._black_bg)
     if ui_state.speed_assist:
       rl.draw_ring(rl.Vector2(center_x, center_y), radius - RING_WIDTH, radius, 0, 360, 96, rl.color_alpha(RING_COLOR, alpha))
-      draw_gauge_on_dial(center_x, center_y, GAUGE_HEIGHT, alpha)
-    else:
-      draw_gauge_on_dial(center_x, center_y, GAUGE_HEIGHT, OFF_ALPHA * alpha)
+    draw_gauge_on_dial(center_x, center_y, GAUGE_HEIGHT, alpha if ui_state.speed_assist else OFF_ALPHA * alpha)

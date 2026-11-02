@@ -97,11 +97,14 @@ def draw_gauge_centered(cx: float, cy: float, height: float, alpha: float = 1.0)
   draw_gauge(cx - GAUGE_ASPECT * height / 2, cy - height / 2, height, alpha)
 
 
+DIAL_DROP = 1 / 16  # of the height: the swoosh weighs the top, so a dial on the centre looks high
+
+
 def draw_gauge_on_dial(cx: float, cy: float, height: float, alpha: float = 1.0) -> None:
-  """The dial's centre on (cx, cy), for a round button: dial, swoosh and button ring share a centre,
-  where centring the ink box would set the dial low and right under the swoosh."""
+  """For a round button: the dial's centre on (cx, cy), dropped a touch to look centred, so dial,
+  swoosh and button ring read as one; centring the ink box sets the dial low and right instead."""
   s = height / (_BOTTOM - _TOP)
-  draw_gauge(cx + _LEFT * s, cy + _TOP * s, height, alpha)
+  draw_gauge(cx + _LEFT * s, cy + (_TOP + DIAL_DROP * (_BOTTOM - _TOP)) * s, height, alpha)
 
 
 class SpeedAssistIcon(Widget):
