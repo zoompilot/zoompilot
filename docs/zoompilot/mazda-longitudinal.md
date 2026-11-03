@@ -489,6 +489,14 @@ releases. Stock's own releases lag the lead's departure by at least this much: a
 releases show the lead already opening at >= +0.31 m/s at the pulse, about 0.2 s into a typical
 drive-off. The driver's pedal is not debounced; it outranks the hold immediately.
 
+A plan above `RELEASE_FIRM_ACCEL` (0.3) for `RELEASE_FIRM_FRAMES` (0.05 s) is a firm request and
+opens the hold without the full debounce. Across 683 alpha-long segments the plan went positive
+at a standstill 70 times: 37 launches, 6 gas releases and 26 blips that fell back to zero. All
+blips but one peaked at or under 0.25, and that one (0.47) lasted 1.4 s, so the debounce releases
+it as well. Real launches ramp through 0.3 at a median 0.3 s and rarely gain; step requests such
+as the maneuver tests gain about 0.15 s. The firm path never opens a hold inside a running
+pulse, and a hold the plan opened stays open while the plan stays positive.
+
 ### Gas-pedal release
 
 The plan asking for acceleration releases the hold, and so does the driver's pedal, the way
@@ -803,6 +811,7 @@ the dash lane indicators, so those two stay zeroed.
 | `RESUME_UNLATCH_LATCHED_FRAMES` | 0.18 s (9 wire frames) | latched pulses 6 to 11 wire frames, mode 9 | 33-pulse census |
 | `RESUME_REPULSE_FRAMES` | 1.0 s | body answered all 10 pulses in 30 to 51 ms | 103, 115, 118, 11d, 12c, 132, 139, fe |
 | `RELEASE_DEBOUNCE_FRAMES` | 0.2 s | lead opening >= +0.31 m/s at all 23 stock latched pulses | corpus |
+| `RELEASE_FIRM_ACCEL`, `RELEASE_FIRM_FRAMES` | 0.3 m/s2, 0.05 s | standstill blips peak <= 0.25 (25 of 26) | 683 alpha-long segments |
 | `ACCEL_HOLD_LATCHED` | raw -1 (-1/1024 m/s2) | stock relaxes 0 to 40 ms after HOLD_STATE goes HOLDING, 43 of 43 | 43 stock holds |
 | `ACCEL_RESUME_PULSE_MAX` | raw 250 (0.244 m/s2) | stock latched pulse tail +0.24 to +0.25, +0.34 worst | corpus |
 | `ACCEL_RELEASE_BAND` | raw -260 (-0.254 m/s2) | stock never-latched relax target -0.27 to -0.18 | corpus |
