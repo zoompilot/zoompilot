@@ -18,7 +18,7 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware.hw import Paths
 
-from openpilot.cereal import messaging, custom
+from openpilot.cereal import messaging, custom, log
 from openpilot.sunnypilot.models.default_bootstrap import carry_over_picks, maybe_apply_default_model
 from openpilot.sunnypilot.models.fetcher import ModelFetcher
 from openpilot.sunnypilot.models.fetcher_zp import ModelFetcherZP
@@ -131,6 +131,8 @@ class ModelManagerSP:
     self.pm = messaging.PubMaster(["modelManagerSP"])
     self.sm = messaging.SubMaster(["deviceState"])
     self.chestnut_present = False
+    self.chestnut_seen = False  # ChestnutSeen: hardwared latches it, as the board may only have power onroad
+    self.online = False
     self.available_models: list[custom.ModelManagerSP.ModelBundle] = []
     self.source_models: dict[str, list[custom.ModelManagerSP.ModelBundle]] = {}
     self.selected_bundle: custom.ModelManagerSP.ModelBundle = None
@@ -360,9 +362,13 @@ class ModelManagerSP:
     by the bundle's ref. So without a chestnut the pick is stored without its
     files (_download_bundle), validation never resets the slot over missing
     files (helpers.validate_active_bundles), and here they are fetched once a
-    chestnut is fitted, or again if they went missing. Once per ref per
-    process, so a download that keeps failing does not spin."""
-    if not self.chestnut_present or self.params.get("ModelManager_DownloadRef") is not None:
+    chestnut has been fitted (now or on an earlier drive: ChestnutSeen), or
+    again if they went missing. Once per ref per process, so a download that
+    keeps failing does not spin; online only, so the once is not spent on a
+    comma with no network."""
+    if not (self.chestnut_present or self.chestnut_seen) or not self.online:
+      return
+    if self.params.get("ModelManager_DownloadRef") is not None:
       return
     raw = self.params.get(ACTIVE_BUNDLE_KEYS["chestnut"])
     if not isinstance(raw, dict) or raw.get("ref") in self._big_files_checked:
@@ -404,6 +410,8 @@ class ModelManagerSP:
       try:
         self.sm.update(0)
         self.chestnut_present = self.sm['deviceState'].chestnutPresent
+        self.chestnut_seen = self.params.get_bool("ChestnutSeen")
+        self.online = self.sm['deviceState'].networkType != log.DeviceState.NetworkType.none
         self.source_models = {source: self.model_fetcher.get_bundles_for_source(source) for source in ModelFetcher.MODEL_SOURCES}
         self.available_models = self.source_models[ModelFetcher.active_source(self.chestnut_present)]
         cleared = validate_active_bundles(self.params, self.source_models)

@@ -180,6 +180,8 @@ class ManagerDownloadTestBase(OpenpilotTestCase):
     self.manager._block_size = 256
     self.manager._download_start_times = {}
     self.manager._big_files_checked = set()
+    self.manager.chestnut_seen = False
+    self.manager.online = True
 
   def _record_progress(self, *args) -> None:
     artifact = getattr(self, 'artifact', None)
@@ -651,6 +653,7 @@ class TestBigModelSlotWithoutChestnut(ManagerDownloadTestBase):
     self._slot_stored(chestnut_present=False)
     self.manager.sm = mock.MagicMock()
     self.manager.sm.__getitem__.return_value.chestnutPresent = False
+    self.manager.params.get_bool.return_value = False   # no ChestnutSeen either
     self.manager.model_fetcher = mock.MagicMock()
     self.manager.model_fetcher.get_bundles_for_source.return_value = []
     with mock.patch.object(manager_module, 'Ratekeeper') as rk, \
@@ -661,6 +664,26 @@ class TestBigModelSlotWithoutChestnut(ManagerDownloadTestBase):
         self.manager.main_thread()
     queued = [c for c in self.manager.params.put.call_args_list if c.args[0] == "ModelManager_DownloadRef"]
     assert queued == []
+
+  def test_a_chestnut_seen_on_an_earlier_drive_fetches_without_it(self):
+    # a board powered with the ignition is absent offroad, when the manager runs
+    self._slot_stored(chestnut_present=False)
+    self.manager.chestnut_seen = True
+    with mock.patch.object(manager_module, '_bundle_is_valid_locally', return_value=False):
+      self.manager._fetch_big_model_files()
+    queued = [c for c in self.manager.params.put.call_args_list if c.args[0] == "ModelManager_DownloadRef"]
+    assert [c.args[1] for c in queued] == ["big"]
+
+  def test_offline_spends_nothing_and_fetches_once_online(self):
+    self._slot_stored(chestnut_present=True)
+    self.manager.online = False
+    with mock.patch.object(manager_module, '_bundle_is_valid_locally', return_value=False):
+      self.manager._fetch_big_model_files()
+      self.manager.params.put.assert_not_called()
+      self.manager.online = True
+      self.manager._fetch_big_model_files()
+    queued = [c for c in self.manager.params.put.call_args_list if c.args[0] == "ModelManager_DownloadRef"]
+    assert [c.args[1] for c in queued] == ["big"]
 
   def test_a_download_in_flight_is_not_interrupted(self):
     self._slot_stored(chestnut_present=True, queued="other")
