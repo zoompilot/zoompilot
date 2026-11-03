@@ -29,6 +29,8 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
 
 PARAM_KEY = "CurveLatAccelLimit"
+# the Cruise toggle: off (the default), the planner keeps the shared table and the learner pauses
+LEARN_PARAM = "CurveLatAccelLearn"
 # bump to retire every learned ceiling, e.g. when the saturation test or the steps change
 VERSION = 1
 
