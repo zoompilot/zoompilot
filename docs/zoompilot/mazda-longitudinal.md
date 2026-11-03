@@ -557,7 +557,7 @@ release moved at -0.001, pure creep. The roughly 0.3 s actuator dead time carrie
 about 0.38 past the value that actually broke the car free before standstill clears, which is
 why the cap is what bounds the worst case.
 
-Past stock's release frames the climb runs at `ACCEL_BREAKAWAY_RAMP` (5.0 m/s3), about four times stock's 1.22, for as long as the car is still stopped. Stock's ramp only adds time there: nothing
+Past stock's release frames the climb runs at `ACCEL_BREAKAWAY_RAMP` (2.5 m/s3), about twice stock's 1.22, for as long as the car is still stopped. Stock's ramp only adds time there: nothing
 moves until the command reaches the breakaway value. Our 2026-10-30/31 launches took 1.36 s from the
 plan asking to go until the car moved: 0.2 s debounce, 0.2 s up from the relax band, about 0.6 s
 at stock's rate up to the breakaway, then the car's own 0.3 s. The first 0.2 s after the release
@@ -810,7 +810,7 @@ the dash lane indicators, so those two stay zeroed.
 | `ACCEL_BREAKAWAY_MAX` | 1.45 m/s2 | stock last-still-frame command max +1.425 (n=31) | corpus |
 | `BREAKAWAY_FRAMES` | 3.0 s | give-up bound on an unseen holder | design |
 | `ACCEL_BREAKAWAY_OVERSHOOT` | 0.75 m/s2 | 132 case +0.67 above plan; stock p25 +0.744 | 132, 12c, 34 stock episodes |
-| `ACCEL_BREAKAWAY_RAMP` | 5.0 m/s3 | still-stopped climb after the 0.2 s release frames; stock's rate spent ~0.6 s of a 1.36 s launch reaching breakaway, 2.5 still left start-from-stop at 1.68 s | 60, 62, 0000005f |
+| `ACCEL_BREAKAWAY_RAMP` | 2.5 m/s3 | still-stopped climb after the 0.2 s release frames; stock's rate spent ~0.6 s of a 1.36 s launch reaching breakaway. 5.0 moved nothing sooner (the car moves ~0.75 s after the release either way) and raised the creep launch peak from ~1.75 to ~2.0 | 60, 62, 0000005f, 66, 68 |
 | `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3; brake region only | reporter's route |
 | `ACCEL_BUILD_V` | 3.0 m/s3 to 12 m/s, 0.8 at 16, 0.6 from 20 | town at other ports' 3-4 m/s3 jerk (gas +1 maneuver 1.60 s at 0.8); highway stock's +12 raw per 50 Hz frame (0.59) | 158 stock routes, 00000066 |
 | `ACCEL_LIFT_LIMIT` | -2.0 m/s3 | stock throttle lift <= 40 raw per frame in 99.98% of falling positive frames | 158 stock routes |
