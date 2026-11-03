@@ -45,6 +45,12 @@ class CruiseLayout(Widget):
       description=tr("Use vision path predictions to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlVision")
 
+    self.scc_learn_toggle = toggle_item_sp(
+      title=tr("Slow for Curves: Learn Steering Limit"),
+      description=tr("Learns how hard your car can steer through a curve before its steering runs out, " +
+                     "and has Slow for Curves: Vision slow to match. Off, every car uses the same curve speeds."),
+      param="CurveLatAccelLearn")
+
     self.scc_m_toggle = toggle_item_sp(
       title=tr("Slow for Curves: Map"),
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
@@ -78,6 +84,7 @@ class CruiseLayout(Widget):
     items = [
       *self._alpha_long.items,
       self.scc_v_toggle,
+      self.scc_learn_toggle,
       self.scc_m_toggle,
       self.sla_settings_button,
       self.custom_acc_toggle,
@@ -122,10 +129,12 @@ class CruiseLayout(Widget):
                                                       allowed(self.custom_acc_toggle, "CustomAccIncrementsEnabled"))
         self.scc_v_toggle.action_item.set_enabled(allowed(self.scc_v_toggle, "SmartCruiseControlVision"))
         self.scc_m_toggle.action_item.set_enabled(allowed(self.scc_m_toggle, "SmartCruiseControlMap"))
+        self.scc_learn_toggle.action_item.set_enabled(True)
       else:
         self.custom_acc_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
+        self.scc_learn_toggle.action_item.set_enabled(False)
 
     else:
       has_icbm = has_long = False

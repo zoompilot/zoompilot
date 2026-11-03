@@ -216,8 +216,10 @@ Both are split between the two breakpoints around the curve's speed. The step ha
 saturation, so the ceiling closes in on the torque limit from below and the warning, which needs 20% past
 it, stays clear; once converged a probe past the limit saturates about one near-limit curve in
 75 (synthetic EPS, `test_zp_lat_limit_learner.py`). The ceiling stays in 1.2 to 3.0 m/s^2; the top
-is ISO 11270's lateral limit, which openpilot enforces anyway. It learns whenever lateral is
-engaged, the curve planner on or off, and persists in `CurveLatAccelLimit`, keyed on the
+is ISO 11270's lateral limit, which openpilot enforces anyway. It is off by default, behind
+the Cruise toggle "Slow for Curves: Learn Steering Limit" (`CurveLatAccelLearn`): off, the planner
+keeps the shared table and the learner pauses, its saved ceiling kept. On, it learns whenever
+lateral is engaged, the curve planner on or off, and persists in `CurveLatAccelLimit`, keyed on the
 fingerprint and the breakpoints; another car, or a `VERSION` bump, starts on the shared table.
 A car that has not moved off the table plans on it unchanged. Map targets come from mapd's own
 velocities and are not capped by it.

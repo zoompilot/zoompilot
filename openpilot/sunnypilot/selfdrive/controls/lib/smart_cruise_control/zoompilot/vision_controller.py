@@ -16,12 +16,13 @@ import numpy as np
 import openpilot.cereal.messaging as messaging
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
+from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN_V
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import (
   A_PUB_MIN, COMMIT_FRAC, get_planning_limits, publish_ramp)
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import (
   allowed_speed, backward_pass, lead_distance, min_profile_speed, required_decel)
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.lat_limit_learner import LatLimitLearner
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.lat_limit_learner import LEARN_PARAM, LatLimitLearner
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.vision_controller import (
   ACTIVE_STATES, ENABLED_STATES, VisionState, SmartCruiseControlVision as UpstreamVision)
 
@@ -108,6 +109,7 @@ class SmartCruiseControlVision(UpstreamVision):
     super().__init__()
     self.limits = get_planning_limits(CP)
     self.lat_limit = LatLimitLearner(_A_LAT_CURVE_BP, _A_LAT_CURVE, CP.carFingerprint, self.params)
+    self.learn_lat_limit = self.params.get_bool(LEARN_PARAM)
     self._reset_solver()
     self.a_out = 0.
 
@@ -124,9 +126,15 @@ class SmartCruiseControlVision(UpstreamVision):
     self.seen_frames = 0  # consecutive frames a bend has bound
     self.max_pred_lat_acc = 0.
 
+  def _update_params(self) -> None:
+    super()._update_params()
+    if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
+      self.learn_lat_limit = self.params.get_bool(LEARN_PARAM)
+
   def _curve_speed(self, kappa) -> np.ndarray:
-    # an unlearned car plans on the shared table itself
-    return curve_speed(kappa, self.lat_limit.ceiling if self.lat_limit.learned else None)
+    # toggled off, or a car that has not learned yet, plans on the shared table
+    use_learned = self.learn_lat_limit and self.lat_limit.learned
+    return curve_speed(kappa, self.lat_limit.ceiling if use_learned else None)
 
   def _update_lat_limit(self, sm: messaging.SubMaster) -> None:
     """Feed the ceiling learner the lateral controller's saturation, the flag selfdrived warns on."""
@@ -136,11 +144,13 @@ class SmartCruiseControlVision(UpstreamVision):
     cs = sm['controlsState']
     lac = getattr(cs.lateralControlState, cs.lateralControlState.which())
     v = max(self.v_ego, 0.3)
+    # toggled off, the learner sees lateral as inactive: it pauses, and a curve already under way
+    # when the toggle comes on is not counted
     self.lat_limit.update(self.v_ego, cs.curvature * v ** 2, sm['modelV2'].action.desiredCurvature * v ** 2,
-                          lac.active, lac.saturated, sm['carState'].steeringPressed)
+                          lac.active and self.learn_lat_limit, lac.saturated, sm['carState'].steeringPressed)
 
   def _update_calculations(self, sm: messaging.SubMaster) -> None:
-    # learned whenever lateral is on, so the ceiling is ready when the feature is
+    # learned whenever lateral is on (and the toggle is), so the ceiling is ready when the planner is
     self._update_lat_limit(sm)
     if not self.long_enabled or not self.enabled:
       self._reset_solver()
