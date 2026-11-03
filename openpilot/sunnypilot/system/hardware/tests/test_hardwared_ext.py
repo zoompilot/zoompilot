@@ -4,6 +4,9 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+from types import SimpleNamespace
+
+from openpilot.cereal import log
 from openpilot.common.params import ParamKeyFlag
 from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import HANDBACK_WAIT_T, REQUEST_KEY
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeClock, FakeParams, answer
@@ -17,6 +20,10 @@ def _ext(**values):
   clock = FakeClock()
   ext.handback.now = clock
   return ext, params, clock
+
+
+def _device(chestnut=False, network=log.DeviceState.NetworkType.wifi):
+  return SimpleNamespace(chestnutPresent=chestnut, networkType=network)
 
 
 class TestOnroadCycle:
@@ -196,5 +203,51 @@ class TestPowerOff:
     shown = []
     for why in (None, "no Jetson on USB"):
       jetlink.why = why
-      ext.alerts(lambda *args, **kwargs: shown.append((*args, kwargs["extra_text"])))
+      ext.alerts(lambda *args, **kwargs: shown.append((*args, kwargs.get("extra_text"))), True, _device())
+    shown = [a for a in shown if a[0] == "Offroad_AcceleratorUnavailable"]
     assert shown == [("Offroad_AcceleratorUnavailable", False, None), ("Offroad_AcceleratorUnavailable", True, "no Jetson on USB")]
+
+
+class FakeFetcher:
+  def __init__(self, result=''):
+    self.result, self.calls = result, []
+
+  def update(self, offroad, online, chestnut_seen):
+    self.calls.append((offroad, online, chestnut_seen))
+    return self.result
+
+
+class TestChestnutModel:
+  def _alerts(self, ext, offroad=True, device=None):
+    shown = {}
+    ext.alerts(lambda key, show, **kwargs: shown.__setitem__(key, show), offroad, device or _device())
+    return shown
+
+  def test_a_chestnut_once_seen_is_remembered(self):
+    ext, params, _ = _ext()
+    ext.big_model = FakeFetcher()
+    self._alerts(ext)
+    assert not params.get_bool("ChestnutSeen") and ext.big_model.calls[-1] == (True, True, False)
+    # onroad, where a chestnut powered off the ignition is seen
+    self._alerts(ext, offroad=False, device=_device(chestnut=True))
+    assert params.get_bool("ChestnutSeen")
+    # and offroad without it, where the download happens
+    self._alerts(ext, device=_device(chestnut=False))
+    assert ext.big_model.calls[-1] == (True, True, True)
+    assert HardwaredExt(params).chestnut_seen
+
+  def test_only_wifi_or_ethernet_counts_as_online(self):
+    ext, _, _ = _ext(ChestnutSeen=True)
+    ext.big_model = FakeFetcher()
+    N = log.DeviceState.NetworkType
+    for network, online in ((N.wifi, True), (N.ethernet, True), (N.cell4G, False), (N.none, False)):
+      self._alerts(ext, device=_device(network=network))
+      assert ext.big_model.calls[-1][1] == online
+
+  def test_the_alerts_follow_the_fetch(self):
+    ext, _, _ = _ext(ChestnutSeen=True)
+    for result, downloading, missing in (('', False, False), ('downloading', True, False), ('waiting', False, True)):
+      ext.big_model = FakeFetcher(result)
+      shown = self._alerts(ext)
+      assert shown["Offroad_ChestnutModelDownloading"] == downloading
+      assert shown["Offroad_ChestnutModelMissing"] == missing

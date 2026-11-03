@@ -10,6 +10,7 @@ from openpilot.cereal import messaging, log, custom
 from opendbc.car.structs import car
 from opendbc.sunnypilot.car.interfaces import has_bsm
 from openpilot.common.params import Params
+from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
 from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import UIStateZP
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
@@ -47,6 +48,7 @@ class UIStateSP(UIStateZP):
     self.screensaver_enabled: bool = False
 
     self.active_bundle = None
+    self.chestnut_downloading = False
     self.model_runner_tinygrad: bool = False
     self.active_runner_tinygrad: bool = False
     self.blindspot: bool = False
@@ -174,8 +176,12 @@ class UIStateSP(UIStateZP):
     # runner the manager launches (process_config.is_tinygrad_model); with a chestnut the big slot decides
     self.active_runner_tinygrad = self.params.get("ModelRunnerTypeCache") == custom.ModelManagerSP.Runner.tinygrad
     # stock only counts the default big model's compiled pkl. a downloaded big bundle runs on the
-    # chestnut just the same, so ChestnutState has to see it as available too.
-    self.chestnut_compiled = self.chestnut_compiled or self.model_runner_tinygrad
+    # chestnut just the same, so ChestnutState has to see it as available too. Read every pass:
+    # the big pkl arrives in the background (models/big_model_source.py), and an update can
+    # check a pointer out over it
+    self.chestnut_compiled = chestnut_compiled() or self.model_runner_tinygrad
+    # the background fetch, which the chestnut icon shows as loading
+    self.chestnut_downloading = self.params.get("Offroad_ChestnutModelDownloading") is not None
     UIStateZP.update_params(self)
     self.blindspot = self.params.get_bool("BlindSpot")
     self.chevron_metrics = self.params.get("ChevronInfo")

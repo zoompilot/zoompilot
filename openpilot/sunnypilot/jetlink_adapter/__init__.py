@@ -78,12 +78,14 @@ def link_on() -> bool:
     return False
 
 
-def chestnut_cable() -> bool:
-  """A cable on the port, for modeld's chestnut check. A Jetson or an iPhone
-  on the port is a cable too, so it counts only while Jetlink is off (jetlink
-  docs/porting.md)."""
-  from openpilot.common.hardware.usb import cable_connected
-  return cable_connected() and not link_on()
+def chestnut_cable(connected: bool | None = None) -> bool:
+  """A cable on the port, for modeld's and the UI's chestnut guess: `connected`,
+  or the port read now. A Jetson or an iPhone on the port is a cable too, so it
+  counts only while Jetlink is off (jetlink docs/porting.md)."""
+  if connected is None:
+    from openpilot.common.hardware.usb import cable_connected
+    connected = cable_connected()
+  return connected and not link_on()
 
 
 @functools.cache
