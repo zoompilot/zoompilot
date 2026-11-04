@@ -324,7 +324,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Accelerators: what runs the large model. See sunnypilot/jetlink_adapter/.
     {"AcceleratorProgress", {CLEAR_ON_MANAGER_START, JSON}},
     {"Offroad_AcceleratorUnavailable", {CLEAR_ON_MANAGER_START, JSON}},
-    // a comma that has seen a chestnut fetches the big model in the background (models/big_model_source.py)
+    // a comma that has seen a chestnut downloads its big model through the model manager (models/manager.py)
     {"ChestnutSeen", {PERSISTENT, BOOL}},
     {"Offroad_ChestnutModelDownloading", {CLEAR_ON_MANAGER_START, JSON}},
     {"Offroad_ChestnutModelMissing", {CLEAR_ON_MANAGER_START, JSON}},

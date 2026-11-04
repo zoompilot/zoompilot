@@ -19,11 +19,13 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware.hw import Paths
 
 from openpilot.cereal import messaging, custom, log
+from openpilot.selfdrive.selfdrived.alertmanager import set_offroad_alert
 from openpilot.sunnypilot.models.default_bootstrap import carry_over_picks, maybe_apply_default_model
 from openpilot.sunnypilot.models.fetcher import ModelFetcher
 from openpilot.sunnypilot.models.fetcher_zp import ModelFetcherZP
 from openpilot.sunnypilot.models.helpers import (ACTIVE_BUNDLE_KEYS, _bundle_is_valid_locally, get_active_bundle, get_selected_bundle,
                                                   resolve_bundle_by_ref, validate_active_bundles, verify_file)
+from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL_REF
 
 # (connect, read) seconds. read is per-request inactivity, not a total cap
 DOWNLOAD_TIMEOUT = (30, 30)
@@ -38,6 +40,8 @@ REPORT_INTERVAL = 0.5  # seconds between progress publications
 NO_COMPRESSION = {"Accept-Encoding": "identity"}
 SPEED_SMOOTHING = 0.7  # weight of the previous speed sample in the published speed
 SPEED_FLOOR = 0.05 * 1024 ** 2  # bytes/s; anything slower would only display as 0.0 MB/s, so it reads as no rate
+# what the comma says about the chestnut's model offroad; the downloading one pulses the chestnut icon
+CHESTNUT_ALERTS = ("Offroad_ChestnutModelDownloading", "Offroad_ChestnutModelMissing")
 
 
 class DownloadCancelled(Exception):
@@ -141,6 +145,19 @@ class ModelManagerSP:
     self._download_start_times: dict[str, float] = {}  # Track start time per model
     self._download_ref: bytes | str | None = None
     self._big_files_checked: set[str] = set()  # refs whose files were looked for with a chestnut fitted
+    # the manager stops mid-download when the comma goes onroad, so start with both alerts down
+    self._chestnut_alerts: dict[str, bool | None] = dict.fromkeys(CHESTNUT_ALERTS)
+    for name in CHESTNUT_ALERTS:
+      self._set_chestnut_alert(name, False)
+
+  @property
+  def chestnut_owner(self) -> bool:
+    return self.chestnut_present or self.chestnut_seen
+
+  def _set_chestnut_alert(self, name: str, show: bool) -> None:
+    if self._chestnut_alerts[name] != show:
+      self._chestnut_alerts[name] = show
+      set_offroad_alert(name, show)
 
   def _download_interrupted(self) -> bool:
     # only removal cancels: a different ref is a queued selection that
@@ -312,7 +329,10 @@ class ModelManagerSP:
   async def _download_bundle(self, model_bundle: custom.ModelManagerSP.ModelBundle, destination_path: str, source: str) -> None:
     self.selected_bundle = model_bundle
     # the big model's files are only fetched where a chestnut can run them; see _fetch_big_model_files
-    models = [] if source == "chestnut" and not self.chestnut_present else self.selected_bundle.models
+    models = [] if source == "chestnut" and not self.chestnut_owner else self.selected_bundle.models
+    if source == "chestnut" and models:
+      self._set_chestnut_alert("Offroad_ChestnutModelMissing", False)
+      self._set_chestnut_alert("Offroad_ChestnutModelDownloading", True)
     if models:
       # a bundle with nothing to fetch goes straight to downloaded below: said
       # to be downloading with no files, it would show a download that never
@@ -350,6 +370,7 @@ class ModelManagerSP:
       raise
 
     finally:
+      self._set_chestnut_alert("Offroad_ChestnutModelDownloading", False)
       self._report_status()
 
   def download(self, model_bundle: custom.ModelManagerSP.ModelBundle, destination_path: str, source: str) -> None:
@@ -363,23 +384,34 @@ class ModelManagerSP:
     files (_download_bundle), validation never resets the slot over missing
     files (helpers.validate_active_bundles), and here they are fetched once a
     chestnut has been fitted (now or on an earlier drive: ChestnutSeen), or
-    again if they went missing. Once per ref per process, so a download that
+    again if they went missing. An empty slot fetches the Default bundle:
+    zoompilot installs leave the built-in pkl out (.lfsconfig), so stock modeld
+    would drive the small model. Once per ref per process, so a download that
     keeps failing does not spin; online only, so the once is not spent on a
     comma with no network."""
-    if not (self.chestnut_present or self.chestnut_seen) or not self.online:
+    if not self.chestnut_owner or not self.online:
       return
     if self.params.get("ModelManager_DownloadRef") is not None:
       return
     raw = self.params.get(ACTIVE_BUNDLE_KEYS["chestnut"])
-    if not isinstance(raw, dict) or raw.get("ref") in self._big_files_checked:
+    ref = raw.get("ref") if isinstance(raw, dict) else DEFAULT_BIG_MODEL_REF
+    if ref in self._big_files_checked:
       return   # the raw ref first: parsing the slot every tick is not worth a set lookup
-    bundle = get_selected_bundle(self.params, "chestnut")
-    if bundle is None:
+    if ref == DEFAULT_BIG_MODEL_REF and not isinstance(raw, dict):
+      if not any(bundle.ref == ref for bundle in self.source_models.get("chestnut", [])):
+        return  # the catalog has not loaded yet
+      bundle = None
+    elif (bundle := get_selected_bundle(self.params, "chestnut")) is None:
       return
-    self._big_files_checked.add(bundle.ref)
-    if not _bundle_is_valid_locally(bundle):
-      cloudlog.warning(f"Fetching the files of the selected big model {bundle.displayName} for the chestnut")
-      self.params.put("ModelManager_DownloadRef", bundle.ref)
+    self._big_files_checked.add(ref)
+    if bundle is None or not _bundle_is_valid_locally(bundle):
+      cloudlog.warning(f"Fetching the files of the big model {bundle.displayName if bundle else 'Default'} for the chestnut")
+      self.params.put("ModelManager_DownloadRef", ref)
+
+  def _update_missing_alert(self) -> None:
+    # nothing the chestnut can run: offline, or a download that failed until the next drive
+    missing = self.chestnut_owner and get_active_bundle(self.params, chestnut=True) is None
+    self._set_chestnut_alert("Offroad_ChestnutModelMissing", missing)
 
   def _process_download_requests(self) -> None:
     # loops so a ref queued during a download starts in the same tick, without
@@ -410,7 +442,7 @@ class ModelManagerSP:
       try:
         self.sm.update(0)
         self.chestnut_present = self.sm['deviceState'].chestnutPresent
-        self.chestnut_seen = self.params.get_bool("ChestnutSeen")
+        self.chestnut_seen = self.chestnut_seen or self.params.get_bool("ChestnutSeen")  # only ever set
         self.online = self.sm['deviceState'].networkType != log.DeviceState.NetworkType.none
         self.source_models = {source: self.model_fetcher.get_bundles_for_source(source) for source in ModelFetcher.MODEL_SOURCES}
         self.available_models = self.source_models[ModelFetcher.active_source(self.chestnut_present)]
@@ -426,6 +458,7 @@ class ModelManagerSP:
 
         self._fetch_big_model_files()
         self._process_download_requests()
+        self._update_missing_alert()
 
         if self.params.get("ModelManager_ClearCache"):
           self.clear_model_cache()

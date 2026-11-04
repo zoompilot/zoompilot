@@ -26,11 +26,11 @@
     "severity": 0
   },
   "Offroad_ChestnutModelDownloading": {
-    "text": "Downloading the chestnut model. Keep the comma on Wi-Fi until it finishes.",
+    "text": "Downloading the chestnut model. Keep the comma parked on Wi-Fi until it finishes.",
     "severity": -1
   },
   "Offroad_ChestnutModelMissing": {
-    "text": "The chestnut model is not downloaded yet. It downloads while the comma is parked on Wi-Fi.",
+    "text": "The chestnut model is not downloaded yet. Connect the comma to Wi-Fi to download it.",
     "severity": 0
   },
   "Offroad_ChestnutNotDetected": {

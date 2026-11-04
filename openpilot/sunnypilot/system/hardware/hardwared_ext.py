@@ -7,18 +7,14 @@ See the LICENSE.md file in the root directory for more details.
 import time
 from collections.abc import Callable
 
-from openpilot.cereal import log
 from openpilot.common.params import Params, ParamKeyFlag
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot import jetlink_adapter
-from openpilot.sunnypilot.models.big_model_source import BigModelFetcher
 from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import StockEcuHandBackGate
 
 # the longest a shutdown waits on the accelerator: jetlink's own deadline
 # (SHUTDOWN_TIMEOUT) and 5 s, so a jetlink regression never keeps a comma on
 ACCELERATOR_OFF_WAIT_T = 25.0 + 5.0
-# the chestnut model downloads on these, never on the comma's own cellular data
-FETCH_NETWORKS = (log.DeviceState.NetworkType.wifi, log.DeviceState.NetworkType.ethernet)
 
 
 class HardwaredExt:
@@ -50,25 +46,22 @@ class HardwaredExt:
     self.handback = StockEcuHandBackGate(params)
     self.now = time.monotonic
     self.accelerator_off_ts: float | None = None
-    self.big_model = BigModelFetcher()
     self.chestnut_seen = params.get_bool("ChestnutSeen")
 
   @property
   def powering_off(self) -> bool:
     return self.accelerator_off_ts is not None
 
-  def alerts(self, set_offroad_alert: Callable[..., None], offroad: bool, device_state) -> None:
+  def alerts(self, set_offroad_alert: Callable[..., None], device_state) -> None:
     # an enabled accelerator that cannot come up is otherwise silently absent
     accelerator_error = jetlink_adapter.reason()
     set_offroad_alert("Offroad_AcceleratorUnavailable", accelerator_error is not None, extra_text=accelerator_error)
 
-    # remembered, as the chestnut may only have power while the comma is onroad
+    # remembered, as the chestnut may only have power while the comma is onroad: the model
+    # manager (offroad only) downloads the chestnut's model on it
     if device_state.chestnutPresent and not self.chestnut_seen:
       self.chestnut_seen = True
       self.params.put_bool("ChestnutSeen", True)
-    fetch = self.big_model.update(offroad, device_state.networkType in FETCH_NETWORKS, self.chestnut_seen)
-    set_offroad_alert("Offroad_ChestnutModelDownloading", fetch == 'downloading')
-    set_offroad_alert("Offroad_ChestnutModelMissing", fetch == 'waiting')
 
   def shutdown_ready(self, should_shutdown: bool, off_ts: float | None) -> bool:
     """True once hardwared may put DoShutdown. From the first should_shutdown on, the power

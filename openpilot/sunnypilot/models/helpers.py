@@ -124,7 +124,9 @@ def get_active_source(chestnut: bool | None = None, chestnut_active: bool | None
 
 def get_active_bundle(params: Params | None = None, *, chestnut: bool | None = None) -> "custom.ModelManagerSP.ModelBundle | None":
   # no cross-slot fallback: an empty active slot means the hardware default, which
-  # only stock modeld can run - modeld_v2 requires a real bundle
+  # only stock modeld can run - modeld_v2 requires a real bundle. zoompilot leaves the
+  # built-in big pkl out, so a chestnut's empty slot gets the Default bundle downloaded
+  # instead (ModelManagerSP._fetch_big_model_files)
   params = params or Params()
   source = get_active_source(chestnut=chestnut)
   bundle = get_selected_bundle(params, source)
@@ -135,9 +137,9 @@ def get_active_bundle(params: Params | None = None, *, chestnut: bool | None = N
 
 def _big_files_ready(params: Params, bundle: custom.ModelManagerSP.ModelBundle) -> bool:
   """A chestnut pick whose files are not all here, or are being fetched again,
-  runs as the Default big model until the manager has them
-  (ModelManagerSP._fetch_big_model_files). Upstream resets the pick instead;
-  keeping it and driving the Default meanwhile loses neither. Existence only:
+  is not run until the manager has them (ModelManagerSP._fetch_big_model_files):
+  stock modeld drives meanwhile, on the small model where the built-in big pkl is
+  left out (zoompilot). Upstream resets the pick instead; keeping it loses nothing. Existence only:
   this is asked every manager tick, and the manager hashes them once per ref."""
   downloading = params.get("ModelManager_DownloadRef")
   if isinstance(downloading, bytes):

@@ -323,7 +323,7 @@ def hardware_thread(end_event, hw_queue) -> None:
     chestnut_status.update(started_ts is None or not onroad_conditions["ignition"], branch, last_hw_state.usb_state, chestnut.failed,
                            params.get_bool("ChestnutLoading"), params.get("ChestnutActive"),
                            chestnut_state if chestnut_valid else None, set_offroad_alert_if_changed)
-    ext.alerts(set_offroad_alert_if_changed, started_ts is None, msg.deviceState)
+    ext.alerts(set_offroad_alert_if_changed, msg.deviceState)
     # this subset is only used for offroad
     temp_sources = [
       msg.deviceState.memoryTempC,
