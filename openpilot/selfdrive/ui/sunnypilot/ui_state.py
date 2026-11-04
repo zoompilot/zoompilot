@@ -47,6 +47,7 @@ class UIStateSP(UIStateZP):
     self.screensaver_enabled: bool = False
 
     self.active_bundle = None
+    self.chestnut_downloading = False
     self.model_runner_tinygrad: bool = False
     self.active_runner_tinygrad: bool = False
     self.blindspot: bool = False
@@ -174,8 +175,10 @@ class UIStateSP(UIStateZP):
     # runner the manager launches (process_config.is_tinygrad_model); with a chestnut the big slot decides
     self.active_runner_tinygrad = self.params.get("ModelRunnerTypeCache") == custom.ModelManagerSP.Runner.tinygrad
     # stock only counts the default big model's compiled pkl. a downloaded big bundle runs on the
-    # chestnut just the same, so ChestnutState has to see it as available too.
+    # chestnut just the same, so ChestnutState has to see it as available too
     self.chestnut_compiled = self.chestnut_compiled or self.model_runner_tinygrad
+    # the model manager downloading the chestnut's model, which the chestnut icon shows as loading
+    self.chestnut_downloading = self.params.get("Offroad_ChestnutModelDownloading") is not None
     UIStateZP.update_params(self)
     self.blindspot = self.params.get_bool("BlindSpot")
     self.chevron_metrics = self.params.get("ChevronInfo")

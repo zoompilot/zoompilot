@@ -31,6 +31,7 @@ from openpilot.sunnypilot.models.fetcher import ModelFetcher, ModelParser, get_c
 from openpilot.sunnypilot.models import helpers
 from openpilot.sunnypilot.models.helpers import (ACTIVE_BUNDLE_KEYS, get_active_bundle, get_active_source, get_selected_bundle,
                                                   resolve_bundle_by_ref, validate_active_bundles)
+from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL_REF
 from openpilot.sunnypilot.models.manager import DownloadCancelled, ModelManagerSP
 
 # the model manager's catalog as fetched, never the one an installed jetlink extends
@@ -180,6 +181,10 @@ class ManagerDownloadTestBase(OpenpilotTestCase):
     self.manager._block_size = 256
     self.manager._download_start_times = {}
     self.manager._big_files_checked = set()
+    self.manager.chestnut_seen = False
+    self.manager.online = True
+    self.manager._chestnut_alerts = dict.fromkeys(manager_module.CHESTNUT_ALERTS, False)
+    self.alerts = self.enterContext(mock.patch.object(manager_module, 'set_offroad_alert'))
 
   def _record_progress(self, *args) -> None:
     artifact = getattr(self, 'artifact', None)
@@ -651,6 +656,7 @@ class TestBigModelSlotWithoutChestnut(ManagerDownloadTestBase):
     self._slot_stored(chestnut_present=False)
     self.manager.sm = mock.MagicMock()
     self.manager.sm.__getitem__.return_value.chestnutPresent = False
+    self.manager.params.get_bool.return_value = False   # no ChestnutSeen either
     self.manager.model_fetcher = mock.MagicMock()
     self.manager.model_fetcher.get_bundles_for_source.return_value = []
     with mock.patch.object(manager_module, 'Ratekeeper') as rk, \
@@ -662,11 +668,98 @@ class TestBigModelSlotWithoutChestnut(ManagerDownloadTestBase):
     queued = [c for c in self.manager.params.put.call_args_list if c.args[0] == "ModelManager_DownloadRef"]
     assert queued == []
 
+  def test_a_chestnut_seen_on_an_earlier_drive_fetches_without_it(self):
+    # a board powered with the ignition is absent offroad, when the manager runs
+    self._slot_stored(chestnut_present=False)
+    self.manager.chestnut_seen = True
+    with mock.patch.object(manager_module, '_bundle_is_valid_locally', return_value=False):
+      self.manager._fetch_big_model_files()
+    queued = [c for c in self.manager.params.put.call_args_list if c.args[0] == "ModelManager_DownloadRef"]
+    assert [c.args[1] for c in queued] == ["big"]
+
+  def test_offline_spends_nothing_and_fetches_once_online(self):
+    self._slot_stored(chestnut_present=True)
+    self.manager.online = False
+    with mock.patch.object(manager_module, '_bundle_is_valid_locally', return_value=False):
+      self.manager._fetch_big_model_files()
+      self.manager.params.put.assert_not_called()
+      self.manager.online = True
+      self.manager._fetch_big_model_files()
+    queued = [c for c in self.manager.params.put.call_args_list if c.args[0] == "ModelManager_DownloadRef"]
+    assert [c.args[1] for c in queued] == ["big"]
+
   def test_a_download_in_flight_is_not_interrupted(self):
     self._slot_stored(chestnut_present=True, queued="other")
     with mock.patch.object(manager_module, '_bundle_is_valid_locally', return_value=False):
       self.manager._fetch_big_model_files()
     self.manager.params.put.assert_not_called()
+
+  def test_a_pick_downloads_at_once_on_a_chestnut_seen_before(self):
+    self.manager.chestnut_seen = True
+    with mock.patch.object(self.manager, '_process_artifact', new=mock.AsyncMock()) as fetch:
+      self.manager.download(self._big_bundle(), self.dest, "chestnut")
+    fetch.assert_called_once()
+
+  def test_a_chestnut_download_shows_while_it_runs(self):
+    self.manager.chestnut_present = True
+    self.manager._chestnut_alerts["Offroad_ChestnutModelMissing"] = True
+    with mock.patch.object(self.manager, '_process_artifact', new=mock.AsyncMock()):
+      self.manager.download(self._big_bundle(), self.dest, "chestnut")
+    assert self.alerts.call_args_list == [mock.call("Offroad_ChestnutModelMissing", False),
+                                          mock.call("Offroad_ChestnutModelDownloading", True),
+                                          mock.call("Offroad_ChestnutModelDownloading", False)]
+
+
+class TestDefaultBigModel(ManagerDownloadTestBase):
+  """zoompilot installs leave the built-in big pkl out, so a chestnut with an empty
+  big slot downloads the Default bundle (ModelManagerSP._fetch_big_model_files)."""
+
+  def setUp(self):
+    super().setUp()
+    self.store: dict = {}
+    self.manager.params.get.side_effect = lambda key, *a, **k: self.store.get(key)
+    self.manager.params.put.side_effect = lambda key, value, *a, **k: self.store.__setitem__(key, value)
+    self.reset()
+
+  def reset(self):
+    self.store.clear()
+    self.manager.params.put.reset_mock()
+    self.manager._big_files_checked = set()
+    self.manager.chestnut_present, self.manager.chestnut_seen, self.manager.online = True, False, True
+    self.manager.source_models = {"chestnut": [ModelParser.parse_models(
+      {"bundles": [manifest_bundle("mdmv3", DEFAULT_BIG_MODEL_REF, is_big=True)]})[0]]}
+
+  def queued(self) -> list:
+    return [c.args[1] for c in self.manager.params.put.call_args_list if c.args[0] == "ModelManager_DownloadRef"]
+
+  def test_an_empty_slot_queues_the_default_once(self):
+    self.manager._fetch_big_model_files()
+    self.store.clear()  # the download failed: the slot is still empty
+    self.manager._fetch_big_model_files()
+    assert self.queued() == [DEFAULT_BIG_MODEL_REF]
+
+  def test_a_chestnut_seen_before_queues_it_too(self):
+    self.manager.chestnut_present, self.manager.chestnut_seen = False, True
+    self.manager._fetch_big_model_files()
+    assert self.queued() == [DEFAULT_BIG_MODEL_REF]
+
+  def test_nothing_is_queued_when_it_should_not_be(self):
+    for change in (lambda: setattr(self.manager, 'chestnut_present', False),   # never had a chestnut: Jetlink only
+                   lambda: setattr(self.manager, 'online', False),             # the once is not spent offline
+                   lambda: self.store.__setitem__(ACTIVE_BUNDLE_KEYS["chestnut"], {"ref": "picked"}),
+                   lambda: self.store.__setitem__("ModelManager_DownloadRef", "other"),
+                   lambda: self.manager.source_models.__setitem__("chestnut", [])):   # catalog not loaded
+      self.reset()
+      change()
+      self.manager._fetch_big_model_files()
+      assert self.queued() == []
+
+  def test_the_missing_alert_follows_what_the_chestnut_can_run(self):
+    for owner, runnable, shown in ((True, None, True), (True, object(), False), (False, None, False)):
+      self.manager.chestnut_present = owner
+      with mock.patch.object(manager_module, 'get_active_bundle', return_value=runnable):
+        self.manager._update_missing_alert()
+      assert self.manager._chestnut_alerts["Offroad_ChestnutModelMissing"] is shown
 
 
 

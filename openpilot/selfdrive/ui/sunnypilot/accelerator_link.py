@@ -33,9 +33,9 @@ def link_toggle_meaningful() -> bool:
   big model itself; and while the setting is on, whatever else. Presence
   cannot be the gate: with the link off there is no gadget for a Jetson to
   enumerate, so the toggle that turns it on would wait for the thing it enables."""
-  if ui_state.chestnut_present:
-    return False
-  return ui_state.jetlink is not None or link_mode() != "off"
+  if link_mode() != "off":
+    return True
+  return not ui_state.chestnut_present and ui_state.jetlink is not None
 
 
 def link_status() -> str:

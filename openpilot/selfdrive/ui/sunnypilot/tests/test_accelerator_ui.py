@@ -157,6 +157,19 @@ class TestUIStateJetlinkView(UITest):
       ui_state.chestnut_compiled = compiled
       self._restore(saved)
 
+  def test_a_cable_is_a_chestnut_only_with_the_link_off(self):
+    """Upstream's onroad guess, a compiled model and a cable, is a Jetson or a phone
+    while the link is on."""
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    saved = ui_state.usb_connected
+    try:
+      for usb, link, expected in ((True, False, True), (True, True, False), (False, False, False)):
+        ui_state.usb_connected = usb
+        with mock.patch("openpilot.sunnypilot.jetlink_adapter.link_on", return_value=link):
+          assert ui_state.cable_may_be_chestnut() == expected
+    finally:
+      ui_state.usb_connected = saved
+
   def test_a_jetlink_view_means_no_chestnut_is_fitted(self):
     """Going onroad, upstream counts any cable plus a compiled model as a late chestnut, and a
     tinygrad small pick reads compiled: the Jetson's cable sent the model names down the chestnut's
@@ -436,6 +449,20 @@ class TestTiciModelsPanel(UITest):
         ui_state.chestnut_present = True
         assert not link_toggle_meaningful()
     finally:
+      ui_state.chestnut_present = saved
+
+  def test_the_link_toggle_stays_while_the_link_is_on(self):
+    # a chestnut guessed from a cable must not hide the toggle that turns the link off
+    from openpilot.selfdrive.ui.sunnypilot.accelerator_link import link_toggle_meaningful
+    from openpilot.sunnypilot.jetlink_adapter import KEYS
+    ui_state = ui_state_module().ui_state
+    saved = ui_state.chestnut_present
+    try:
+      ui_state.params.put(KEYS.link, 1, block=True)
+      ui_state.chestnut_present = True
+      assert link_toggle_meaningful()
+    finally:
+      ui_state.params.put(KEYS.link, 0, block=True)
       ui_state.chestnut_present = saved
 
   def test_panel_renders(self):

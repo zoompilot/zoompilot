@@ -25,6 +25,14 @@
     "text": "Chestnut model error. Restart the car to retry.",
     "severity": 0
   },
+  "Offroad_ChestnutModelDownloading": {
+    "text": "Downloading the chestnut model. Keep the comma parked on Wi-Fi until it finishes.",
+    "severity": -1
+  },
+  "Offroad_ChestnutModelMissing": {
+    "text": "The chestnut model is not downloaded yet. Connect the comma to Wi-Fi to download it.",
+    "severity": 0
+  },
   "Offroad_ChestnutNotDetected": {
     "text": "Chestnut not detected. Check USB and 12V connections, then restart the car.",
     "severity": 0

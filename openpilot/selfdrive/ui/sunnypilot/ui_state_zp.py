@@ -76,6 +76,11 @@ class UIStateZP:
     from openpilot.selfdrive.ui.sunnypilot.home_model import carrying_short_name
     self.home_model_name = carrying_short_name() if self.params.get_bool("HomeShowActiveModel") else None
 
+  def cable_may_be_chestnut(self) -> bool:
+    """Upstream takes a cable on the port at the onroad edge for a chestnut still
+    enumerating; with Jetlink on it is the Jetson's or the phone's."""
+    return jetlink_adapter.chestnut_cable(self.usb_connected)
+
   @property
   def speed_assist_active(self) -> bool:
     return self.has_longitudinal_control and self.speed_assist

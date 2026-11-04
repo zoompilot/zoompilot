@@ -4,6 +4,8 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+from types import SimpleNamespace
+
 from openpilot.common.params import ParamKeyFlag
 from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import HANDBACK_WAIT_T, REQUEST_KEY
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeClock, FakeParams, answer
@@ -17,6 +19,10 @@ def _ext(**values):
   clock = FakeClock()
   ext.handback.now = clock
   return ext, params, clock
+
+
+def _device(chestnut=False):
+  return SimpleNamespace(chestnutPresent=chestnut)
 
 
 class TestOnroadCycle:
@@ -196,5 +202,19 @@ class TestPowerOff:
     shown = []
     for why in (None, "no Jetson on USB"):
       jetlink.why = why
-      ext.alerts(lambda *args, **kwargs: shown.append((*args, kwargs["extra_text"])))
+      ext.alerts(lambda *args, **kwargs: shown.append((*args, kwargs["extra_text"])), _device())
     assert shown == [("Offroad_AcceleratorUnavailable", False, None), ("Offroad_AcceleratorUnavailable", True, "no Jetson on USB")]
+
+
+class TestChestnutSeen:
+  def test_a_chestnut_once_seen_is_remembered(self):
+    ext, params, _ = _ext()
+    def set_alert(*args, **kwargs):
+      pass
+    ext.alerts(set_alert, _device())
+    assert not params.get_bool("ChestnutSeen")
+    # onroad, where a chestnut powered off the ignition is seen, and kept once it is gone
+    ext.alerts(set_alert, _device(chestnut=True))
+    ext.alerts(set_alert, _device(chestnut=False))
+    assert params.get_bool("ChestnutSeen")
+    assert HardwaredExt(params).chestnut_seen

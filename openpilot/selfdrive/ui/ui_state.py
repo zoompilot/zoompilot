@@ -219,7 +219,7 @@ class UIState(UIStateSP):
         self.status = UIStatus.DISENGAGED
         self.started_frame = self.sm.frame
         self.started_time = time.monotonic()
-        self.chestnut_present = self.sm["deviceState"].chestnutPresent or (self.chestnut_compiled and self.usb_connected)
+        self.chestnut_present = self.sm["deviceState"].chestnutPresent or (self.chestnut_compiled and self.cable_may_be_chestnut())
 
       for callback in self._offroad_transition_callbacks:
         callback()
@@ -238,6 +238,7 @@ class UIState(UIStateSP):
     if not self.started:
       self.chestnut_present = detected
       self.chestnut_state = (ChestnutState.FAILED if self.chestnut_alert else
+                             ChestnutState.LOADING if self.chestnut_downloading else
                              ChestnutState.READY if detected and self.chestnut_compiled else
                              ChestnutState.UNCOMPILED if detected else ChestnutState.DISCONNECTED)
       return

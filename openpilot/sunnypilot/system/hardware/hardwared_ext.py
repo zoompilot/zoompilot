@@ -46,15 +46,22 @@ class HardwaredExt:
     self.handback = StockEcuHandBackGate(params)
     self.now = time.monotonic
     self.accelerator_off_ts: float | None = None
+    self.chestnut_seen = params.get_bool("ChestnutSeen")
 
   @property
   def powering_off(self) -> bool:
     return self.accelerator_off_ts is not None
 
-  def alerts(self, set_offroad_alert: Callable[..., None]) -> None:
+  def alerts(self, set_offroad_alert: Callable[..., None], device_state) -> None:
     # an enabled accelerator that cannot come up is otherwise silently absent
     accelerator_error = jetlink_adapter.reason()
     set_offroad_alert("Offroad_AcceleratorUnavailable", accelerator_error is not None, extra_text=accelerator_error)
+
+    # remembered, as the chestnut may only have power while the comma is onroad: the model
+    # manager (offroad only) downloads the chestnut's model on it
+    if device_state.chestnutPresent and not self.chestnut_seen:
+      self.chestnut_seen = True
+      self.params.put_bool("ChestnutSeen", True)
 
   def shutdown_ready(self, should_shutdown: bool, off_ts: float | None) -> bool:
     """True once hardwared may put DoShutdown. From the first should_shutdown on, the power

@@ -489,6 +489,14 @@ releases. Stock's own releases lag the lead's departure by at least this much: a
 releases show the lead already opening at >= +0.31 m/s at the pulse, about 0.2 s into a typical
 drive-off. The driver's pedal is not debounced; it outranks the hold immediately.
 
+A plan above `RELEASE_FIRM_ACCEL` (0.3) for `RELEASE_FIRM_FRAMES` (0.05 s) is a firm request and
+opens the hold without the full debounce. Across 683 alpha-long segments the plan went positive
+at a standstill 70 times: 37 launches, 6 gas releases and 26 blips that fell back to zero. All
+blips but one peaked at or under 0.25, and that one (0.47) lasted 1.4 s, so the debounce releases
+it as well. Real launches ramp through 0.3 at a median 0.3 s and rarely gain; step requests such
+as the maneuver tests gain about 0.15 s. The firm path never opens a hold inside a running
+pulse, and a hold the plan opened stays open while the plan stays positive.
+
 ### Gas-pedal release
 
 The plan asking for acceleration releases the hold, and so does the driver's pedal, the way
@@ -557,8 +565,7 @@ release moved at -0.001, pure creep. The roughly 0.3 s actuator dead time carrie
 about 0.38 past the value that actually broke the car free before standstill clears, which is
 why the cap is what bounds the worst case.
 
-Past stock's release frames the climb runs at `ACCEL_BREAKAWAY_RAMP` (2.5 m/s3), about twice
-stock's 1.22, for as long as the car is still stopped. Stock's ramp only adds time there: nothing
+Past stock's release frames the climb runs at `ACCEL_BREAKAWAY_RAMP` (2.5 m/s3), about twice stock's 1.22, for as long as the car is still stopped. Stock's ramp only adds time there: nothing
 moves until the command reaches the breakaway value. Our 2026-10-30/31 launches took 1.36 s from the
 plan asking to go until the car moved: 0.2 s debounce, 0.2 s up from the relax band, about 0.6 s
 at stock's rate up to the breakaway, then the car's own 0.3 s. The first 0.2 s after the release
@@ -615,14 +622,12 @@ itself (aEgo loses only about a quarter of g*sin(pitch) at a fixed command), and
 
 - **Build rate.** Stock raises a positive command by at most +12 raw per 50 Hz frame, 0.6 m/s3,
   in 99.3% of rising frames at every speed above about 5 m/s; the only faster ramp is its 1.25
-  m/s3 pull-away from a stop. Our plan reached the same peaks with p90 rising jerk of 1.2 to 1.7
-  m/s3, and the driver reads that as aggressive throttle. `ACCEL_BUILD_V` over `ACCEL_BUILD_BP`
-  applies that shape to the positive part of the command: 1.25 m/s3 below 3 m/s (stock's own
-  pull-away ramp), 0.8 m/s3 from 6 to 12 m/s, a third quicker than stock on purpose, and
-  stock's own 0.6 from 20 m/s up. In town stock's slowness on a lead pulling away is mostly its
-  dash walk and radar lag, which the plan does not have, and 0.8 is the largest rate that still
-  sits inside stock's rising-jerk distribution (p99 0.65 to 0.93 by bin). At highway speed the
-  quicker build only reached a kickdown sooner (2026-10-30 drives), so it is stock's there.
+  m/s3 pull-away from a stop. `ACCEL_BUILD_V` over `ACCEL_BUILD_BP` limits the positive part of
+  the command to 3.0 m/s3 up to 12 m/s, 0.8 at 16 and stock's own 0.6 from 20 m/s up. In town
+  the plan already limits its own jerk and other ports climb at 3 to 4 m/s3 (Hyundai sends a 3.0
+  jerk limit, VW 4.0, Toyota rate-limits at 4.0, Ford and Tesla none); a stock-like town build
+  only adds lag (at 0.8 the wire took 1.25 s to reach a +1 maneuver step). At highway speed the quicker build only reached a kickdown sooner (2026-10-30
+  drives), so it is stock's there.
   It governs only the region above zero: brake release below zero keeps the 4.0 m/s3 windup,
   because stock's own brake release has a p99 tail near 2 m/s3 and holding the brake longer
   than the plan asks is the wrong failure.
@@ -636,8 +641,9 @@ itself (aEgo loses only about a quarter of g*sin(pitch) at a fixed command), and
   falls to 1.45 at 9, 1.05 at 14, 0.83 at 18 and 0.65 to 0.71 from 22 m/s up. Upstream's cruise
   profile sits close to that curve, but the MPC and e2e candidates are only clipped at
   `ACCEL_MAX` (2.0) and our wire reached 2.0 below 5 m/s and 1.06 at 15 to 20 m/s.
-  `ACCEL_CEILING_V` over `ACCEL_CEILING_BP` caps the wire at stock's envelope. It is a tuning
-  cap inside the panda's +2000 raw safety limit, not a replacement for it.
+  `ACCEL_CEILING_V` over `ACCEL_CEILING_BP` leaves the town at `ACCEL_MAX` (stock's 1.45 at 9 m/s
+  kept a +2 maneuver step from ever crossing) and binds from 11 m/s, falling to stock's 0.95 at
+  14 m/s and following stock above that to hold the gear. It is a tuning cap inside the panda's 2.0 m/s2 safety limit, not a replacement for it.
 - **Gap to the set speed.** Stock's command also depends on how far under the set speed the car
   is. With no lead at 20 to 24 m/s its p50 / p90 is 0.31 / 0.37 m/s2 for a 0.5 to 1.5 m/s
   shortfall, 0.41 / 0.44 for 1.5 to 3, 0.51 / 0.55 for 3 to 5 and 0.64 / 0.76 for 5 to 10
@@ -654,8 +660,8 @@ itself (aEgo loses only about a quarter of g*sin(pitch) at a fixed command), and
   Assist's floor in the planner for every car (`approach_accel`, e2e-set-speed.md), and this port
   keeps only the speed ceiling. The first post-cap drive (00000062) went from 1.44 to 1.09 kickdowns a minute.
 
-Replaying all three over the logged plans of our 17 alpha-long routes moves the p90 rising jerk
-from 1.0 to 1.7 m/s3 onto the 0.8 line in every bin from 5 m/s up and trims the peaks by 0.05 to
+Replaying all three over the logged plans of our 17 alpha-long routes (2026-09, with the
+earlier 0.8 town build) moved the p90 rising jerk from 1.0 to 1.7 m/s3 onto the 0.8 line in every bin from 5 m/s up and trims the peaks by 0.05 to
 0.1 m/s2; the no-lead median peak is unchanged. The stop-and-go paths are untouched: the breakaway ramp and
 the latched release pulse keep their own ceilings, and the golden capture differs only in the
 engaged-and-accelerating phases.
@@ -805,6 +811,7 @@ the dash lane indicators, so those two stay zeroed.
 | `RESUME_UNLATCH_LATCHED_FRAMES` | 0.18 s (9 wire frames) | latched pulses 6 to 11 wire frames, mode 9 | 33-pulse census |
 | `RESUME_REPULSE_FRAMES` | 1.0 s | body answered all 10 pulses in 30 to 51 ms | 103, 115, 118, 11d, 12c, 132, 139, fe |
 | `RELEASE_DEBOUNCE_FRAMES` | 0.2 s | lead opening >= +0.31 m/s at all 23 stock latched pulses | corpus |
+| `RELEASE_FIRM_ACCEL`, `RELEASE_FIRM_FRAMES` | 0.3 m/s2, 0.05 s | standstill blips peak <= 0.25 (25 of 26) | 683 alpha-long segments |
 | `ACCEL_HOLD_LATCHED` | raw -1 (-1/1024 m/s2) | stock relaxes 0 to 40 ms after HOLD_STATE goes HOLDING, 43 of 43 | 43 stock holds |
 | `ACCEL_RESUME_PULSE_MAX` | raw 250 (0.244 m/s2) | stock latched pulse tail +0.24 to +0.25, +0.34 worst | corpus |
 | `ACCEL_RELEASE_BAND` | raw -260 (-0.254 m/s2) | stock never-latched relax target -0.27 to -0.18 | corpus |
@@ -812,11 +819,11 @@ the dash lane indicators, so those two stay zeroed.
 | `ACCEL_BREAKAWAY_MAX` | 1.45 m/s2 | stock last-still-frame command max +1.425 (n=31) | corpus |
 | `BREAKAWAY_FRAMES` | 3.0 s | give-up bound on an unseen holder | design |
 | `ACCEL_BREAKAWAY_OVERSHOOT` | 0.75 m/s2 | 132 case +0.67 above plan; stock p25 +0.744 | 132, 12c, 34 stock episodes |
-| `ACCEL_BREAKAWAY_RAMP` | 2.5 m/s3 | still-stopped climb after the 0.2 s release frames; stock's rate spent ~0.6 s of a 1.36 s launch reaching breakaway | 60, 62, 0000005f |
+| `ACCEL_BREAKAWAY_RAMP` | 2.5 m/s3 | still-stopped climb after the 0.2 s release frames; stock's rate spent ~0.6 s of a 1.36 s launch reaching breakaway. 5.0 moved nothing sooner (the car moves ~0.75 s after the release either way) and raised the creep launch peak from ~1.75 to ~2.0 | 60, 62, 0000005f, 66, 68 |
 | `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3; brake region only | reporter's route |
-| `ACCEL_BUILD_V` | 1.22 to 0.8 m/s3 over 3 to 6 m/s | stock +12 raw per 50 Hz frame (0.59) in 99.3% of rising frames, taken a third quicker; the release ramp pulling away | 158 stock routes |
+| `ACCEL_BUILD_V` | 3.0 m/s3 to 12 m/s, 0.8 at 16, 0.6 from 20 | town at other ports' 3-4 m/s3 jerk (gas +1 maneuver 1.60 s at 0.8); highway stock's +12 raw per 50 Hz frame (0.59) | 158 stock routes, 00000066 |
 | `ACCEL_LIFT_LIMIT` | -2.0 m/s3 | stock throttle lift <= 40 raw per frame in 99.98% of falling positive frames | 158 stock routes |
-| `ACCEL_CEILING_V` | 1.5, 1.75, 1.45, 0.95, 0.85, 0.65 m/s2 at 0, 4, 9, 14, 18, 25 m/s | stock accelerating command p99 by speed, no lead; 14 m/s eased from 1.05 after 4>3 kickdowns near 3000 rpm (2026-10-31) | 158 stock routes |
+| `ACCEL_CEILING_V` | 2.0, 2.0, 0.95, 0.85, 0.65 m/s2 at 0, 11, 14, 18, 25 m/s | `ACCEL_MAX` in town (+2 maneuver never crossed at stock's 1.45); from 14 m/s stock accelerating command p99, 14 m/s eased from 1.05 after 4>3 kickdowns near 3000 rpm (2026-10-31) | 158 stock routes |
 | `ACCEL_WINDDOWN_LIMIT` | -10.0 m/s3 | clips only p99.9+ steps | reporter's route |
 | `stopAccel` | -1.0 m/s2 | stock hold raw -1024 | corpus |
 | `longitudinalActuatorDelay` | 0.5 s | friction brake -0.5 m/s2 at 0.75-0.85 s after any step | 0000005f maneuvers, 4 stock steps |

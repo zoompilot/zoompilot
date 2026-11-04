@@ -2177,14 +2177,7 @@
               "key": "Blendful",
               "widget": "toggle",
               "title": "Lane Center Assist (Alpha)",
-              "description": "Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear. Yields around obstacles. Not available with the Default model.",
-              "enablement": [
-                {
-                  "type": "capability",
-                  "field": "custom_model_active",
-                  "equals": true
-                }
-              ]
+              "description": "Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear. Yields around obstacles."
             },
             {
               "key": "SmallModelSteering",
