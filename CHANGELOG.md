@@ -1,3 +1,16 @@
+zoompilot vUNRELEASED
+========================
+* chestnut
+  * Fixed the yellow "!" icon and the small model running on a new install.
+  * The Default big model now downloads like any other model, while parked on Wi-Fi.
+  * A picked big model downloads right away, even if the chestnut only has power while driving.
+  * Home says when the chestnut model is downloading, or needs Wi-Fi.
+* jetlink
+  * A jetlink cable is no longer mistaken for a chestnut.
+* Mazda
+  * Alpha longitudinal: quicker throttle in town and faster launch from a stop.
+* sunnylink: Lane Center Assist can be turned on with the Default model.
+
 zoompilot v2026.11.02-18
 ========================
 * Synced with sunnypilot of 2026-10-29, through openpilot of 2026-10-16.
