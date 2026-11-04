@@ -22,20 +22,24 @@ from openpilot.system.ui.widgets import Widget
 STATUS_ICON_HEIGHT = 40  # upstream's footer icons (network, chestnut, usb) are 40 px of ink
 STATUS_ICON_ALPHA = 0.9  # settings and network draw at 90%
 
-# gauge, in units of its scale s, about the dial's centre (raylib degrees: 0 right, clockwise)
+# gauge, in units of its scale s, about the dial's centre (raylib degrees: 0 right, clockwise).
+# Strokes sit near the wheel's rim (~6 px at 50) at the onroad 44 px; the swoosh rides out with its
+# thickness so the gap to the dial stays open, which is what keeps the weight from reading heavy.
 DIAL_FROM, DIAL_TO = 135, 405
-DIAL_R, DIAL_T = 0.378, 0.09
+DIAL_R, DIAL_T = 0.378, 0.115
 NEEDLE_DEG = 285          # about 12:30
-NEEDLE_W = 0.11
-HUB_R = 0.75 * NEEDLE_W
+NEEDLE_LEN = DIAL_R - DIAL_T - 0.04
+HUB_R = 0.085
 SWOOSH_FROM = 195
-SWOOSH_R = DIAL_R + 0.13
-SWOOSH_T0, SWOOSH_T1 = 0.03, 0.08  # tapers up to the head
+SWOOSH_T0, SWOOSH_T1 = 0.05, 0.10  # tapers up to the head
+SWOOSH_GAP = 0.09
+SWOOSH_R = DIAL_R + SWOOSH_GAP + SWOOSH_T1 / 2
 HEAD_HALF = 1.3 * SWOOSH_T1
 HEAD_DEG = math.degrees(1.7 * HEAD_HALF / SWOOSH_R)  # the head's length along the arc
 SWOOSH_TO = NEEDLE_DEG - HEAD_DEG  # so the arrow's tip lies on the needle's line
 SWOOSH_SEGMENTS = 24
-
+DIAL_SEGMENTS = 64
+HUB_SEGMENTS = 12
 
 def _pt(cx: float, cy: float, r: float, deg: float) -> tuple[float, float]:
   return cx + r * math.cos(math.radians(deg)), cy + r * math.sin(math.radians(deg))
@@ -62,11 +66,17 @@ _LEFT, _TOP, _RIGHT, _BOTTOM = _ink_bounds()
 GAUGE_ASPECT = (_RIGHT - _LEFT) / (_BOTTOM - _TOP)  # ink width / height
 
 
-def _triangle(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float], color: rl.Color) -> None:
-  # raylib culls one winding; drawing both keeps this free of orientation bookkeeping
-  va, vb, vc = rl.Vector2(*a), rl.Vector2(*b), rl.Vector2(*c)
-  rl.draw_triangle(va, vb, vc, color)
-  rl.draw_triangle(va, vc, vb, color)
+Point = tuple[float, float]
+
+
+def _ribbon(left: list[Point], right: list[Point], color: rl.Color) -> None:
+  """One triangle strip between two chains, so a translucent colour lays each pixel once: separate
+  overlapping shapes would show darker seams wherever they meet."""
+  (lx, ly), (rx, ry), (nx, ny) = left[0], right[0], left[1]
+  if (rx - lx) * (ny - ly) - (ry - ly) * (nx - lx) > 0:
+    left, right = right, left  # raylib culls clockwise triangles; the strip's first one sets the winding
+  strip = [rl.Vector2(*p) for pair in zip(left, right, strict=True) for p in pair]
+  rl.draw_triangle_strip(strip, len(strip), color)
 
 
 def draw_gauge(x: float, y: float, height: float, alpha: float = 1.0) -> None:
@@ -74,23 +84,27 @@ def draw_gauge(x: float, y: float, height: float, alpha: float = 1.0) -> None:
   s = height / (_BOTTOM - _TOP)
   cx, cy = x - _LEFT * s, y - _TOP * s
   color = rl.color_alpha(rl.WHITE, alpha)
-  centre = rl.Vector2(cx, cy)
 
-  rl.draw_ring(centre, (DIAL_R - DIAL_T) * s, DIAL_R * s, DIAL_FROM, DIAL_TO, 64, color)
-  needle = (DIAL_R - 1.3 * DIAL_T) * s
-  _triangle(_pt(cx, cy, needle, NEEDLE_DEG), _pt(cx, cy, NEEDLE_W * s / 2, NEEDLE_DEG - 90),
-            _pt(cx, cy, NEEDLE_W * s / 2, NEEDLE_DEG + 90), color)
-  rl.draw_circle_v(centre, HUB_R * s, color)
+  dial = np.linspace(DIAL_FROM, DIAL_TO, DIAL_SEGMENTS + 1)
+  _ribbon([_pt(cx, cy, DIAL_R * s, d) for d in dial], [_pt(cx, cy, (DIAL_R - DIAL_T) * s, d) for d in dial], color)
 
-  step = (SWOOSH_TO - SWOOSH_FROM) / SWOOSH_SEGMENTS
-  for i in range(SWOOSH_SEGMENTS):
-    t = _swoosh_t((i + 1) / SWOOSH_SEGMENTS) * s
-    start = SWOOSH_FROM + i * step
-    # each piece overlaps the next by a hair so the joins never show a seam
-    rl.draw_ring(centre, SWOOSH_R * s - t / 2, SWOOSH_R * s + t / 2, start, start + step + 0.6, 8, color)
-  _triangle(_pt(cx, cy, SWOOSH_R * s, NEEDLE_DEG), _pt(cx, cy, (SWOOSH_R - HEAD_HALF) * s, SWOOSH_TO),
-            _pt(cx, cy, (SWOOSH_R + HEAD_HALF) * s, SWOOSH_TO), color)
+  # needle and hub as one teardrop: the tip, then the hub's back half from where the sides meet it
+  tip = _pt(cx, cy, NEEDLE_LEN * s, NEEDLE_DEG)
+  side = math.degrees(math.acos(HUB_R / NEEDLE_LEN))
+  back = np.linspace(side, 180, HUB_SEGMENTS)
+  _ribbon([tip] + [_pt(cx, cy, HUB_R * s, NEEDLE_DEG + d) for d in back],
+          [tip] + [_pt(cx, cy, HUB_R * s, NEEDLE_DEG - d) for d in back], color)
 
+  # swoosh and arrowhead as one ribbon: the tapered shaft, its barbs, then the tip
+  outer, inner = [], []
+  for f in np.linspace(0, 1, SWOOSH_SEGMENTS + 1):
+    deg, t = SWOOSH_FROM + (SWOOSH_TO - SWOOSH_FROM) * f, _swoosh_t(f)
+    outer.append(_pt(cx, cy, (SWOOSH_R + t / 2) * s, deg))
+    inner.append(_pt(cx, cy, (SWOOSH_R - t / 2) * s, deg))
+  outer.append(_pt(cx, cy, (SWOOSH_R + HEAD_HALF) * s, SWOOSH_TO))
+  inner.append(_pt(cx, cy, (SWOOSH_R - HEAD_HALF) * s, SWOOSH_TO))
+  arrow_tip = _pt(cx, cy, SWOOSH_R * s, NEEDLE_DEG)
+  _ribbon(outer + [arrow_tip], inner + [arrow_tip], color)
 
 def draw_gauge_centered(cx: float, cy: float, height: float, alpha: float = 1.0) -> None:
   """Its ink box centred on (cx, cy), to sit beside other icons."""

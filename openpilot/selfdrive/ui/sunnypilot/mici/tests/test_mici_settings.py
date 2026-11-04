@@ -1319,7 +1319,7 @@ class TestSpeedAssistBadge:
   ])
   def test_follows_the_wheel(self, params, monkeypatch, status, chestnut, shown):
     import pyray as rl
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import HudRendererSP
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA, HudRendererSP
     from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
 
     monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
@@ -1329,13 +1329,13 @@ class TestSpeedAssistBadge:
     hud._chestnut_fade_time = rl.get_time()
     drawn = self._settle(hud, monkeypatch)
     if shown:
-      assert drawn and drawn[-1][3] > 0.85
+      assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA, abs=0.02)
     else:
       assert not drawn
 
   def test_swaps_in_after_the_model_icon(self, params, monkeypatch):
     from openpilot.selfdrive.ui.mici.onroad.hud_renderer import SET_SPEED_PERSISTENCE
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import HudRendererSP
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA, HudRendererSP
     from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
     import pyray as rl
 
@@ -1345,4 +1345,4 @@ class TestSpeedAssistBadge:
     hud = HudRendererSP()
     hud._chestnut_fade_time = rl.get_time() - SET_SPEED_PERSISTENCE - 0.1
     drawn = self._settle(hud, monkeypatch)
-    assert drawn and drawn[-1][3] > 0.85
+    assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA, abs=0.02)
