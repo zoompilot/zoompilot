@@ -1223,12 +1223,14 @@ class TestModelsPanelMici:
                                              "camera offset", "jetlink", "small model steer", "refresh models", "clear cache"]
     assert {item._get_label_font_size() for item in items} == {BigButton("t")._get_label_font_size()}, "a long title shrinks its font"
 
-  def test_the_default_model_locks_small_model_steering(self, monkeypatch):
+  def test_the_default_model_and_a_chestnut_lock_small_model_steering(self, monkeypatch):
     from openpilot.selfdrive.ui.ui_state import ui_state
     options = self._options()
     for runner_tinygrad in (False, True):
-      monkeypatch.setattr(ui_state, "active_runner_tinygrad", runner_tinygrad)
-      assert options.small_steering.enabled is runner_tinygrad
+      for chestnut in (False, True):
+        monkeypatch.setattr(ui_state, "active_runner_tinygrad", runner_tinygrad)
+        monkeypatch.setattr(ui_state, "chestnut_present", chestnut)
+        assert options.small_steering.enabled is (runner_tinygrad and not chestnut)
 
   def test_lane_center_cycles_off_on_debug(self, params):
     params.put_bool("Blendful", False, block=True)

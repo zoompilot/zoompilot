@@ -5,6 +5,7 @@ zoompilot vUNRELEASED
   * The Default big model now downloads like any other model, while parked on Wi-Fi.
   * A picked big model downloads right away, even if the chestnut only has power while driving.
   * Home says when the chestnut model is downloading, or needs Wi-Fi.
+  * Fixed model lagging and locationd errors below 12 mph: the small model no longer steers beside a chestnut.
 * jetlink
   * A jetlink cable is no longer mistaken for a chestnut.
 * Mazda
