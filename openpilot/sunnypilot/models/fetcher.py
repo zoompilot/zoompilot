@@ -128,23 +128,14 @@ class ModelFetcher:
       for source, (_, suffix) in self.MODEL_SOURCES.items()
     }
     self._refetched: set[str] = set()
-    self._last_active_json: dict[str, str] | None = None
-    self._update_active_json(extended=False)
-
-  def _update_active_json(self, extended: bool = False) -> None:
-    active = {"qcom": self.MODEL_URL}
-    if not extended:
-      active["chestnut"] = self.MODEL_URL_CHESTNUT
-    if active != self._last_active_json:
-      self.params.put("ModelManager_ActiveJson", active, block=True)
-      self._last_active_json = active
+    self.params.put("ModelManager_ActiveJson", {
+      "qcom": self.MODEL_URL,
+      "chestnut": self.MODEL_URL_CHESTNUT,
+    }, block=True)
 
   @staticmethod
   def active_source(chestnut_present: bool) -> str:
     return "chestnut" if chestnut_present else "qcom"
-
-  def _extend_catalog(self, source: str, json_data: dict) -> dict:
-    return json_data
 
   def _fetch_and_cache_models(self, source: str) -> list[custom.ModelManagerSP.ModelBundle] | None:
     """Fetches fresh model data from remote and updates cache.
@@ -162,7 +153,7 @@ class ModelFetcher:
       # Raise for any other 4xx/5xx
       response.raise_for_status()
 
-      json_data = self._extend_catalog(source, response.json())
+      json_data = response.json()
       parsed = self.model_parser.parse_models(json_data)
       if parsed:
         self.model_caches[source].set(json_data)

@@ -32,7 +32,7 @@ from pathlib import Path
 
 # the version of jetlink.openpilot's API this adapter is written to; any other
 # is treated as jetlink being absent, with the reason as the offroad alert
-API = 3
+API = 4
 
 # the gadget owner, as manager names the process and selfdrived lists it
 OWNER = 'jetlinkd'
@@ -47,9 +47,9 @@ MODES = ('off', 'usb', 'ios')
 # select is where a pick is asked for by its ref, which jetlink writes for a
 # newer pick made on the server: the owner cannot import the model manager, so
 # they are written out here
-_Keys = namedtuple('_Keys', 'link offroad progress spec pointers big_model catalog charge_phone select')
+_Keys = namedtuple('_Keys', 'link offroad progress spec big_model catalog charge_phone select')
 KEYS = _Keys(link='JetlinkLink', offroad='IsOffroad', progress='AcceleratorProgress', spec='JetlinkSpec',
-             pointers='JetlinkModelPointers', big_model='ModelManager_ActiveBundleChestnut',
+             big_model='ModelManager_ActiveBundleChestnut',
              catalog='ModelManager_ModelsCache_Chestnut', charge_phone='JetlinkChargePhone',
              select='ModelManager_DownloadRef')
 
@@ -209,7 +209,7 @@ class _Off:
   # ahead: no jetlink must keep a comma on to drain the car's battery
   ANSWERS = {'should_run': False, 'status': None, 'prepare': False, 'attach': lambda model, *_: model,
              'handed_over': False, 'state': 'none', 'shutdown_step': lambda wanted, reason='': wanted,
-             'model_state': None, 'should_extend_catalog': False, 'extend_catalog': lambda catalog: catalog,
+             'model_state': None, 'lists_big_models': False, 'big_catalog': None, 'listed_ref': None,
              'swap_events': None}
 
   def __init__(self, why: str = ''):
@@ -235,8 +235,8 @@ def _hook(name: str):
 # the hooks by the names the hook lines call, each this process's hooks() at
 # the call: jetlink.openpilot.hooks says what each does and answers
 HOOK_NAMES = (*_Off.ANSWERS, 'reason')
-(should_run, status, prepare, attach, handed_over, state, shutdown_step, model_state, should_extend_catalog,
- extend_catalog, swap_events, reason) = map(_hook, HOOK_NAMES)
+(should_run, status, prepare, attach, handed_over, state, shutdown_step, model_state, lists_big_models,
+ big_catalog, listed_ref, swap_events, reason) = map(_hook, HOOK_NAMES)
 
 
 def default_big_model(chestnut: bool, jetlink) -> str:

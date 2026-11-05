@@ -386,12 +386,11 @@ sys.modules['jetlink'] = None
 from openpilot.common.params import Params
 from openpilot.sunnypilot import jetlink_adapter as a
 Params().put("JetlinkLink", 1, block=True)
-c = {'bundles': []}
 assert not a.should_run(False, None, None)
 assert a.status() is None and a.reason() is None
 assert not a.prepare(False) and a.attach('model', object(), 1, 1) == 'model'
 assert not a.shutdown_step(False, 'test') and a.shutdown_step(True, 'test')
-assert not a.should_extend_catalog() and a.extend_catalog(c) is c
+assert not a.lists_big_models() and a.big_catalog() is None and a.listed_ref('f' * 40) is None
 assert a.model_state('f' * 40) is None and a.swap_events(0.01) is None
 '''
     # under this test's prefix, which the child inherits
@@ -402,7 +401,7 @@ assert a.model_state('f' * 40) is None and a.swap_events(0.01) is None
     params = Params()
     another_api = [mock.patch.object(hooks, 'COMPATIBLE', frozenset({2})), mock.patch.object(hooks, 'API', 2)]
     too_old = [mock.patch.dict(sys.modules, {'jetlink.openpilot.hooks': None})]
-    for patches, why in ((another_api, "jetlink package API 2, this build expects 3"),
+    for patches, why in ((another_api, "jetlink package API 2, this build expects 4"),
                          (too_old, "jetlink package too old for this build")):
       with contextlib.ExitStack() as stack:
         for patch in (*patches, mock.patch.object(jetlink_adapter, '_hooks', None)):
