@@ -232,3 +232,17 @@ def test_confidence_ball_is_a_visuals_toggle(params):
 
   assert "ConfidenceBall" in VisualsLayout()._toggle_defs
   assert params.get_bool("ConfidenceBall") is False  # off by default
+
+
+def test_multi_button_follows_its_param(params):
+  """The buttons read their param at construction: a change made elsewhere (the ICBM
+  migration, the availability check, sunnylink) must show, or the next tap on the row writes
+  the stale value back."""
+  from openpilot.system.ui.sunnypilot.widgets.list_view import MultipleButtonActionSP
+  from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
+
+  params.put("SpeedLimitMode", int(Mode.assist), block=True)
+  buttons = MultipleButtonActionSP(["off", "info", "warn", "assist"], 100, param="SpeedLimitMode")
+  params.put("SpeedLimitMode", int(Mode.information), block=True)
+  buttons._update_state()
+  assert buttons.selected_button == Mode.information
