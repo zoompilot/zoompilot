@@ -22,6 +22,7 @@ class Consumer:
   off: int | bool        # what the migration writes when the feature was inert
   under_op_long: bool    # needs ICBM under openpilot longitudinal too (the planner runs SCC itself)
   inert_under_op_long: bool  # did nothing under openpilot long with the old toggle off
+  inert_under_stock_acc: bool  # stayed on but did nothing under stock ACC with the old toggle off
 
   def is_on(self, params: Params) -> bool:
     if isinstance(self.on, bool):
@@ -33,11 +34,14 @@ class Consumer:
 
 
 CONSUMERS = (
-  Consumer("SmartCruiseControlVision", True, False, under_op_long=False, inert_under_op_long=False),
-  Consumer("SmartCruiseControlMap", True, False, under_op_long=False, inert_under_op_long=False),
-  # under alpha long the plannerd machine ran assist without the buttons (driver-confirm)
-  Consumer("SpeedLimitMode", int(Mode.assist), int(Mode.warning), under_op_long=True, inert_under_op_long=False),
-  Consumer("CustomAccIncrementsEnabled", True, False, under_op_long=True, inert_under_op_long=True),
+  Consumer("SmartCruiseControlVision", True, False, under_op_long=False, inert_under_op_long=False, inert_under_stock_acc=True),
+  Consumer("SmartCruiseControlMap", True, False, under_op_long=False, inert_under_op_long=False, inert_under_stock_acc=True),
+  # under alpha long the plannerd machine ran assist without the buttons (driver-confirm). Under
+  # stock ACC the old availability check put assist back to warning at every start without
+  # ICBM, so an assist found at migration was chosen since, on this build.
+  Consumer("SpeedLimitMode", int(Mode.assist), int(Mode.warning), under_op_long=True, inert_under_op_long=False,
+           inert_under_stock_acc=False),
+  Consumer("CustomAccIncrementsEnabled", True, False, under_op_long=True, inert_under_op_long=True, inert_under_stock_acc=True),
 )
 CONSUMER_BY_KEY = {c.key: c for c in CONSUMERS}
 
