@@ -10,6 +10,7 @@ zoompilot vUNRELEASED
   * A jetlink cable is no longer mistaken for a chestnut.
 * Mazda
   * Alpha longitudinal: quicker throttle in town and faster launch from a stop.
+* Speed Limit Assist no longer turns itself off after installing.
 * sunnylink: Lane Center Assist can be turned on with the Default model.
 
 zoompilot v2026.11.02-18

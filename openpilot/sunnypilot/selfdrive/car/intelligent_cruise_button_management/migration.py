@@ -31,7 +31,8 @@ def migrate_icbm_toggle(CP, CP_SP, params: Params) -> None:
     if not params.get_bool(LEGACY_TOGGLE):
       op_long = CP.openpilotLongitudinalControl
       for consumer in CONSUMERS:
-        if (consumer.inert_under_op_long or not op_long) and consumer.is_on(params):
+        inert = consumer.inert_under_op_long if op_long else consumer.inert_under_stock_acc
+        if inert and consumer.is_on(params):
           cloudlog.warning(f"ICBM migration: {consumer.key} was inert without ICBM, turning it off")
           if isinstance(consumer.off, bool):
             params.put_bool(consumer.key, consumer.off, block=True)

@@ -140,6 +140,11 @@ class MultipleButtonActionSP(MultipleButtonAction):
   def set_enabled_buttons(self, indices: set[int] | None):
     self.enabled_buttons = indices
 
+  def _update_state(self):
+    # follow the param when something else writes it, or a tap would write the old choice back
+    if self.param_key:
+      self.set_selected_button(int(self.params.get(self.param_key, return_default=True)))
+
   def _render(self, rect: rl.Rectangle):
 
     button_y = rect.y + (rect.height - style.BUTTON_HEIGHT) / 2
@@ -202,7 +207,7 @@ class MultipleButtonActionSP(MultipleButtonAction):
           self.callback(i)
 
     if self.param_key:
-      self.params.put(self.param_key, self.selected_button)
+      self.params.put(self.param_key, self.selected_button, block=True)  # _update_state re-reads it next frame
 
 
 class ListItemSP(ListItem):
