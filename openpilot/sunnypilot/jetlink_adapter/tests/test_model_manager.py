@@ -365,6 +365,23 @@ class TestRefreshOnAJetlinkDevice(RefreshTest):
     self.assertEqual(status.model, 'Cinque Terre V4.1')
     self.assertEqual(status.ready, status.enabled)
 
+  def test_a_pick_from_sunnypilots_list_is_never_emptied_by_jetlinks(self):
+    # the update that brings jetlink's list: the slot holds sunnypilot's entry for V4,
+    # builds and all. The manager takes jetlink's entry in its place, with no empty
+    # slot between, which jetlink would read as the Default chosen
+    self.params.put(KEYS.big_model, {**ModelParser.parse_models({'bundles': [bundle(V4, 13, 'Cinque Terre V4')]})[0].to_dict()},
+                    block=True)
+    removed = []
+    real_remove = Params.remove
+    with mock.patch.object(Params, 'remove', autospec=True,
+                           side_effect=lambda p, key: (removed.append(key), real_remove(p, key))[1]):
+      self.new_process()
+      self.tick()
+    self.assertNotIn(KEYS.big_model, removed)
+    slot = self.params.get(KEYS.big_model)
+    self.assertEqual((slot['ref'], slot['models']), (V4, []))
+    self.assertEqual(jetlink_adapter.status().model, 'Cinque Terre V4 (October 01, 2026)')
+
   def test_with_the_link_off_a_refresh_is_the_same(self):
     # the list follows the hardware, not the setting, so a pick made with the
     # link off is still listed when it is turned on
