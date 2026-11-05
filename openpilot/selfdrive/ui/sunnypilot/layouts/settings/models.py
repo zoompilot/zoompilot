@@ -14,7 +14,7 @@ from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import lane_center_mode, set_lane_center_mode
 from openpilot.selfdrive.ui.sunnypilot.accelerator_link import LINK_MODE_TITLES, big_model_note, link_mode, link_status, \
-  link_toggle_meaningful, standin_model
+  link_toggle_meaningful, small_steering_meaningful, standin_model
 from openpilot.selfdrive.ui.sunnypilot.model_info import (big_model_state, bundles_for_source, carrying_model, default_model_name,
                                                            model_cache_size_mb, queued_name, refresh_in_progress, refresh_model_list)
 from openpilot.sunnypilot.jetlink_adapter import KEYS, MODES
@@ -120,8 +120,8 @@ class ModelsLayout(Widget):
     # stored in m/s, stepped by whole display units
     self.small_steering_control = option_item_sp(tr("Small Model Steering"), "SmallModelSteering", 0, 900,
                                                  tr("With a big model, the small model steers below this speed. It is steadier when slow. " +
-                                                    "Default is 11 mph (18 km/h). Not available with the Default model."),
-                                                 int(round(100 * CV.MPH_TO_MS)), None, lambda: ui_state.active_runner_tinygrad, "",
+                                                    "Default is 11 mph (18 km/h). Not available with the Default model or a chestnut."),
+                                                 int(round(100 * CV.MPH_TO_MS)), None, small_steering_meaningful, "",
                                                  style.BUTTON_ACTION_WIDTH, None, True,
                                                  lambda v: f"{round(v / 100 * (CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH))}" +
                                                            f" {'km/h' if ui_state.is_metric else 'mph'}" if v else tr("Off"))

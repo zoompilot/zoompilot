@@ -336,7 +336,7 @@ def main(demo=False):
   if model is None:
     model = small_model
   elif small_model is not None:
-    small_model.warmup()  # it steers beside the chestnut at low speed: its first run is ~1.3 s
+    small_model.warmup()  # the chestnut's fallback: its first run is ~1.3 s
   model = jetlink_adapter.attach(model, small_model, vipc_client_main.width, vipc_client_main.height)
   params.put_bool("ChestnutLoading", False)
   assert model is not None
@@ -384,7 +384,7 @@ def main(demo=False):
   DH = DesireHelper()
   meta_constants = load_meta_constants()
   RELC = RoadEdgeLaneChangeController()
-  small_lateral = SmallLateral(small_model)
+  small_lateral = SmallLateral(None if CHESTNUT else small_model)
 
   while True:
     # Keep receiving frames until we are at least 1 frame ahead of previous extra frame

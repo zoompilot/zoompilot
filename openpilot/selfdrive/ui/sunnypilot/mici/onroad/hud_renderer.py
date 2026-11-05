@@ -15,7 +15,7 @@ from openpilot.system.ui.lib.application import gui_app
 
 # zoompilot's Set Speed Assist gauge mirrors the steering wheel in the bottom-right corner
 SPEED_ASSIST_HEIGHT = 44  # the wheel is 50, and round; the gauge's swoosh carries it to the same weight
-SPEED_ASSIST_ALPHA = 0.9
+SPEED_ASSIST_ALPHA = 0.7  # the wheel draws at 0.9; this is status, not a call to act
 
 
 class HudRendererSP(HudRenderer):

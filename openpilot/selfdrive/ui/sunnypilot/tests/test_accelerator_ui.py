@@ -562,8 +562,8 @@ class TestTiciModelsPanel(UITest):
     assert lane_turn.action_item.get_displayed_value() == "5 mph"
 
   def test_small_model_steering_reads_ms_in_either_unit(self):
-    saved = self.ui_state.is_metric, self.ui_state.active_runner_tinygrad
-    self.addCleanup(lambda: setattr(self.ui_state, 'is_metric', saved[0]) or setattr(self.ui_state, 'active_runner_tinygrad', saved[1]))
+    for name, value in (('is_metric', False), ('active_runner_tinygrad', False), ('chestnut_present', False)):
+      self.enterContext(mock.patch.object(self.ui_state, name, value))
     for speed, metric, label, step in ((5.0, False, "11 mph", 45), (5.0, True, "18 km/h", 28), (0.0, False, "Off", 45)):
       self.params.put("SmallModelSteering", speed, block=True)
       self.ui_state.is_metric = metric
@@ -574,6 +574,8 @@ class TestTiciModelsPanel(UITest):
     for runner_tinygrad in (False, True):
       self.ui_state.active_runner_tinygrad = runner_tinygrad
       assert control.enabled is runner_tinygrad
+    self.ui_state.chestnut_present = True   # it never runs beside a chestnut
+    assert not control.enabled
 
 
 def ui_state_module():

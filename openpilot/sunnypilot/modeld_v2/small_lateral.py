@@ -12,8 +12,11 @@ steers there instead, below `speed` (the SmallModelSteering param, m/s, 0
 for never). It runs beside the large one only below speed + FADE,
 from a reset history, as at a modeld start: its first frames fall in the fade,
 where they weigh little. It runs in the large model's after_enqueue, while the
-chestnut or the Jetson works. Only desiredCurvature is taken: acceleration,
-the plan and everything else published stay the large model's.
+Jetson works. Only desiredCurvature is taken: acceleration, the plan and
+everything else published stay the large model's.
+
+Never beside a chestnut (modeld passes no small model): modeld's own thread
+drives it over USB, so the two run nearly back to back and overrun the frame.
 """
 import numpy as np
 

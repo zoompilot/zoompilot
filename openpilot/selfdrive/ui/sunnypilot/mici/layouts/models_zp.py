@@ -9,6 +9,7 @@ The tici models panel's driving options, for the comma 4 models panel.
 from collections.abc import Callable
 
 from openpilot.common.constants import CV
+from openpilot.selfdrive.ui.sunnypilot.accelerator_link import small_steering_meaningful
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP, BigParamOption, speed_unit
 from openpilot.system.ui.sunnypilot.lib.switch import Switch
 from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import lane_center_mode, set_lane_center_mode
@@ -76,8 +77,8 @@ class ModelOptions:
                                          picker_unit=speed_unit,
                                          label_callback=lambda v: tr("under {} {}").format(_speed(v), speed_unit()) if v else tr("off"),
                                          description=tr("With a big model, the small model steers below this speed. It is steadier when slow.\n" +
-                                                        "Default is 11 mph (18 km/h). Not with the Default model."))
-    self.small_steering.set_enabled(lambda: ui_state.active_runner_tinygrad)
+                                                        "Default is 11 mph (18 km/h). Not with the Default model or a chestnut."))
+    self.small_steering.set_enabled(small_steering_meaningful)
 
     # LagdToggle is the picker's live
     self.steer_delay = _option(tr("steer delay"), "LagdToggleDelay", _hundredths, "s", min_value=5, max_value=50,
