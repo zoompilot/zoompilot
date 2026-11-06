@@ -110,14 +110,6 @@ def test_gain_fades_the_lift_as_the_model_slows():
   assert ctl.lift == 0.
 
 
-def test_throttle_probability_scales_the_lift():
-  ctl = new_controller()
-  run(ctl, SETTLE_FRAMES, build_sm(V_EGO, throttle_prob=0.5))
-  assert ctl.lift == pytest.approx(0.5 * A_CRUISE)
-  run(ctl, SETTLE_FRAMES, build_sm(V_EGO, throttle_prob=0.))
-  assert ctl.lift == 0.
-
-
 def test_never_lowers_the_model():
   # over the set speed, braking or a bend ahead: the e2e candidate is the model's or above
   for sm, a_model, a_cruise in [(build_sm(V_EGO), 0.2, -0.5), (build_sm(V_EGO), -1.5, A_CRUISE),
@@ -175,7 +167,7 @@ def test_invalid_model_passes_through():
   assert run(ctl, 1, sm, a_model=0.05) == 0.05
   assert ctl.inhibit == Inhibit.invalid
 
-  assert run(ctl, 1, build_sm(V_EGO, throttle_prob=float('nan')), a_model=0.05) == 0.05
+  assert run(ctl, 1, build_sm(float('nan')), a_model=0.05) == 0.05
   assert ctl.inhibit == Inhibit.invalid
 
 
