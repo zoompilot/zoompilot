@@ -78,6 +78,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
     # Get new v_cruise and a_target from Smart Cruise Control and Speed Limit Assist
+    prev_output_a_target = self.output_a_target  # the cruise law's lower bound, before update_targets reseeds it
     v_cruise, self.output_a_target = LongitudinalPlannerSP.update_targets(self, sm, self.v_desired_filter.x, self.output_a_target, v_cruise)
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
@@ -108,7 +109,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_a_target_e2e, output_should_stop_e2e = LongitudinalPlannerSP.update_e2e_target(self, sm, output_a_target_e2e,
                                                                                           output_should_stop_e2e, reset_state)
 
-    self.a_cruise = get_cruise_accel(v_cruise, v_ego, self.a_cruise, self.output_a_target, self.dt)
+    self.a_cruise = get_cruise_accel(v_cruise, v_ego, self.a_cruise, prev_output_a_target, self.dt)
     self.a_cruise = LongitudinalPlannerSP.update_cruise_accel(self, self.a_cruise)
     cruise_should_stop = should_stop(v_ego, self.a_cruise)
 
