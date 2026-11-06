@@ -35,7 +35,7 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 
 ```
 e2e   = a_model + lift
-lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall 2.4 m/s^3
+lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall 2.4 m/s^3 or the gain's share
 floor = min(a_mpc, a_cruise, approach_accel(v_ego, v_target, personality))
 gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * fade-in over 5-8 m/s
 fade  = interp(max(steer lat accel, v_ego^2 * max path curvature over 10 s), [0.6, 1.0] m/s^2, [1, 0])

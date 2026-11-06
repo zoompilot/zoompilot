@@ -59,7 +59,8 @@ FADE_LAT_BP = [0.6, 1.0]  # m/s^2
 LAT_HORIZON = 10.0  # s
 
 # The lift rises at upstream's cruise jerk, as the cruise candidate it stands in for, and falls fast
-# so the model's own braking is never held off.
+# for a lane change, a bend or a lower floor. As the gain falls it may also drop by the gain's share
+# at once, so with the model at GAIN_BP[0] its braking passes straight through.
 LIFT_FALL = 2.4  # m/s^3
 
 T_IDXS = np.asarray(ModelConstants.T_IDXS)
@@ -137,5 +138,6 @@ class E2ESetSpeedController:
     else:
       self.inhibit = Inhibit.none
     target = self.gain * self.fade * max(0., self.floor - a_model) if self.inhibit == Inhibit.none else 0.
-    self.lift = rate_limit(target, self.lift, -LIFT_FALL * self.dt, op_long_cruise_jerk(v_ego) * self.dt)
+    fall = max(LIFT_FALL * self.dt, (1. - self.gain) * self.lift)
+    self.lift = rate_limit(target, self.lift, -fall, op_long_cruise_jerk(v_ego) * self.dt)
     return a_model + self.lift
