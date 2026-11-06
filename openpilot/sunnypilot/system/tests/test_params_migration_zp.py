@@ -8,7 +8,7 @@ from openpilot.common.params import Params
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.source_auto import AUTO
-from openpilot.sunnypilot.system.params_migration_zp import E2E_ASSISTS, E2E_ASSISTS_MIGRATED, run_migration_zp
+from openpilot.sunnypilot.system.params_migration_zp import E2E_ASSISTS, E2E_ASSISTS_MIGRATED, LANE_CENTER_MIGRATED, run_migration_zp
 
 
 class TestE2EAssistsMigration(OpenpilotTestCase):
@@ -29,6 +29,25 @@ class TestE2EAssistsMigration(OpenpilotTestCase):
     params.put_bool("ExperimentalModeSetSpeed", False, block=True)  # the driver turns it off
     run_migration_zp(params)
     assert not params.get_bool("ExperimentalModeSetSpeed")
+
+
+class TestLaneCenterMigration(OpenpilotTestCase):
+  """Blendful's declared default (off) is already on disk; the migration turns it on once."""
+
+  def test_turns_on_the_materialized_default(self):
+    params = Params()
+    params.put_bool("Blendful", False, block=True)  # what manager_init wrote
+    run_migration_zp(params)
+    assert params.get_bool("Blendful")
+    assert params.get_bool(LANE_CENTER_MIGRATED)
+    assert not params.get_bool("BlendfulReadout")
+
+  def test_runs_once(self):
+    params = Params()
+    run_migration_zp(params)
+    params.put_bool("Blendful", False, block=True)  # the driver turns it off
+    run_migration_zp(params)
+    assert not params.get_bool("Blendful")
 
 
 class TestSpeedLimitSourceFold(OpenpilotTestCase):

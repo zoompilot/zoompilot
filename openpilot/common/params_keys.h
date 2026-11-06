@@ -338,6 +338,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     // one-time markers
     {"ExperimentalAssistsDefaultOn", {PERSISTENT | BACKUP, BOOL}},  // Speed/Lead Follow Assist turned on once when they became default (params_migration_zp.py)
+    {"LaneCenterAssistDefaultOn", {PERSISTENT | BACKUP, BOOL}},  // Lane Center Assist turned on once when it became default (params_migration_zp.py)
     {"DefaultModelApplied", {PERSISTENT | BACKUP, BOOL}},  // Firehose Model applied as the default once (models/default_bootstrap.py)
     {"IcbmDemandMigrated", {PERSISTENT | BACKUP, BOOL}},  // ICBM toggle to ICBM on demand (intelligent_cruise_button_management/migration.py)
     {"MazdaTorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},  // steer-to-zero Mazda torque defaults seeded once
