@@ -71,22 +71,24 @@ def _bundle_is_valid_locally(bundle: custom.ModelManagerSP.ModelBundle) -> bool:
              for file_name, expected_hash in _bundle_artifacts(bundle))
 
 
+def _matching_bundle(active_bundle: custom.ModelManagerSP.ModelBundle,
+                     available_bundles: list[custom.ModelManagerSP.ModelBundle]) -> "custom.ModelManagerSP.ModelBundle | None":
+  for bundle in available_bundles:
+    if active_bundle.ref and bundle.ref:
+      if active_bundle.ref == bundle.ref:
+        return bundle
+    elif active_bundle.internalName == bundle.internalName:
+      return bundle
+  return None
+
+
 def _bundle_needs_reset(active_bundle: custom.ModelManagerSP.ModelBundle, available_bundles: list[custom.ModelManagerSP.ModelBundle] | None,
                         check_files: bool) -> bool:
   if active_bundle is None:
     return False
 
   if available_bundles is not None:
-    matching_bundle = None
-    for bundle in available_bundles:
-      if active_bundle.ref and bundle.ref:
-        if active_bundle.ref == bundle.ref:
-          matching_bundle = bundle
-          break
-      elif active_bundle.internalName == bundle.internalName:
-        matching_bundle = bundle
-        break
-
+    matching_bundle = _matching_bundle(active_bundle, available_bundles)
     if matching_bundle is None:
       return True
     if active_bundle.minimumSelectorVersion != matching_bundle.minimumSelectorVersion:
@@ -177,6 +179,16 @@ def _validate_active_bundle(params: Params, source: str, available_bundles: list
     return None
 
   active_bundle = _parse_active_bundle(raw_bundle)
+  if source == "chestnut" and active_bundle is not None and available_bundles and _bundle_needs_reset(active_bundle, available_bundles, False) \
+     and (listed := _matching_bundle(active_bundle, available_bundles)) is not None:
+    # the catalog lists the big pick under another entry (jetlink's list in place of sunnypilot's, or
+    # a rebuild): the slot takes the new entry in place. Emptied, even for the tick before the pick is
+    # carried over, jetlink would take it for the Default chosen and pick that on the Jetson too
+    cloudlog.warning(f"Active model bundle for {source} is listed anew; updating it in place")
+    listed.status = custom.ModelManagerSP.DownloadStatus.downloaded
+    params.put(key, listed.to_dict(), block=True)
+    _LAST_VALIDATED_RAW[key] = params.get(key)
+    return None
   if active_bundle is None or _bundle_needs_reset(active_bundle, available_bundles, check_files):
     cloudlog.warning(f"Active model bundle invalid for {source}; resetting to default")
     params.remove(key)

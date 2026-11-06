@@ -8,6 +8,7 @@ zoompilot vUNRELEASED
   * Fixed model lagging and locationd errors below 12 mph: the small model no longer steers beside a chestnut.
 * jetlink
   * A jetlink cable is no longer mistaken for a chestnut.
+  * Uses jetlink's own model index, so no jetlink updates are needed when comma changes its release strategy for models.
 * Mazda
   * Alpha longitudinal: quicker throttle in town and faster launch from a stop.
 * Speed Limit Assist no longer turns itself off after installing.

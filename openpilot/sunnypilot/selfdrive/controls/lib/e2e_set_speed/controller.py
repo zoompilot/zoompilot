@@ -18,10 +18,10 @@ This lifts the e2e candidate toward what chill mode would do and never lowers it
 floor is chill mode's answer, the lower of the planner's own lead MPC and cruise candidates
 (upstream's cruise law with SCC and SLA's targets), so with nothing to slow for experimental mode
 drives and follows as chill does, closing on the target speed no harder than a production ACC
-(approach_accel). gain fades the lift out as the model eases off (its own acceleration and its
-throttle probability) and below walking pace, and fade as the road ahead bends at the current
-speed. Every slowdown is the model's: the lift only lets go of it, and a lead that brakes binds
-through the MPC candidate at once.
+(approach_accel, a step gentler on Relaxed and firmer on Aggressive). gain fades the lift out as
+the model eases off (its own acceleration and its throttle probability) and below walking pace,
+and fade as the road ahead bends at the current speed. Every slowdown is the model's: the lift
+only lets go of it, and a lead that brakes binds through the MPC candidate at once.
 
 A lift that could go negative made the car pump on a straight road: the plan's far end flickers
 by several mph from one frame to the next, and handing back added speed on each flicker
@@ -67,15 +67,23 @@ APPROACH_BP = [0., 4., 9., 14., 18., 25.]  # m/s
 APPROACH_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s^2
 APPROACH_GAP_BP = [0., 1., 3., 5., 10.]  # m/s below the target speed
 APPROACH_GAP_FRACTION = [0.38, 0.47, 0.57, 0.72, 1.]
+# The table is Standard; the others move it by sunnypilot's accel boost step as of #2089
+# (docs/zoompilot/e2e-set-speed.md).
+APPROACH_PERSONALITY_OFFSET = {
+  log.LongitudinalPersonality.relaxed: -0.15,
+  log.LongitudinalPersonality.standard: 0.,
+  log.LongitudinalPersonality.aggressive: 0.15,
+}  # m/s^2
 
 T_IDXS = np.asarray(ModelConstants.T_IDXS)
 LAT_MASK = T_IDXS <= LAT_HORIZON
 
 
-def approach_accel(v_ego: float, v_target: float) -> float:
-  """Max floor accel while closing on v_target."""
-  return float(np.interp(v_ego, APPROACH_BP, APPROACH_V) *
-               np.interp(v_target - v_ego, APPROACH_GAP_BP, APPROACH_GAP_FRACTION))
+def approach_accel(v_ego: float, v_target: float, personality: int) -> float:
+  """Max floor accel while closing on v_target. personality: the enum's raw value (a capnp enum
+  read from a message compares equal to it but hashes differently)."""
+  ceiling = np.interp(v_ego, APPROACH_BP, APPROACH_V) + APPROACH_PERSONALITY_OFFSET[personality]
+  return float(ceiling * np.interp(v_target - v_ego, APPROACH_GAP_BP, APPROACH_GAP_FRACTION))
 
 
 class E2ESetSpeedController:

@@ -71,7 +71,7 @@ def test_on_raises_the_e2e_candidate():
   planner = run_planner(True)
   assert planner.e2e_set_speed.inhibit == Inhibit.none
   # the model holding at 0 under the set speed: lifted at the approach pace, below the cruise law's
-  approach = approach_accel(planner.v_ego, planner.output_v_target)
+  approach = approach_accel(planner.v_ego, planner.output_v_target, planner_sm()['selfdriveState'].personality.raw)
   assert planner.e2e_set_speed.lift == pytest.approx(approach)
   assert planner.output_a_target == pytest.approx(approach)
   assert planner.a_cruise > 1. > approach

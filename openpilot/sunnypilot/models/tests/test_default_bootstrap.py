@@ -173,7 +173,7 @@ class TestCarryOverPicks:
     assert params.get("ModelManager_DownloadRef") == "big"
 
   def test_a_current_pick_whose_catalog_entry_changed_is_carried(self):
-    # a big model first picked through jetlink's newer catalogs, then listed natively: the pick parses
+    # a big model picked from jetlink's list, then from sunnypilot's once a chestnut is fitted: the pick parses
     # but no longer matches its entry, so validation clears it at the selector version it already had
     params = FakeParams({CHESTNUT: stored("mdv3", "MDMV3", REQUIRED_JSON_VERSION)})
     carry_over_picks(params, {"qcom": _available_with_fm(), "chestnut": [FakeBundle(16, "MDMV3", "mdv3")]},
