@@ -121,7 +121,7 @@ def test_never_lowers_the_model():
 
 def test_lets_go_of_the_models_braking_at_once():
   ctl = settled(a_cruise=1.5)
-  # partway into the gain's fade, the lift drops to its new target in one frame
+  # halfway into the fade, the lift drops to its new value in one frame instead of easing off
   a_model = sum(c.GAIN_BP) / 2
   run(ctl, 1, build_sm(V_EGO), a_model=a_model, a_cruise=1.5)
   assert ctl.lift == pytest.approx(0.5 * (ctl.floor - a_model))

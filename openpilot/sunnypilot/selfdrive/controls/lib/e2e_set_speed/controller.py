@@ -58,9 +58,8 @@ GAIN_BP = [-0.3, -0.1]  # m/s^2
 FADE_LAT_BP = [0.6, 1.0]  # m/s^2
 LAT_HORIZON = 10.0  # s
 
-# The lift rises at upstream's cruise jerk, as the cruise candidate it stands in for, and falls fast
-# for a lane change, a bend or a lower floor. As the gain falls it may also drop by the gain's share
-# at once, so with the model at GAIN_BP[0] its braking passes straight through.
+# The lift rises at upstream's cruise jerk, as the cruise candidate it stands in for. This is the
+# slowest it eases off, e.g. on a lane change or a bend.
 LIFT_FALL = 2.4  # m/s^3
 
 T_IDXS = np.asarray(ModelConstants.T_IDXS)
@@ -103,7 +102,7 @@ class E2ESetSpeedController:
     self.frame += 1
     self._update_params()
 
-    # switched off with a lift on: it goes out at LIFT_FALL below, then the controller idles
+    # switched off with a lift on: it eases out below, then the controller idles
     if not self.enabled and self.lift == 0.:
       self._reset(Inhibit.disabled)
       return a_model
@@ -138,6 +137,8 @@ class E2ESetSpeedController:
     else:
       self.inhibit = Inhibit.none
     target = self.gain * self.fade * max(0., self.floor - a_model) if self.inhibit == Inhibit.none else 0.
+    # Normally the lift eases off at LIFT_FALL. When the model starts to brake the gain drops, and
+    # the lift may drop with it in one frame, so at gain 0 the model's braking is not delayed.
     fall = max(LIFT_FALL * self.dt, (1. - self.gain) * self.lift)
     self.lift = rate_limit(target, self.lift, -fall, op_long_cruise_jerk(v_ego) * self.dt)
     return a_model + self.lift

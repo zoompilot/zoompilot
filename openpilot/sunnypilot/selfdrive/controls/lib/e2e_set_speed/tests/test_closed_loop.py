@@ -78,6 +78,7 @@ def test_reaches_set_speed(tau, deficit):
 
 
 def test_added_jerk_bounded():
+  # the model never brakes in this run, so the lift never takes the gain's faster drop
   log = simulate(True)
   lift = log[:, 3] - log[:, 2]
   jerk = np.diff(lift) / DT
