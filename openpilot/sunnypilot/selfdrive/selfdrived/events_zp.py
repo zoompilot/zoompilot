@@ -18,7 +18,6 @@ from openpilot.common.hardware import HARDWARE
 from openpilot.selfdrive.selfdrived.events import get_display_speed
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, NoEntryAlert, \
   EngagementAlert, NormalPermanentAlert, AlertCallbackType
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import PCM_LONG_REQUIRED_MAX_SET_SPEED, CONFIRM_SPEED_THRESHOLD
 from openpilot.sunnypilot.selfdrive.selfdrived.selfdrived_zp import SelfdrivedZP
 
 AlertSize = log.SelfdriveState.AlertSize
@@ -28,7 +27,6 @@ AudibleAlert = car.CarControl.HUDControl.AudibleAlert
 AudibleAlertSP = custom.SelfdriveStateSP.AudibleAlert
 EventNameSP = custom.OnroadEventSP.EventName
 EventNameZP = custom.OnroadEventZP.EventName
-AssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
 IS_MICI = HARDWARE.get_device_type() == 'mici'
 
@@ -109,27 +107,15 @@ def speed_limit_pre_active_alert(CP: car.CarParams, CS: car.CarState, sm: messag
   alert_1_str = ""
   alert_size = AlertSize.small
 
-  # the arbiter publishes its session only where it owns SLA (never disabled while long is
-  # enabled past its guard); the planner machine never publishes it. One hop old, so key on
-  # the session existing rather than on its exact state.
-  arbiter_owns = sm['carStateSP'].zoompilot.cruiseSession.state != AssistState.disabled
-  if CP.openpilotLongitudinalControl and CP.pcmCruise and not arbiter_owns:
-    # PCM long: the driver moves the cluster to the required max
-    cst_low, cst_high = PCM_LONG_REQUIRED_MAX_SET_SPEED[metric]
-    pcm_long_required_max = cst_low if speed_limit_final_last_conv < CONFIRM_SPEED_THRESHOLD[metric] else cst_high
-    pcm_long_required_max_set_speed_conv = round(pcm_long_required_max * speed_conv)
-    speed_unit = "km/h" if metric else "mph"
-
-    alert_1_str = f"Speed Limit Assist: set to {pcm_long_required_max_set_speed_conv} {speed_unit} to engage"
+  # only the cruise arbiter prompts: the pcm machine needs no confirming (speed_limit_assist_zp)
+  if IS_MICI:
+    # the target is the limit plus any offset; the break keeps the unit with its number
+    if set_speed_conv < speed_limit_final_last_conv:
+      alert_1_str = f"Press + for\n{get_display_speed(speed_limit_final_last, metric)}"
+    elif set_speed_conv > speed_limit_final_last_conv:
+      alert_1_str = f"Press - for\n{get_display_speed(speed_limit_final_last, metric)}"
   else:
-    if IS_MICI:
-      # the target is the limit plus any offset; the break keeps the unit with its number
-      if set_speed_conv < speed_limit_final_last_conv:
-        alert_1_str = f"Press + for\n{get_display_speed(speed_limit_final_last, metric)}"
-      elif set_speed_conv > speed_limit_final_last_conv:
-        alert_1_str = f"Press - for\n{get_display_speed(speed_limit_final_last, metric)}"
-    else:
-      alert_size = AlertSize.none
+    alert_size = AlertSize.none
 
   return Alert(
     alert_1_str,

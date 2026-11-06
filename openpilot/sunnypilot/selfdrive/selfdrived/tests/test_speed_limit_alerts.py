@@ -19,7 +19,7 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events_base import ET, AlertSize
 EventNameSP = custom.OnroadEventSP.EventName
 
 
-def _alert(event, target: float, set_speed: float, metric: bool = False, pcm_long: bool = False):
+def _alert(event, target: float, set_speed: float, metric: bool = False):
   """target and set_speed in display units; the resolver carries m/s, carState kph."""
   to_ms = CV.KPH_TO_MS if metric else CV.MPH_TO_MS
   lp_sp = messaging.new_message('longitudinalPlanSP').longitudinalPlanSP
@@ -31,8 +31,6 @@ def _alert(event, target: float, set_speed: float, metric: bool = False, pcm_lon
     'carStateSP': messaging.new_message('carStateSP').carStateSP,
   }
   CP = structs.CarParams()
-  CP.openpilotLongitudinalControl = pcm_long
-  CP.pcmCruise = pcm_long
   CS = structs.CarState()
   CS.vCruiseCluster = set_speed * to_ms * CV.MS_TO_KPH
   return EVENTS_SP[event][ET.WARNING](CP, CS, sm, metric, 0, None)
@@ -54,9 +52,6 @@ class TestPreActivePrompt:
   def test_tizi_draws_the_sign_instead(self):
     assert _alert(EventNameSP.speedLimitPreActive, 45, 40).alert_size == AlertSize.none
 
-  def test_pcm_long_asks_for_the_required_max(self, mici):
-    assert _alert(EventNameSP.speedLimitPreActive, 45, 40, pcm_long=True).alert_text_1 == \
-      "Speed Limit Assist: set to 70 mph to engage"
 
 
 class TestActiveNotice:

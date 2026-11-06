@@ -4,8 +4,8 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-What zoompilot's pcm machine changes over sunnypilot's: the ramped decel it publishes and when
-it announces a limit.
+What zoompilot's pcm machine changes over sunnypilot's: the ramped decel it publishes, when it
+announces a limit, the set speed as a ceiling instead of a required max, and the gas hold.
 """
 import pytest
 
@@ -18,7 +18,7 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import PCM_LONG_REQUIRED_MAX_SET_SPEED
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import ACTIVE_STATES, PRE_ACTIVE_GUARD_PERIOD
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import ACTIVE_STATES, PRE_ACTIVE_GUARD_PERIOD, V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist_zp import SpeedLimitAssistZP
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
@@ -112,15 +112,106 @@ class TestSpeedLimitAssistZP:
     assert not self.announces(80, 65, raw_limit_mph=0)
     assert not self.announces(80, 65)
 
-  def test_confirm_that_raises_the_speed_announces(self):
-    self.sla.state = SpeedLimitAssistState.preActive
-    assert not self.announces(60, 65)
-    assert self.announces(80, 65)  # the required max confirms; the car goes 60 -> 65
+  # no required max: with the setting on, the limit caps the plan at any set speed
+
+  def drive(self, cluster_mph, limit_mph, v_mph=None, gas=False, enabled=True, frames=1):
+    v = (limit_mph if v_mph is None else v_mph) * CV.MPH_TO_MS
+    limit = limit_mph * CV.MPH_TO_MS
+    for _ in range(frames):
+      self.events_sp.clear()
+      self.sla.update(enabled, gas, v, 0, cluster_mph * CV.MPH_TO_MS, limit, limit, limit_mph > 0, 0, self.events_sp)
+
+  def target_mph(self) -> float:
+    return self.sla.output_v_target * CV.MS_TO_MPH
+
+  def engage(self, cluster_mph=60, limit_mph=35):
+    self.drive(cluster_mph, limit_mph, frames=int(1. / DT_MDL))
     assert self.sla.state in ACTIVE_STATES
 
-  def test_confirm_the_prompt_already_reached_is_silent(self):
-    """The prompt already caps the plan at the limit, so confirming changes nothing."""
-    self.sla.state = SpeedLimitAssistState.preActive
-    assert not self.announces(60, 45)
-    assert not self.announces(70, 45)
+  def test_engages_at_any_set_speed(self):
+    self.engage(60, 35)
+    assert self.target_mph() == pytest.approx(35)
+    assert self.sla.state != SpeedLimitAssistState.preActive
+
+  def test_no_limit_waits_pending_then_activates(self):
+    self.drive(60, 0, v_mph=30, frames=int(1. / DT_MDL))
+    assert self.sla.state == SpeedLimitAssistState.pending
+    self.drive(60, 35)
     assert self.sla.state in ACTIVE_STATES
+
+  def test_set_speed_change_keeps_the_session(self):
+    self.engage(60, 35)
+    self.drive(61, 35)
+    assert self.sla.state in ACTIVE_STATES
+    assert self.target_mph() == pytest.approx(35)
+
+  def test_needs_the_setting(self):
+    self.sla.enabled = False
+    Params().put("SpeedLimitMode", int(Mode.warning), block=True)
+    self.drive(60, 35, frames=int(1. / DT_MDL))
+    assert self.sla.state == SpeedLimitAssistState.disabled
+    assert self.sla.output_v_target == V_CRUISE_UNSET
+
+  def test_new_limit_applies_without_a_prompt(self):
+    self.engage(60, 35)
+    self.drive(60, 25, v_mph=35)
+    assert self.sla.state in ACTIVE_STATES
+    assert self.events_sp.has(EventNameSP.speedLimitActive) or self.events_sp.has(EventNameSP.speedLimitChanged)
+    assert self.target_mph() == pytest.approx(25)
+
+  # gas hold: releasing the gas above the limit holds the speed reached until the next sign
+
+  def gas_to(self, cluster_mph, limit_mph, v_mph):
+    self.drive(cluster_mph, limit_mph, v_mph=v_mph, gas=True, frames=5)
+    self.drive(cluster_mph, limit_mph, v_mph=v_mph)
+
+  def test_gas_release_holds_the_speed_quietly(self):
+    self.engage(60, 35)
+    self.gas_to(60, 35, 40)
+    assert self.target_mph() == pytest.approx(40)
+    assert not self.events_sp.has(EventNameSP.speedLimitActive)
+    assert not self.events_sp.has(EventNameSP.speedLimitChanged)
+    self.drive(60, 35, v_mph=40, frames=50)
+    assert self.target_mph() == pytest.approx(40)
+
+  def test_hold_caps_at_the_set_speed(self):
+    self.engage(38, 35)
+    self.gas_to(38, 35, 45)
+    assert self.target_mph() == pytest.approx(38)
+
+  def test_release_at_or_below_the_limit_holds_nothing(self):
+    self.engage(60, 35)
+    self.gas_to(60, 35, 35)
+    assert self.sla.held_v is None
+    assert self.target_mph() == pytest.approx(35)
+
+  def test_tap_at_a_lower_sign_keeps_the_speed(self):
+    """School zone: the limit drops while at speed, a tap of the gas declines it."""
+    self.engage(60, 35)
+    self.drive(60, 20, v_mph=35)
+    assert self.target_mph() == pytest.approx(20)
+    self.gas_to(60, 20, 35)
+    assert self.target_mph() == pytest.approx(35)
+    assert self.sla.state == SpeedLimitAssistState.active  # not adapting toward 20
+
+  def test_hold_survives_a_limit_dropout(self):
+    self.engage(60, 35)
+    self.gas_to(60, 35, 40)
+    self.drive(60, 0, v_mph=40, frames=5)
+    self.drive(60, 35, v_mph=40)
+    assert self.target_mph() == pytest.approx(40)
+
+  @pytest.mark.parametrize("new_limit", [25, 45])
+  def test_next_sign_ends_the_hold(self, new_limit):
+    self.engage(60, 35)
+    self.gas_to(60, 35, 40)
+    self.drive(60, new_limit, v_mph=40)
+    assert self.sla.held_v is None
+    assert self.target_mph() == pytest.approx(new_limit)
+
+  def test_disengage_ends_the_hold(self):
+    self.engage(60, 35)
+    self.gas_to(60, 35, 40)
+    self.drive(60, 35, v_mph=40, enabled=False)
+    self.engage(60, 35)
+    assert self.target_mph() == pytest.approx(35)
