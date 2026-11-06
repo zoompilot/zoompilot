@@ -11,6 +11,7 @@ zoompilot vUNRELEASED
 * Mazda
   * Alpha longitudinal: less throttle lag, and a quicker launch from a stop.
 * Set Speed Assist follows the driving personality: gentler on Relaxed, quicker on Aggressive.
+* Set Speed Assist's onroad icon brightens while it adds acceleration.
 * Fixed Speed Limit Assist not turning on reliably on some cars.
 * sunnylink: Lane Center Assist can be turned on with the Default model.
 
