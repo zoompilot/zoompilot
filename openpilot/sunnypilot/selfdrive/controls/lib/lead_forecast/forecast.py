@@ -28,8 +28,8 @@ alpha-long logs show (35k samples, lead tracked 6 s, docs/zoompilot/lead-forecas
   so the first RADAR_HANDOVER_T hands over from upstream's measured extrapolation, and while radar
   measures the lead braking the forecast is never faster than that extrapolation. A measured
   pull-away lifts the low-speed limit. On 299k radar-lead samples (same track the next 6 s): 4 s
-  position error MAE 1.49 vs upstream 1.62 m, optimistic p90 2.15 vs 2.69; behind slowing leads
-  3.93 vs 5.19 m; brake taps as upstream. Any lead the forecast does not match keeps upstream's
+  position error MAE 1.49 vs upstream 1.62 m, optimistic p90 2.23 vs 2.69; behind slowing leads
+  4.12 vs 5.19 m; brake taps as upstream. Any lead the forecast does not match keeps upstream's
   extrapolation.
 
 Switching between the two blends over a few frames so the obstacle never steps. The hook wraps the
@@ -57,6 +57,7 @@ PARAM_RADAR = "LeadForecastRadar"
 LEAD_T_IDXS = np.asarray(ModelConstants.LEAD_T_IDXS)
 # integrate the forecast speed on a fine grid so x is exact for the piecewise-linear v
 FINE_T = np.linspace(0., LEAD_T_IDXS[-1], 201)
+FINE_DT = np.diff(FINE_T)
 
 # Below this the forecast may not speed the lead up; above the second it may fully.
 SPEEDUP_V_BP = [3., 8.]  # m/s
@@ -80,10 +81,11 @@ RADAR_MIN_MODEL_PROB = 0.5
 # Over the first RADAR_HANDOVER_T s the speed hands over linearly from upstream's extrapolation of
 # the measured aLeadK to the forecast.
 RADAR_HANDOVER_T = 3.0  # s
+HANDOVER_W = np.interp(FINE_T, [0., RADAR_HANDOVER_T], [1., 0.])
 # While radar measures the lead braking the forecast may not be faster than upstream's
-# extrapolation: the floor fades in from the first to the second aLeadK (the model's 4 s speed was
-# +0.7 m/s optimistic behind leads braking under -1, upstream -0.8).
-RADAR_BRAKING_A_BP = [-0.1, -0.5]  # m/s^2
+# extrapolation: the floor is full below the first aLeadK and gone above the second (the model's
+# 4 s speed was +0.7 m/s optimistic behind leads braking under -1, upstream -0.8).
+RADAR_BRAKING_A_BP = [-0.5, -0.1]  # m/s^2
 # A slow lead radar measures pulling away may speed up in the forecast (the low-speed limit is for
 # a stopped car that may stay put); lifted from the first to the second aLeadK.
 RADAR_LAUNCH_A_BP = [0.1, 0.5]  # m/s^2
@@ -102,7 +104,7 @@ def forecast_speed(v_lead: float, model_v, a_lead: float = 0., radar: bool = Fal
 
 
 def _integrate(x_lead: float, v_fine: np.ndarray) -> np.ndarray:
-  return x_lead + np.concatenate(([0.], np.cumsum(np.diff(FINE_T) * (v_fine[1:] + v_fine[:-1]) / 2.)))
+  return x_lead + np.concatenate(([0.], np.cumsum(FINE_DT * (v_fine[1:] + v_fine[:-1]) / 2.)))
 
 
 def forecast_trajectory(x_lead: float, v_knots: np.ndarray) -> np.ndarray:
@@ -111,15 +113,20 @@ def forecast_trajectory(x_lead: float, v_knots: np.ndarray) -> np.ndarray:
   return np.column_stack((np.interp(T_IDXS, FINE_T, x_fine), np.interp(T_IDXS, LEAD_T_IDXS, v_knots)))
 
 
+def measured_speed(v_lead: float, a_lead: float, a_lead_tau: float) -> np.ndarray:
+  """Upstream's extrapolation of the lead (long_mpc.extrapolate_lead: aLeadK clipped, fading as
+  exp(-tau t^2 / 2)) as a speed on FINE_T."""
+  a = np.clip(a_lead, -10., 5.) * np.exp(-a_lead_tau * FINE_T ** 2 / 2.)
+  return np.maximum(_integrate(v_lead, a), 0.)
+
+
 def radar_speed(v_knots: np.ndarray, v_lead: float, a_lead: float, a_lead_tau: float) -> np.ndarray:
   """Lead speed on FINE_T for a radar lead: upstream's extrapolation of the measured aLeadK (its
   clip and decay) handing over linearly to the forecast by RADAR_HANDOVER_T, and no faster than
   that extrapolation while radar measures the lead braking."""
-  a = np.clip(a_lead, -10., 5.) * np.exp(-a_lead_tau * FINE_T ** 2 / 2.)
-  v_measured = np.maximum(v_lead + np.concatenate(([0.], np.cumsum(np.diff(FINE_T) * (a[1:] + a[:-1]) / 2.))), 0.)
-  w = np.interp(FINE_T, [0., RADAR_HANDOVER_T], [1., 0.]) if RADAR_HANDOVER_T > 0. else np.zeros_like(FINE_T)
-  v = w * v_measured + (1. - w) * np.interp(FINE_T, LEAD_T_IDXS, v_knots)
-  floor = float(np.interp(a_lead, RADAR_BRAKING_A_BP[::-1], [1., 0.]))
+  v_measured = measured_speed(v_lead, a_lead, a_lead_tau)
+  v = HANDOVER_W * v_measured + (1. - HANDOVER_W) * np.interp(FINE_T, LEAD_T_IDXS, v_knots)
+  floor = float(np.interp(a_lead, RADAR_BRAKING_A_BP, [1., 0.]))
   return np.maximum(v - floor * np.maximum(v - v_measured, 0.), 0.)
 
 
@@ -128,13 +135,19 @@ def radar_trajectory(x_lead: float, v_fine: np.ndarray) -> np.ndarray:
   return np.column_stack((np.interp(T_IDXS, FINE_T, _integrate(x_lead, v_fine)), np.interp(T_IDXS, FINE_T, v_fine)))
 
 
-def radar_matches(lead, model_lead, v_ego: float, model_v_ego: float) -> bool:
-  """The model's lead is this radar track: range and relative speed agree."""
+def range_offset(lead, model_lead) -> float:
+  """m between the model's lead and radarState's (radard's vision lead is x[0] - RADAR_TO_CAMERA)."""
+  return abs(model_lead.x[0] - RADAR_TO_CAMERA - lead.dRel)
+
+
+def radar_matches(lead, model_lead, model_v_ego: float) -> bool:
+  """The model's lead is this radar track: range and relative speed (the track's own vRel against
+  the model's lead speed less its ego speed) agree."""
   if lead.modelProb < RADAR_MIN_MODEL_PROB:
     return False
-  if abs(model_lead.x[0] - RADAR_TO_CAMERA - lead.dRel) > max(RADAR_MATCH_DIST, RADAR_MATCH_DIST_REL * lead.dRel):
+  if range_offset(lead, model_lead) > max(RADAR_MATCH_DIST, RADAR_MATCH_DIST_REL * lead.dRel):
     return False
-  return abs((model_lead.v[0] - model_v_ego) - (lead.vLead - v_ego)) <= RADAR_MATCH_SPEED
+  return abs((model_lead.v[0] - model_v_ego) - lead.vRel) <= RADAR_MATCH_SPEED
 
 
 class LeadForecast:
@@ -159,7 +172,7 @@ class LeadForecast:
     self._upstream_process_lead = mpc.process_lead
     mpc.process_lead = self.process_lead
 
-  def _target(self, lead, model_lead, v_ego: float, model_v_ego: float):
+  def _target(self, lead, model_lead, model_v_ego: float):
     if not self.enabled:
       return Inhibit.disabled, None
     if not lead.present:
@@ -172,11 +185,11 @@ class LeadForecast:
             math.isfinite(lead.dRel) and math.isfinite(lead.vLead) and math.isfinite(lead.aLeadK)):
       return Inhibit.invalid, None
     if lead.radar:
-      if not (math.isfinite(v_ego) and math.isfinite(model_v_ego) and math.isfinite(lead.aLeadTau)):
+      if not (math.isfinite(model_v_ego) and math.isfinite(lead.vRel) and math.isfinite(lead.aLeadTau)):
         return Inhibit.invalid, None
-      if not radar_matches(lead, model_lead, v_ego, model_v_ego):
+      if not radar_matches(lead, model_lead, model_v_ego):
         return Inhibit.mismatch, None
-    elif abs(model_lead.x[0] - RADAR_TO_CAMERA - lead.dRel) > MATCH_DIST:
+    elif range_offset(lead, model_lead) > MATCH_DIST:
       return Inhibit.mismatch, None
     return Inhibit.none, forecast_speed(lead.vLead, model_lead.v, lead.aLeadK, radar=bool(lead.radar))
 
@@ -189,22 +202,16 @@ class LeadForecast:
 
     rs, md = sm['radarState'], sm['modelV2']
     leads_v3 = md.leadsV3
-    try:
-      v_ego = float(sm['carState'].vEgo)
-    except KeyError:  # callers without carState (replays of camera leads) get no radar forecast
-      v_ego = float('nan')
-    model_v_ego = float(md.velocity.x[0]) if len(md.velocity.x) else v_ego
+    model_v_ego = float(md.velocity.x[0]) if len(md.velocity.x) else float('nan')
     for i, lead in enumerate((rs.leadOne, rs.leadTwo)):
       if i < len(leads_v3):
-        inhibit, v_knots = self._target(lead, leads_v3[i], v_ego, model_v_ego)
+        inhibit, v_knots = self._target(lead, leads_v3[i], model_v_ego)
       else:
         inhibit, v_knots = (Inhibit.invalid if self.enabled else Inhibit.disabled), None
       # a new radar track is another car: the last one's shape must not fade out on it
       if self.radar_enabled and lead.present and lead.radar:
-        if self.track_ids[i] is not None and lead.radarTrackId != self.track_ids[i]:
-          self.v_knots[i] = None
-          if v_knots is None:
-            self.weights[i] = 0.
+        if v_knots is None and self.track_ids[i] not in (None, lead.radarTrackId):
+          self.weights[i] = 0.
         self.track_ids[i] = int(lead.radarTrackId)
       elif not lead.present:
         self.track_ids[i] = None
@@ -230,8 +237,10 @@ class LeadForecast:
     i = self._calls
     self._calls += 1
     lead_xv = self._upstream_process_lead(lead)
+    radar = self.radar_enabled and lead is not None and lead.present and lead.radar
     if (i < 2 and lead is not None and lead.present and self.weights[i] > 0. and self.v_knots[i] is not None and
-        math.isfinite(lead.dRel) and math.isfinite(lead.vLead)):
+        math.isfinite(lead.dRel) and math.isfinite(lead.vLead) and
+        not (radar and not (math.isfinite(lead.aLeadK) and math.isfinite(lead.aLeadTau)))):
       v_knots = self.v_knots[i]
       if self.inhibits[i] != Inhibit.none:
         # fading out: the last forecast's shape, carried on this frame's lead
@@ -241,10 +250,7 @@ class LeadForecast:
       v_lead = float(v_knots[0])
       min_x_lead = MIN_X_LEAD_FACTOR * (v_ego + v_lead) * (v_ego - v_lead) / (-ACCEL_MIN * 2)
       x_lead = max(lead.dRel, min_x_lead)
-      if self.radar_enabled and lead.radar:
-        if not (math.isfinite(lead.aLeadK) and math.isfinite(lead.aLeadTau)):
-          self.lead_xv[i] = lead_xv
-          return lead_xv
+      if radar:
         forecast_xv = radar_trajectory(x_lead, radar_speed(v_knots, lead.vLead, lead.aLeadK, lead.aLeadTau))
       else:
         forecast_xv = forecast_trajectory(x_lead, v_knots)

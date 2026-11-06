@@ -10,26 +10,25 @@ forecast, a new track never inherits the last one's shape.
 import numpy as np
 import pytest
 
-import openpilot.cereal.messaging as messaging
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, T_IDXS
-from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.forecast import (FINE_T, LEAD_T_IDXS, RADAR_BRAKING_A_BP, RADAR_HANDOVER_T,
                                                                                 RADAR_LAUNCH_A_BP, RADAR_MATCH_DIST,
                                                                                 RADAR_MATCH_DIST_REL, RADAR_MATCH_SPEED, Inhibit,
-                                                                                LeadForecast, forecast_speed, radar_speed,
-                                                                                radar_trajectory)
-from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.tests.test_forecast import FULL_BLEND_FRAMES, SLOWING, V_EGO, build_sm
+                                                                                forecast_speed, radar_speed, radar_trajectory)
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.tests import test_forecast
+from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.tests.test_forecast import SLOWING, V_EGO, build_sm, run
 
 D_REL = 40.
 
 
 def radar_sm(d_rel=D_REL, v_lead=15., model_v=SLOWING, track=7, a_lead=0., a_tau=1.5, model_prob=0.9, **kw):
-  """build_sm's leads, the first one reported as a radar track, with the ego speeds radard and the
-  model saw."""
+  """build_sm's leads reported as radar tracks, with the relative speed radard measured and the
+  model's own ego speed."""
   sm = build_sm(d_rel=d_rel, v_lead=v_lead, model_v=model_v, **kw)
   rs = sm['radarState'].as_builder()
   for lead in (rs.leadOne, rs.leadTwo):
     lead.radar = True
+    lead.vRel = lead.vLead - V_EGO
   rs.leadOne.radarTrackId = track
   rs.leadTwo.radarTrackId = track + 100
   rs.leadOne.aLeadK = a_lead
@@ -39,9 +38,6 @@ def radar_sm(d_rel=D_REL, v_lead=15., model_v=SLOWING, track=7, a_lead=0., a_tau
   md = sm['modelV2'].as_builder()
   md.velocity.x = [V_EGO] * 33
   sm['modelV2'] = md.as_reader()
-  cs = messaging.new_message('carState').carState
-  cs.vEgo = V_EGO
-  sm['carState'] = cs.as_reader()
   return sm
 
 
@@ -53,24 +49,12 @@ def with_lead(sm, **fields):
 
 
 def build(radar=True):
-  mpc = LongitudinalMpc()
-  mpc.set_cur_state(V_EGO, 0.)
-  forecast = LeadForecast(params=FakeParams(LeadForecast=True, LeadForecastRadar=radar))
-  upstream = mpc.process_lead
-  forecast.install(mpc)
-  return mpc, forecast, upstream
-
-
-def run(forecast, mpc, sm, frames=FULL_BLEND_FRAMES):
-  for _ in range(frames):
-    forecast.update(sm)
-    mpc.update(sm['radarState'])
-  return forecast.lead_xv[0]
+  return test_forecast.build(radar=radar)
 
 
 def expected(sm, lead=0):
   ld = (sm['radarState'].leadOne, sm['radarState'].leadTwo)[lead]
-  v_knots = forecast_speed(ld.vLead, sm['modelV2'].leadsV3[lead].v, ld.aLeadK)
+  v_knots = forecast_speed(ld.vLead, sm['modelV2'].leadsV3[lead].v, ld.aLeadK, radar=True)
   return radar_trajectory(ld.dRel, radar_speed(v_knots, ld.vLead, ld.aLeadK, ld.aLeadTau))
 
 
@@ -93,8 +77,8 @@ class TestShape:
   def test_measured_braking_is_a_floor(self):
     # radar measures -2 and upstream holds it (tau 0); the model sees the lead easing off
     v_knots = np.array([15., 14., 14., 14., 14., 14.])
-    v = radar_speed(v_knots, 15., RADAR_BRAKING_A_BP[1] - 1.5, 0.)
-    measured = np.maximum(15. + (RADAR_BRAKING_A_BP[1] - 1.5) * FINE_T, 0.)
+    v = radar_speed(v_knots, 15., RADAR_BRAKING_A_BP[0] - 1.5, 0.)
+    measured = np.maximum(15. + (RADAR_BRAKING_A_BP[0] - 1.5) * FINE_T, 0.)
     assert (v <= measured + 1e-6).all()
 
   def test_floor_never_slows_a_harder_forecast(self):
@@ -106,7 +90,7 @@ class TestShape:
 
   def test_no_floor_without_measured_braking(self):
     v_knots = np.array([15., 15., 16., 17., 18., 18.])
-    v = radar_speed(v_knots, 15., RADAR_BRAKING_A_BP[0] + 0.05, 1.5)
+    v = radar_speed(v_knots, 15., RADAR_BRAKING_A_BP[1] + 0.05, 1.5)
     late = FINE_T >= RADAR_HANDOVER_T
     np.testing.assert_allclose(v[late], np.interp(FINE_T[late], LEAD_T_IDXS, v_knots))
 
@@ -165,15 +149,14 @@ class TestMatch:
   @pytest.mark.parametrize("dv,ok", [(RADAR_MATCH_SPEED - 0.2, True), (RADAR_MATCH_SPEED + 0.2, False)])
   def test_relative_speed_tolerance(self, dv, ok):
     mpc, forecast, _ = build()
-    sm = with_lead(radar_sm(), vLead=SLOWING[0] + dv)
+    sm = with_lead(radar_sm(), vRel=SLOWING[0] - V_EGO + dv)
     run(forecast, mpc, sm)
     assert forecast.inhibits[0] == (Inhibit.none if ok else Inhibit.mismatch)
 
   def test_compares_relative_speeds(self):
     # the model reads its own ego 1 m/s fast and the lead 1 m/s fast: they agree
     mpc, forecast, _ = build()
-    sm = radar_sm(model_v=np.array(SLOWING) + 1.)
-    sm = with_lead(sm, vLead=SLOWING[0])
+    sm = with_lead(radar_sm(model_v=np.array(SLOWING) + 1.), vLead=SLOWING[0], vRel=SLOWING[0] - V_EGO)
     md = sm['modelV2'].as_builder()
     md.velocity.x = [V_EGO + 1.] * 33
     sm['modelV2'] = md.as_reader()
@@ -188,10 +171,12 @@ class TestMatch:
     assert forecast.inhibits[0] == Inhibit.mismatch
     np.testing.assert_array_equal(lead_xv, upstream(sm['radarState'].leadOne))
 
-  def test_no_ego_speed_is_invalid(self):
+  def test_no_model_ego_speed_is_invalid(self):
     mpc, forecast, upstream = build()
     sm = radar_sm()
-    del sm['carState']
+    md = sm['modelV2'].as_builder()
+    md.velocity.x = []
+    sm['modelV2'] = md.as_reader()
     lead_xv = run(forecast, mpc, sm)
     assert forecast.inhibits[0] == Inhibit.invalid
     np.testing.assert_array_equal(lead_xv, upstream(sm['radarState'].leadOne))

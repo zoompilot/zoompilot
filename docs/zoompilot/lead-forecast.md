@@ -4,7 +4,7 @@ Code: `openpilot/sunnypilot/selfdrive/controls/lib/lead_forecast/forecast.py`. `
 wraps the MPC instance's `process_lead` at init and refreshes the forecast in its `update()`, so
 `long_mpc.py` and the upstream planner stay byte-identical. On by default with no setting: it is
 how the planner models the car ahead, not a preference. `LeadForecast` (default 1) stays as a
-hidden off switch for testing. Radar leads take it only with `LeadForecastRadar` (default 0, hidden;
+hidden off switch for testing. Radar leads take it only with `LeadForecastRadar` (default 1 since 2026-11-06, hidden;
 see [Radar leads](#radar-leads-leadforecastradar)). Logged in `longitudinalPlanSP.zoompilot.leadForecast` (per lead: blend weight,
 inhibit reason, the x/v trajectory the MPC got). Tests: `lead_forecast/tests/`. Tools:
 `tools/mazda_long/lead_event_index.py` (cached per-frame index of every engaged segment, slowing
@@ -113,7 +113,7 @@ above). Cut-ins followed by the new lead accelerating: none on camera leads in t
 
 ## Radar leads (`LeadForecastRadar`)
 
-Off by default. The PR's Toyota process-replay segment that fired FCW on 575 frames (the reason radar
+On by default since 2026-11-06 (a 2021-24 Camry tester drives it first). The PR's Toyota process-replay segment that fired FCW on 575 frames (the reason radar
 leads were left out) is a fixture artifact: in all three Toyota regen segments (`TOYOTA`,
 `TOYOTA2`, `TOYOTA3`) `leadsV3.x` past t=0 is about 0 (`[52, 0.2, -0.3, 1.5, ...]`) while `v` is
 sane, and the PR's position is `dRel + (x - x[0])` made non-decreasing, so its lead becomes a
@@ -122,17 +122,18 @@ the forecast integrates `v` and fires none.
 
 Accuracy, `tools/mazda_long/lead_forecast_accuracy.py --source radar`: every cached segment
 (engaged or stock ACC), lead on the same radar track for the next 6 s, truth the track's later
-vLead and dRel plus the ego's travel. 299k samples (0.2 s apart). The camera formula on radar
-leads, against upstream (4 s position error, mean / MAE / optimistic p90, m):
+vLead and dRel plus the ego's travel. 299k samples (0.2 s apart). Radar path = what the car runs:
+the radar path where `radar_matches`, upstream elsewhere (4 s position error, mean / MAE /
+optimistic p90, m):
 
 | case | upstream | camera formula | radar path |
 |---|---|---|---|
-| all | +0.34 / 1.62 / +2.69 | -0.03 / 1.72 / +2.38 | +0.03 / 1.49 / +2.15 |
-| lead slows > 2.5 m/s by 4 s | +4.21 / 5.19 / +10.09 | +3.95 / 4.88 / +10.10 | +2.52 / 3.93 / +7.99 |
-| lead braking now (aLeadK < -1) | -0.88 / 3.67 / +4.63 | +2.47 / 4.19 / +8.93 | -1.35 / 3.50 / +3.65 |
-| lead speeds up > 2 m/s | -1.78 / 3.83 / +3.40 | -4.77 / 4.99 / -0.19 | -2.57 / 3.18 / +1.12 |
+| all | +0.34 / 1.62 / +2.69 | -0.03 / 1.72 / +2.38 | +0.10 / 1.49 / +2.23 |
+| lead slows > 2.5 m/s by 4 s | +4.21 / 5.19 / +10.09 | +3.95 / 4.88 / +10.10 | +2.78 / 4.12 / +8.48 |
+| lead braking now (aLeadK < -1) | -0.88 / 3.67 / +4.63 | +2.47 / 4.19 / +8.93 | -1.28 / 3.53 / +3.78 |
+| lead speeds up > 2 m/s | -1.78 / 3.83 / +3.40 | -4.77 / 4.99 / -0.19 | -2.35 / 3.11 / +1.47 |
 | brake tap | -5.92 / 6.27 / +0.71 | -1.44 / 3.01 / +2.46 | -5.98 / 6.33 / +0.71 |
-| steady | +0.35 / 0.79 / +1.42 | +0.27 / 0.80 / +1.45 | +0.24 / 0.78 / +1.36 |
+| steady | +0.35 / 0.79 / +1.42 | +0.27 / 0.80 / +1.45 | +0.27 / 0.79 / +1.39 |
 
 Radar measures what the model's 2 s knots miss: the lead's deceleration now. So the radar path:
 
@@ -157,7 +158,7 @@ x(t)      = max(dRel, min_x_lead) + integral of v
 Match (`radar_matches`): radard pairs a track with the model's lead loosely (25% of range, 10 m/s). The
 forecast needs radarState modelProb >= 0.5 (radard's low-speed override, a close stationary track no
 model lead confirmed, reports 0), range within max(5 m, 15% of dRel) of `x[0] - 1.52`, and relative
-speed (`v[0] - modelV2.velocity.x[0]` vs `vLead - vEgo`) within 2 m/s. On our radar: |dx| p50 1.1 m,
+speed (`v[0] - modelV2.velocity.x[0]` vs the track's own `vRel`) within 2 m/s. On our radar: |dx| p50 1.1 m,
 p99 10.9 m (16% of range); |dv| p50 0.6, p90 1.9, p99 4.6 m/s. Past 2 m/s the forecast's 4 s speed MAE
 is worse than upstream's (2-4 m/s: 0.82 vs 0.76, over 4: 1.56 vs 1.18), under it better or equal.
 The Toyota regen segments' older model sits further from the track (|dx| p50 4.4 m, 5% of range),
