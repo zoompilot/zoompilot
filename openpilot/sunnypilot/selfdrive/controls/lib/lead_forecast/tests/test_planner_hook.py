@@ -46,11 +46,18 @@ def lead_sm():
   return sm
 
 
-def run(enabled: bool, frames: int = 20):
+def run(enabled: bool, frames: int = 20, radar: bool | None = None):
+  """radar None: a camera lead; True/False: a radar track with LeadForecastRadar on/off."""
   planner = build_planner()
-  planner.lead_forecast.params = FakeParams(LeadForecast=enabled)
+  planner.lead_forecast.params = FakeParams(LeadForecast=enabled, LeadForecastRadar=bool(radar))
   planner.lead_forecast.frame = -1  # re-read the param on the next update
   sm = lead_sm()
+  if radar is not None:
+    rs = sm['radarState'].as_builder()
+    rs.leadOne.radar = True
+    rs.leadOne.radarTrackId = 3
+    rs.leadOne.aLeadTau = 1.5
+    sm['radarState'] = rs.as_reader()
   for _ in range(frames):
     planner.update(sm)
   return planner, sm
@@ -81,3 +88,16 @@ def test_on_reaches_the_mpc():
   # a lead the model sees slowing hard: the plan brakes harder than upstream's extrapolation
   assert planner.mpc.a_solution[:6].min() < off.mpc.a_solution[:6].min() - 0.1
 
+
+def test_radar_lead_off_is_upstream():
+  planner, sm = run(True, radar=False)
+  lead = publish(planner, sm).leadForecast.leadOne
+  assert lead.inhibit == Inhibit.radar and lead.weight == 0.
+
+
+def test_radar_lead_on_reaches_the_mpc():
+  off, _ = run(True, radar=False)
+  planner, sm = run(True, radar=True)
+  lead = publish(planner, sm).leadForecast.leadOne
+  assert lead.inhibit == Inhibit.none and lead.weight == pytest.approx(1.)
+  assert planner.mpc.a_solution[:6].min() < off.mpc.a_solution[:6].min() - 0.1

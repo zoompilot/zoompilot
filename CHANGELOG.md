@@ -13,6 +13,7 @@ zoompilot vUNRELEASED
   * Alpha longitudinal: less throttle lag, and a quicker launch from a stop.
 * Set Speed Assist follows the driving personality: gentler on Relaxed, quicker on Aggressive.
 * Set Speed Assist's onroad icon brightens while it adds acceleration.
+* Radar cars: the lead forecast now also covers radar leads, braking earlier behind slowing traffic.
 * Fixed Speed Limit Assist not turning on reliably on some cars.
 * Speed Limit source is now Auto, Car or Map; Auto follows the car's sign and fills in from the map.
 * Lane Center Assist is now on by default.
