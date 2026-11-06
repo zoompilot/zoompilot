@@ -4,7 +4,7 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-import pyray as rl
+import raylib_nb as rl
 from collections.abc import Callable
 
 from openpilot.system.ui.sunnypilot.lib.switch import SWITCH_VALUE, Switch, reads_switched, write_switch
@@ -149,36 +149,6 @@ class PickerItem(Widget):
       rl.draw_text_ex(font, self.display_label, rl.Vector2(text_x, text_y), font_size, 0, color)
 
 
-def _build_band_texture():
-  """Build a two-pixel vertical gradient strip for a selection-band edge."""
-  band_h = CAROUSEL_HEIGHT - 14 * 2
-  fade = min(BAND_FADE_LEN, band_h // 3)
-  img = rl.gen_image_color(2, band_h, rl.Color(0, 0, 0, 0))
-  for y in range(band_h):
-    if y < fade:
-      a = int(BAND_COLOR.a * y / fade)
-    elif y >= band_h - fade:
-      a = int(BAND_COLOR.a * (band_h - 1 - y) / fade)
-    else:
-      a = BAND_COLOR.a
-    c = rl.Color(BAND_COLOR.r, BAND_COLOR.g, BAND_COLOR.b, a)
-    rl.image_draw_rectangle(img, 0, y, 2, 1, c)
-  tex = rl.load_texture_from_image(img)
-  rl.unload_image(img)
-  return tex
-
-
-# Texture creation requires an active OpenGL context.
-_band_texture = None
-
-
-def _get_band_texture():
-  global _band_texture
-  if _band_texture is None:
-    _band_texture = _build_band_texture()
-  return _band_texture
-
-
 class NumberPickerScreen(Widget):
   """Full picker sub-screen with title and horizontal snap-scrolling carousel."""
 
@@ -300,11 +270,16 @@ class NumberPickerScreen(Widget):
       except ValueError:
         unit_text = ""
 
-    band_tex = _get_band_texture()
     band_left = rect.x + (SCREEN_WIDTH - self._item_width) / 2 - 1
     band_right = band_left + self._item_width
-    for x in (band_left, band_right):
-      rl.draw_texture_ex(band_tex, (x, rect.y + BAND_TOP), 0, 1.0, rl.WHITE)
+    band_h = CAROUSEL_HEIGHT - 14 * 2
+    fade = min(BAND_FADE_LEN, band_h // 3)
+    clear = rl.Color(BAND_COLOR.r, BAND_COLOR.g, BAND_COLOR.b, 0)
+    for x in (int(band_left), int(band_right)):
+      y = int(rect.y + BAND_TOP)
+      rl.draw_rectangle_gradient_v(x, y, 2, fade, clear, BAND_COLOR)
+      rl.draw_rectangle(x, y + fade, 2, band_h - 2 * fade, BAND_COLOR)
+      rl.draw_rectangle_gradient_v(x, y + band_h - fade, 2, fade, BAND_COLOR, clear)
 
     if unit_text:
       unit_font = gui_app.font(FontWeight.BOLD)

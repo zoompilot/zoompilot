@@ -113,7 +113,7 @@ def test_onroad_button_switches_speed_assist(params, monkeypatch):
 
 @pytest.mark.parametrize("speed_assist", [True, False])
 def test_onroad_button_draws(params, monkeypatch, speed_assist):
-  import pyray as rl
+  import raylib_nb as rl
   from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_button import SpeedAssistButton
   from openpilot.selfdrive.ui.ui_state import ui_state
 
@@ -146,7 +146,7 @@ def test_onroad_button_tap_leaves_the_sidebar(params, monkeypatch):
 def test_long_indicator_stacks_on_the_driver_monitor(params, monkeypatch, rhd, dev_ui):
   from types import SimpleNamespace
 
-  import pyray as rl
+  import raylib_nb as rl
   from openpilot.selfdrive.ui.sunnypilot.onroad import long_indicator
   from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
   from openpilot.selfdrive.ui.ui_state import ui_state
@@ -198,7 +198,7 @@ def test_developer_ui_shows_lane_center_push(trust, curvature, side):
 def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monkeypatch, rhd):
   from types import SimpleNamespace
 
-  import pyray as rl
+  import raylib_nb as rl
   from openpilot.selfdrive.ui.onroad.hud_renderer import UI_CONFIG
   from openpilot.selfdrive.ui.sunnypilot.onroad import confidence_ball
   from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect

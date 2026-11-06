@@ -9,7 +9,7 @@ upstream retired with chill mode: its gauge dimmed with the assist off, bright i
 it on, so the button names what it switches either way. No confirmation gate; selfdrived announces
 each switch.
 """
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge_on_dial
 from openpilot.selfdrive.ui.ui_state import ui_state
@@ -47,5 +47,5 @@ class SpeedAssistButton(Widget):
     radius = self._rect.width / 2
     rl.draw_circle(center_x, center_y, radius, self._black_bg)
     if ui_state.speed_assist:
-      rl.draw_ring(rl.Vector2(center_x, center_y), radius - RING_WIDTH, radius, 0, 360, 96, rl.color_alpha(RING_COLOR, alpha))
+      rl.draw_ring(rl.Vector2(center_x, center_y), radius - RING_WIDTH, radius, 0, 360, 96, rl.fade(RING_COLOR, alpha))
     draw_gauge_on_dial(center_x, center_y, GAUGE_HEIGHT, alpha if ui_state.speed_assist else OFF_ALPHA * alpha)

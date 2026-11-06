@@ -6,7 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 import threading
 
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.selfdrive.ui.mici.layouts.settings.software import (CheckUpdateButton, InstallUpdateButton, SoftwareLayoutMici,
                                                                     TargetBranchButton, UpdaterState, _split_description)

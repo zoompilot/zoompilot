@@ -13,7 +13,7 @@ not read as steering torque.
 import math
 
 import numpy as np
-import pyray as rl
+import raylib_nb as rl
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.ui.mici.onroad.torque_bar import TORQUE_ANGLE_SPAN, TorqueBar, arc_bar_pts
@@ -48,6 +48,12 @@ def pull_at_lookahead(curvature: float, v_ego: float) -> float:
   return curvature * lookahead ** 2 / 2
 
 
+def color_lerp(a: rl.Color, b: rl.Color, t: float) -> rl.Color:
+  """raylib's ColorLerp, which raylib_nb does not bind."""
+  return rl.Color(int((1 - t) * a.r + t * b.r), int((1 - t) * a.g + t * b.g),
+                  int((1 - t) * a.b + t * b.b), int((1 - t) * a.a + t * b.a))
+
+
 def nudge_share(pull: float, full: float = COLOR_FULL) -> float:
   """0 to 1 of how hard lane center pushes, sqrt of the push up to full m."""
   return math.sqrt(min(abs(pull) / full, 1.0))
@@ -67,7 +73,7 @@ class BlendfulRendererZP(BlendfulRenderer):
       return
     nudge = nudge_share(self._pull_display.x)
     line_alpha = np.clip(self._trust, 0.2, 1.0) * (IDLE_ALPHA + (1 - IDLE_ALPHA) * nudge)
-    self._line_color = rl.color_alpha(rl.color_lerp(IDLE, BLUE, nudge), line_alpha)
+    self._line_color = rl.fade(color_lerp(IDLE, BLUE, nudge), line_alpha)
 
   def draw(self, rect: rl.Rectangle) -> None:
     if not UIStateSP.lateral_active(ui_state) or not self._center_points.size:
@@ -75,7 +81,7 @@ class BlendfulRendererZP(BlendfulRenderer):
     if self._trust > 0.05:
       offset = np.array([rect.x, rect.y]) if self._rect_relative else np.zeros(2)
       fade = self._alpha.x  # the whole overlay fades in and out with trust
-      draw_polygon(rect, self._center_points + offset, rl.color_alpha(self._line_color, self._line_color.a / 255 * fade))
+      draw_polygon(rect, self._center_points + offset, rl.fade(self._line_color, self._line_color.a / 255 * fade))
     if self._readout and ui_state.blendful_readout:
       self._draw_readout_box(rect.x + rect.width / 2, rect.y + READOUT_TOP)
 
@@ -93,8 +99,8 @@ class BlendfulRendererZP(BlendfulRenderer):
     active = self._color((BLUE.r, BLUE.g, BLUE.b), np.clip(abs(pull) / 0.1, 0.0, 1.0) * 255)
     idle = self._color((255, 255, 255), 40)
     lx, rx = x + 18, x + READOUT_W - 18
-    rl.draw_triangle(rl.Vector2(lx, cy), rl.Vector2(lx + 16, cy + 12), rl.Vector2(lx + 16, cy - 12), active if pull < 0 else idle)
-    rl.draw_triangle(rl.Vector2(rx - 16, cy - 12), rl.Vector2(rx - 16, cy + 12), rl.Vector2(rx, cy), active if pull > 0 else idle)
+    rl.draw_triangle_fan([rl.Vector2(lx, cy), rl.Vector2(lx + 16, cy + 12), rl.Vector2(lx + 16, cy - 12)], 3, active if pull < 0 else idle)
+    rl.draw_triangle_fan([rl.Vector2(rx - 16, cy - 12), rl.Vector2(rx - 16, cy + 12), rl.Vector2(rx, cy)], 3, active if pull > 0 else idle)
 
 
 class TorqueBarZP(TorqueBar):
@@ -141,6 +147,6 @@ class TorqueBarZP(TorqueBar):
     draw_polygon(rect, track + center, rl.Color(255, 255, 255, int(255 * 0.15 * fade)))
     if abs(half_span * self._extent) * np.pi / 180 * radius >= 1:  # over a pixel, like the readout's bar
       fill = arc_bar_pts(r_mid, thickness, -90, -90 + half_span * self._extent, cap_radius=thickness / 2)
-      draw_polygon(rect, fill + center, rl.color_alpha(BLUE, np.clip(0.3 + 0.7 * self._trust_filter.x, 0.0, 1.0) * fade))
+      draw_polygon(rect, fill + center, rl.fade(BLUE, np.clip(0.3 + 0.7 * self._trust_filter.x, 0.0, 1.0) * fade))
     # the zero mark: TorqueBar's grey center dot, sized to the gauge
     rl.draw_circle(int(center[0]), int(center[1] - r_mid), GAUGE_DOT * self._scale, rl.Color(182, 182, 182, int(255 * 0.9 * fade)))

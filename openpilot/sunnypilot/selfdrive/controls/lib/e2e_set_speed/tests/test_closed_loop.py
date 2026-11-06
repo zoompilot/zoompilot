@@ -31,7 +31,7 @@ ACTUATOR_TAU = 0.5  # s
 def simulate(enabled, seconds=60., tau=50., brake_at=None):
   """Rows of (t, v_ego, a_model, e2e candidate). brake_at: the model brakes at -0.5 from then on."""
   ctl = E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled), dt=DT)
-  v, a_act, a_cruise = V_PREF, 0., 0.
+  v, a_act, a_cruise, out = V_PREF, 0., 0., 0.
   log = []
   for i in range(int(seconds / DT)):
     t = i * DT
@@ -40,7 +40,7 @@ def simulate(enabled, seconds=60., tau=50., brake_at=None):
       a_model = -0.5
     # the host passes last frame's cruise candidate at the approach pace, then builds this frame's
     e2e = ctl.update(build_sm(v), a_model, min(a_cruise, approach_accel(v, V_CRUISE, STANDARD)), **ENGAGED)
-    a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, DT)
+    a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, out, DT)
     out = min(e2e, a_cruise)
     a_act += DT / ACTUATOR_TAU * (out - a_act)
     v += a_act * DT
@@ -53,7 +53,7 @@ def chill_peak(seconds=60.):
   v, a_act, a_cruise = V_PREF, 0., 0.
   peak = v
   for _ in range(int(seconds / DT)):
-    a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, DT)
+    a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, a_cruise, DT)
     a_act += DT / ACTUATOR_TAU * (a_cruise - a_act)
     v += a_act * DT
     peak = max(peak, v)

@@ -13,7 +13,7 @@ mici hides it below that panel while disengaged; here it sinks to the frame's bo
 import math
 
 import numpy as np
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
 from openpilot.selfdrive.ui.onroad.hud_renderer import COLORS, UI_CONFIG
@@ -52,7 +52,7 @@ def draw_ball(cx: float, cy: float, radius: float, top: rl.Color, bottom: rl.Col
   """A vertically graded disc. mici paints a square's corners away in black over its black side panel;
   over the camera that would show, so this draws the disc itself, as a ribbon of its left and right arcs."""
   box = rl.Rectangle(cx - radius, cy - radius, 2 * radius, 2 * radius)
-  gradient = Gradient(start=(0.5, 0.0), end=(0.5, 1.0), colors=[rl.color_alpha(top, alpha), rl.color_alpha(bottom, alpha)],
+  gradient = Gradient(start=(0.5, 0.0), end=(0.5, 1.0), colors=[rl.fade(top, alpha), rl.fade(bottom, alpha)],
                       stops=[0.0, 1.0])
   draw_polygon(box, _UNIT_DISC * np.float32(radius) + np.array([cx, cy], dtype=np.float32), gradient=gradient)
 

@@ -102,7 +102,7 @@ def use_github_runner(started: bool, params: Params, CP: car.CarParams) -> bool:
 def extend_procs(procs: list[ManagerProcess]) -> list[ManagerProcess]:
   """process_config's list with micd and soundd as AudioProcess, jetlinkd beside
   the model manager, and the GitHub runner at the end."""
-  procs = [AudioProcess(p.name, p.module, p.should_run, enabled=p.enabled, sigkill=p.sigkill) if p.name in AUDIO_PROCESSES else p
+  procs = [AudioProcess(p.name, p.module, p.should_run, enabled=p.enabled) if p.name in AUDIO_PROCESSES else p
            for p in procs]
 
   # runs onroad too: jetlinkd holds the USB gadget open for as long as the link
@@ -113,5 +113,5 @@ def extend_procs(procs: list[ManagerProcess]) -> list[ManagerProcess]:
   procs.insert(at, jetlinkd)
 
   if os.path.exists("../../../release/ci/github_runner.sh"):
-    procs.append(NativeProcess("github_runner_start", "release/ci", ["./github_runner.sh", "start"], use_github_runner, sigkill=False))
+    procs.append(NativeProcess("github_runner_start", "release/ci", ["./github_runner.sh", "start"], use_github_runner))
   return procs

@@ -20,7 +20,7 @@ def wait_until(condition, timeout: float = 2.0):
 
 def render(widget, width: int = 800, height: int = 600):
   """Drive one frame through Widget.render, which calls _update_state."""
-  import pyray as rl
+  import raylib_nb as rl
   return widget.render(rl.Rectangle(0, 0, width, height))
 
 

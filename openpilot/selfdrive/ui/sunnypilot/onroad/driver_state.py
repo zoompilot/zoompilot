@@ -9,7 +9,7 @@ side. Its behaviour is mici's unchanged: hidden under alerts, and while disengag
 """
 from __future__ import annotations
 
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.selfdrive.ui import UI_BORDER_SIZE
 from openpilot.selfdrive.ui.mici.onroad.driver_state import DriverStateRenderer

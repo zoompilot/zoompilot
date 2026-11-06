@@ -6,6 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 import os
 
+import numpy as np
 import raylib_nb as rl
 
 SHOW_MOUSE_COORDS = os.getenv("SHOW_MOUSE_COORDS") == "1"
@@ -50,13 +51,13 @@ class GuiApplicationExt:
     from openpilot.system.ui.lib.application import ASSETS_DIR
     with as_file(ASSETS_DIR.joinpath(asset_path)) as fspath:
       image = self._load_image_from_path(fspath.as_posix(), width, height)
-    # image_color_grayscale drops the alpha channel; put it back
-    alpha = rl.image_from_channel(image, 3)
-    rl.image_color_grayscale(image)
-    rl.image_format(image, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
-    rl.image_alpha_mask(image, alpha)
-    rl.unload_image(alpha)
+    # raylib's ImageColorGrayscale weights, alpha kept
+    assert image.format == rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, f"{asset_path}: expected RGBA8"
+    w, h = image.width, image.height
+    rgba = np.frombuffer(image.to_bytes(w * h * 4), dtype=np.uint8).reshape(h, w, 4).copy()
+    rgba[..., :3] = (rgba[..., :3] @ np.array([0.299, 0.587, 0.114]))[..., None].astype(np.uint8)
     texture = self._load_texture_from_image(image)
+    rl.update_texture(texture, rgba)
     if self._scale != 1.0:
       texture.width, texture.height = width, height   # logical size, as texture() sets it
 

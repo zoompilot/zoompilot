@@ -11,7 +11,7 @@ import pytest
 def gui(request):
   """A hidden raylib window and an isolated params dir, once per module: widgets need
   textures. A module picks the big or the mici UI by setting BIG before its imports."""
-  import pyray as rl
+  import raylib_nb as rl
   from openpilot.common.prefix import OpenpilotPrefix
 
   with OpenpilotPrefix():

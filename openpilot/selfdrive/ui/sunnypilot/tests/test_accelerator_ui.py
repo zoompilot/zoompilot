@@ -383,7 +383,7 @@ class TestTiciModelsPanel(UITest):
       for index, mode in enumerate(("off", "usb", "ios")):
         self.params.put("JetlinkLink", index, block=True)
         layout._refresh_accelerator_items()
-        assert action.get_selected_button() == index
+        assert action.selected_button == index
         assert link_mode() == mode
 
   def test_the_modes_are_inert_onroad(self):
@@ -466,7 +466,7 @@ class TestTiciModelsPanel(UITest):
       ui_state.chestnut_present = saved
 
   def test_panel_renders(self):
-    import pyray as rl
+    import raylib_nb as rl
     with jetlink(present=True, model='Cinque Terre'):
       layout = self._layout()
       layout.render(rl.Rectangle(0, 0, 800, 600))
@@ -474,7 +474,7 @@ class TestTiciModelsPanel(UITest):
   def test_an_empty_big_slot_names_whose_default_runs(self):
     # a chestnut runs the model in the tree; without one the slot is the
     # accelerator's, and so is its default
-    import pyray as rl
+    import raylib_nb as rl
     from openpilot.sunnypilot.models.model_name import DEFAULT_BIG_MODEL
     ui_state = ui_state_module().ui_state
     saved = ui_state.chestnut_present
@@ -492,7 +492,7 @@ class TestTiciModelsPanel(UITest):
   def test_refresh_spins_beside_the_link_until_both_catalogs_are_stamped(self):
     # sunnypilot's refresh, as upstream: the model manager restamps each catalog it
     # refetches, the big-model one extended for the accelerator or not
-    import pyray as rl
+    import raylib_nb as rl
     from openpilot.selfdrive.ui.sunnypilot.model_info import MODEL_SYNC_KEYS
     for key in MODEL_SYNC_KEYS:
       self.params.put(key, 1, block=True)
@@ -528,7 +528,7 @@ class TestTiciModelsPanel(UITest):
   @staticmethod
   def _press(item, button: str):
     """A tap on the item's - or + button, laid out as the panel draws it."""
-    import pyray as rl
+    import raylib_nb as rl
     item.set_parent_rect(rl.Rectangle(0, 0, 1700, 2000))
     item.render(rl.Rectangle(0, 0, 1700, item.get_item_height(item._font, 1700)))
     action = item.action_item
