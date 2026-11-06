@@ -17,8 +17,8 @@ from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL as DT
 from openpilot.selfdrive.controls.lib.longitudinal_planner import get_cruise_accel
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import controller as c
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import LIFT_FALL, E2ESetSpeedController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, build_sm
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
 
@@ -39,7 +39,7 @@ def simulate(enabled, seconds=60., tau=50., brake_at=None):
     if brake_at is not None and t >= brake_at:
       a_model = -0.5
     # the host passes last frame's cruise candidate at the approach pace, then builds this frame's
-    e2e = ctl.update(build_sm(v), a_model, min(a_cruise, c.approach_accel(v, V_CRUISE, STANDARD)), **ENGAGED)
+    e2e = ctl.update(build_sm(v), a_model, min(a_cruise, approach_accel(v, V_CRUISE, STANDARD)), **ENGAGED)
     a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, DT)
     out = min(e2e, a_cruise)
     a_act += DT / ACTUATOR_TAU * (out - a_act)
@@ -81,7 +81,7 @@ def test_added_jerk_bounded():
   log = simulate(True)
   lift = log[:, 3] - log[:, 2]
   jerk = np.diff(lift) / DT
-  assert -c.LIFT_FALL - 1e-6 <= jerk.min() and jerk.max() <= op_long_cruise_jerk(0.) + 1e-6
+  assert -LIFT_FALL - 1e-6 <= jerk.min() and jerk.max() <= op_long_cruise_jerk(0.) + 1e-6
   assert lift.min() >= 0.
 
 
