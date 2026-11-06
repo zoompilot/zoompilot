@@ -13,6 +13,7 @@ zoompilot vUNRELEASED
 * Set Speed Assist follows the driving personality: gentler on Relaxed, quicker on Aggressive.
 * Set Speed Assist's onroad icon brightens while it adds acceleration.
 * Fixed Speed Limit Assist not turning on reliably on some cars.
+* Speed Limit source is now Auto, Car or Map; Auto follows the car's sign and fills in from the map.
 * sunnylink: Lane Center Assist can be turned on with the Default model.
 
 zoompilot v2026.11.02-18
