@@ -954,26 +954,26 @@
                   "key": "SpeedLimitPolicy",
                   "widget": "multiple_button",
                   "title": "Speed Limit Source",
+                  "description": "Auto follows the limit your car shows, and the map where it shows none. The map also slows you before a lower limit ahead.",
                   "options": [
                     {
+                      "value": 2,
+                      "label": "Auto"
+                    },
+                    {
                       "value": 0,
-                      "label": "Car State Only"
+                      "label": "Car Only"
                     },
                     {
                       "value": 1,
-                      "label": "Map Data Only"
-                    },
+                      "label": "Map Only"
+                    }
+                  ],
+                  "visibility": [
                     {
-                      "value": 2,
-                      "label": "Car State Priority"
-                    },
-                    {
-                      "value": 3,
-                      "label": "Map Data Priority"
-                    },
-                    {
-                      "value": 4,
-                      "label": "Combined"
+                      "type": "capability",
+                      "field": "has_speed_limit",
+                      "equals": true
                     }
                   ]
                 },

@@ -18,9 +18,11 @@ from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_moves_speed_limits
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.source_auto import AUTO, car_shows_limit
 
 SL_MODE_LABELS = [tr("off"), tr("info"), tr("warn"), tr("assist")]
-SL_SOURCE_LABELS = [tr("car"), tr("map"), tr("car-first"), tr("map-first"), tr("combined")]
+SL_SOURCE_LABELS = {AUTO: tr("auto"), Policy.car_state_only: tr("car"), Policy.map_data_only: tr("map")}
 SL_MODE_OFF = 0
 SL_MODE_WARN = 2
 SL_MODE_ASSIST = 3
@@ -93,11 +95,12 @@ class CruiseLayoutMici(NavScroller):
                                           description=tr("Assist: when the limit changes, press - or + to set your speed to match.\n" +
                                                          "Info and warn show the sign on a comma 3X only."))
     self._sl_mode.set_blocked_options(lambda: set() if ui_state.icbm_turn_on_allowed("SpeedLimitMode", True) else {SL_MODE_ASSIST})
-    self._sl_source = BigMultiParamToggleSP(tr("source"), "SpeedLimitPolicy", SL_SOURCE_LABELS,
-                                            description=tr("Car uses the signs your car reads. Map uses downloaded maps.\n" +
-                                                           "Car-first and map-first use the other when the first has none.\n" +
-                                                           "Combined uses the lower of the two.\n" +
-                                                           "On a Mazda, car needs a nav SD card."))
+    self._sl_source = BigMultiParamToggleSP(tr("source"), "SpeedLimitPolicy", list(SL_SOURCE_LABELS.values()), values=list(SL_SOURCE_LABELS),
+                                            description=tr("Auto follows the limit your car shows, and the map where it shows none.\n" +
+                                                           "The map also slows you before a lower limit ahead.\n" +
+                                                           "Car or map uses only that one."))
+    # cars that report no limit always use the map
+    self._sl_source.set_visible(lambda: car_shows_limit(ui_state.CP, ui_state.CP_SP))
     self._sl_offset_type = BigMultiParamToggleSP(tr("offset type"), "SpeedLimitOffsetType", [tr("none"), tr("fixed"), "%"], off_index=0,
                                                  description=tr("Adds an offset to the speed limit.\n" +
                                                                 "Fixed adds a set amount of speed. % adds a percentage of the limit."))
@@ -150,12 +153,13 @@ class CruiseLayoutMici(NavScroller):
     if sl_mode_idx == SL_MODE_OFF:
       self._speed_limit_btn.set_disabled()
     else:
-      sl_source_idx = ui_state.params.get("SpeedLimitPolicy", return_default=True) or 0
-      sl_source = SL_SOURCE_LABELS[min(sl_source_idx, len(SL_SOURCE_LABELS) - 1)]
+      sl_source = SL_SOURCE_LABELS.get(ui_state.params.get("SpeedLimitPolicy", return_default=True), SL_SOURCE_LABELS[AUTO])
       sl_offset_val = ui_state.params.get("SpeedLimitValueOffset", return_default=True) or 0
       unit = "%" if offset_type == 2 else (speed_unit() if offset_type == 1 else "")
       icbm = icbm_moves_speed_limits(has_long, has_icbm, sl_mode_idx)
-      badges = [(sl_mode, "on"), (tr("icbm"), "on" if icbm else "off"), (sl_source, "on")]
+      badges = [(sl_mode, "on"), (tr("icbm"), "on" if icbm else "off")]
+      if car_shows_limit(ui_state.CP, ui_state.CP_SP):
+        badges.append((sl_source, "on"))
       if unit:
         sign = "+" if sl_offset_val > 0 else ""
         badges.append((f"{sign}{sl_offset_val}{unit}", "on"))

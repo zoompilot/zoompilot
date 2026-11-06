@@ -15,14 +15,13 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.sunnypilot.widgets import get_highlighted_description
 
-SPEED_LIMIT_POLICY_BUTTONS = [tr("Car Only"), tr("Map Only"), tr("Car First"), tr("Map First"), tr("Combined")]
+SPEED_LIMIT_POLICY_BUTTONS = [tr("Car Only"), tr("Map Only"), tr("Auto")]
 
 SPEED_LIMIT_POLICY_DESCRIPTIONS = [
-  tr("Car Only: Use Speed Limit data only from Car"),
-  tr("Map Only: Use Speed Limit data only from OpenStreetMaps"),
-  tr("Car First: Use Speed Limit data from Car if available, else use from OpenStreetMaps"),
-  tr("Map First: Use Speed Limit data from OpenStreetMaps if available, else use from Car"),
-  tr("Combined: Use combined Speed Limit data from Car & OpenStreetMaps")
+  tr("Car Only: Use only the limit your car shows"),
+  tr("Map Only: Use only the limit from the map"),
+  tr("Auto: Follow the limit your car shows, and the map where it shows none. " +
+     "The map also slows you before a lower limit ahead."),
 ]
 
 
