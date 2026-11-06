@@ -62,6 +62,10 @@ class CruiseLayoutMici(NavScroller):
     self._scc_v_toggle = BigParamControlSP(tr("slow for curves: vision"), "SmartCruiseControlVision",
                                            description=tr("Slows for curves the camera sees, then resumes your set speed.\n" +
                                                           "Works alone or with slow for curves: map."))
+    self._scc_learn_toggle = BigParamControlSP(tr("slow for curves: learn steering limit"), "CurveLatAccelLearn",
+                                               description=tr("Learns how hard your car can steer through a curve,\n" +
+                                                              "and slows for curves the camera sees to match.\n" +
+                                                              "Off, every car uses the same curve speeds."))
     self._scc_m_toggle = BigParamControlSP(tr("slow for curves: map"), "SmartCruiseControlMap",
                                            description=tr("Slows for curves in map data, then resumes your set speed.\n" +
                                                           "Download maps in sunnylink first."))
@@ -73,7 +77,7 @@ class CruiseLayoutMici(NavScroller):
 
     self._scroller.add_widgets([
       *self._alpha_long.items,
-      self._scc_v_toggle, self._scc_m_toggle,
+      self._scc_v_toggle, self._scc_learn_toggle, self._scc_m_toggle,
       self._speed_limit_btn, self._custom_acc_btn,
     ])
 
@@ -119,12 +123,13 @@ class CruiseLayoutMici(NavScroller):
 
     self._scc_v_toggle.refresh()
     self._scc_m_toggle.refresh()
+    self._scc_learn_toggle.refresh()
 
     cp_ready = ui_state.CP is not None and ui_state.CP_SP is not None
     has_long = cp_ready and ui_state.has_longitudinal_control
     has_icbm = cp_ready and ui_state.has_icbm
 
-    for toggle in (self._scc_v_toggle, self._scc_m_toggle):
+    for toggle in (self._scc_v_toggle, self._scc_learn_toggle, self._scc_m_toggle):
       toggle.set_superseded(not (has_long or has_icbm))
     # has_long and has_icbm are False until CP is ready, so CP is not read before then
     custom_acc_available = (has_long and not ui_state.CP.pcmCruise) or has_icbm

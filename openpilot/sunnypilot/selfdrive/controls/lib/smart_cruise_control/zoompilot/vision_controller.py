@@ -16,11 +16,13 @@ import numpy as np
 import openpilot.cereal.messaging as messaging
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
+from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN_V
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import (
   A_PUB_MIN, COMMIT_FRAC, get_planning_limits, publish_ramp)
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import (
   allowed_speed, backward_pass, lead_distance, min_profile_speed, required_decel)
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.lat_limit_learner import LEARN_PARAM, LatLimitLearner
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.vision_controller import (
   ACTIVE_STATES, ENABLED_STATES, VisionState, SmartCruiseControlVision as UpstreamVision)
 
@@ -28,7 +30,8 @@ __all__ = ['ACTIVE_STATES', 'ENABLED_STATES', 'SmartCruiseControlVision', 'Visio
 
 # Curves are taken at or below this lateral acceleration (v^2 * curvature), m/s2, keyed on the
 # curve's own speed, not the set speed. Tolerance falls with speed, but banked highway curves
-# (2.5-4 deg) hide 0.4-0.65 m/s2, so the ceiling dips mid-range and recovers (doc).
+# (2.5-4 deg) hide 0.4-0.65 m/s2, so the ceiling dips mid-range and recovers (doc). This is the
+# shared starting point: each car learns its own from steering saturation (lat_limit_learner).
 _A_LAT_CURVE_BP = [15.6, 24.6, 31.3]  # m/s curve speed; 35, 55, 70 mph
 _A_LAT_CURVE = [2.2, 2.1, 2.2]
 # Reserve margin for actuation delay at the apex.
@@ -90,15 +93,23 @@ _LEAVING_LAT_ACC_TH = 1.3  # turning displays as leaving below this
 _FINISH_LAT_ACC_TH = 1.1  # leaving ends below this
 
 
-def curve_speed(kappa) -> np.ndarray:
-  """Allowed speed at each path point under the curve-speed ceiling, planning margin included."""
-  return allowed_speed(kappa, np.interp(kappa, _A_LAT_KAPPA_BP, _A_LAT_KAPPA))
+def curve_speed(kappa, a_lat=None) -> np.ndarray:
+  """Allowed speed at each path point under the curve-speed ceiling, planning margin included.
+  a_lat is a car's own ceiling at _A_LAT_CURVE_BP; None plans on the shared table."""
+  if a_lat is None:
+    kappa_bp, a_kappa = _A_LAT_KAPPA_BP, _A_LAT_KAPPA
+  else:
+    kappa_bp = [a * _PLAN_MARGIN / v ** 2 for v, a in zip(_A_LAT_CURVE_BP[::-1], a_lat[::-1], strict=True)]
+    a_kappa = [a * _PLAN_MARGIN for a in a_lat[::-1]]
+  return allowed_speed(kappa, np.interp(kappa, kappa_bp, a_kappa))
 
 
 class SmartCruiseControlVision(UpstreamVision):
   def __init__(self, CP):
     super().__init__()
     self.limits = get_planning_limits(CP)
+    self.lat_limit = LatLimitLearner(_A_LAT_CURVE_BP, _A_LAT_CURVE, CP.carFingerprint, self.params)
+    self.learn_lat_limit = self.params.get_bool(LEARN_PARAM)
     self._reset_solver()
     self.a_out = 0.
 
@@ -115,7 +126,32 @@ class SmartCruiseControlVision(UpstreamVision):
     self.seen_frames = 0  # consecutive frames a bend has bound
     self.max_pred_lat_acc = 0.
 
+  def _update_params(self) -> None:
+    super()._update_params()
+    if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
+      self.learn_lat_limit = self.params.get_bool(LEARN_PARAM)
+
+  def _curve_speed(self, kappa) -> np.ndarray:
+    # toggled off, or a car that has not learned yet, plans on the shared table
+    use_learned = self.learn_lat_limit and self.lat_limit.learned
+    return curve_speed(kappa, self.lat_limit.ceiling if use_learned else None)
+
+  def _update_lat_limit(self, sm: messaging.SubMaster) -> None:
+    """Feed the ceiling learner the lateral controller's saturation, the flag selfdrived warns on."""
+    valid = getattr(sm, 'valid', {})  # a SubMaster's; the planner tests drive plain dicts
+    if not all(valid.get(s, False) for s in ('controlsState', 'carState', 'modelV2')):
+      return
+    cs = sm['controlsState']
+    lac = getattr(cs.lateralControlState, cs.lateralControlState.which())
+    v = max(self.v_ego, 0.3)
+    # toggled off, the learner sees lateral as inactive: it pauses, and a curve already under way
+    # when the toggle comes on is not counted
+    self.lat_limit.update(self.v_ego, cs.curvature * v ** 2, sm['modelV2'].action.desiredCurvature * v ** 2,
+                          lac.active and self.learn_lat_limit, lac.saturated, sm['carState'].steeringPressed)
+
   def _update_calculations(self, sm: messaging.SubMaster) -> None:
+    # learned whenever lateral is on (and the toggle is), so the ceiling is ready when the planner is
+    self._update_lat_limit(sm)
     if not self.long_enabled or not self.enabled:
       self._reset_solver()
       return
@@ -142,7 +178,7 @@ class SmartCruiseControlVision(UpstreamVision):
     near_d = max(self.v_ego, MIN_V) * (_NEAR_T_BIG if model.big else _NEAR_T)
     near = dist <= near_d  # dist[0] is 0, so never empty
     k_near = float(np.max(kappa[near]))
-    self.v_near_min = float(curve_speed(k_near))
+    self.v_near_min = float(self._curve_speed(k_near))
     # Publish near-path lateral acceleration for UI state.
     self.max_pred_lat_acc = k_near * self.v_ego ** 2
 
@@ -150,8 +186,8 @@ class SmartCruiseControlVision(UpstreamVision):
     fade = np.interp(self.v_ego, _KAPPA_BIAS_V_BP, _KAPPA_BIAS_V_FADE)
     depth_fade = min(fade, np.interp(self.v_cruise_setpoint, _KAPPA_DEPTH_SET_BP, [1., 0.]))
     bias = np.interp(dist, _KAPPA_BIAS_D, _KAPPA_BIAS_GAIN) - 1.
-    v_allowed = curve_speed(kappa * (1. + bias * fade))
-    v_profile = curve_speed(kappa * (1. + bias * depth_fade))
+    v_allowed = self._curve_speed(kappa * (1. + bias * fade))
+    v_profile = self._curve_speed(kappa * (1. + bias * depth_fade))
 
     # Stock ACC lead time includes the set-speed traversal to the lowest target.
     t_lead = lim.t_lead
