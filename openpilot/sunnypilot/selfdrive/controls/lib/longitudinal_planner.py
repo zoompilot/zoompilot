@@ -157,7 +157,8 @@ class LongitudinalPlannerSP:
     # frame's after the e2e candidate), capped at the approach pace
     a_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
                                 action_t=self.CP.longitudinalActuatorDelay + DT_MDL)
-    a_chill = min(float(a_mpc), self.a_cruise, approach_accel(self.v_ego, self.output_v_target))
+    a_chill = min(float(a_mpc), self.a_cruise, approach_accel(self.v_ego, self.output_v_target,
+                                                                sm['selfdriveState'].personality.raw))
     a_e2e = self.e2e_set_speed.update(sm, a_model, a_chill, is_e2e, reset_state, steer_lat_accel)
     # upstream's gas boost learns past the model from gas presses; the set-speed floor already lifts
     # it, so the boost only runs with the floor off

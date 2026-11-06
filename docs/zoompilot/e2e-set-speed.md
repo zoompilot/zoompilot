@@ -36,7 +36,7 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 ```
 e2e   = a_model + lift
 lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall 2.4 m/s^3
-floor = min(a_mpc, a_cruise, approach_accel(v_ego, v_target))
+floor = min(a_mpc, a_cruise, approach_accel(v_ego, v_target, personality))
 gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * gasPressProbs[1] * fade-in over 5-8 m/s
 fade  = interp(v_ego^2 * max curvature over the next 10 s (or now), [0.6, 1.0] m/s^2, [1, 0])
 ```
@@ -61,6 +61,15 @@ for any 2 m/s shortfall, and on the CX-5 the lift toward it drove 23 of 24 kickd
 27 minutes (00000060, 62, 65) against that cap, the floor gives the same command (median difference
 0.000, p99 +0.05), 1.9% of frames gentler by over 0.05 where the model eases off or a bend fades the
 lift, and slightly less time above the 0.42 kickdown point at 14-24 m/s (7.1% against 7.4%).
+
+The approach table is Standard. Relaxed and Aggressive move it 0.15 m/s^2 either way, the step
+between personalities in sunnypilot's accel boost (#2089, 0.1 / 0.25 / 0.4), added before the gap
+fraction so the step shrinks near the target; behind a lead the personality acts through the MPC
+candidate's gap. On the CX-5, 1 m/s under the set speed, Aggressive is over the 0.42 kickdown point
+below about 21.5 m/s (Standard below 17).
+
+sunnypilot's boost itself is merged but unwired: replayed on the 10-27..10-30 drives it was on in
+86% of cruise frames, and stacked on this lift put highway e2e over 0.35 28% of the time against 4.7%.
 
 The lift is never negative:
 every slowdown is the model's, and the lift only lets go of it, at 2.4 m/s^3 so the model's own

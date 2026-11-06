@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import openpilot.cereal.messaging as messaging
+from openpilot.cereal import log
 from openpilot.common.realtime import DT_MDL as DT
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import controller as c
@@ -18,6 +19,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers imp
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
 
 V_EGO = 20.
+STANDARD = log.LongitudinalPersonality.standard
 A_CRUISE = 0.5  # the planner's cruise candidate
 RISE = op_long_cruise_jerk(V_EGO)
 SETTLE_FRAMES = round(2. / (op_long_cruise_jerk(40.) * DT)) + 10
@@ -181,6 +183,20 @@ def test_approach_closes_small_gaps_gently():
   # of it at the target
   assert all(np.diff(c.APPROACH_GAP_FRACTION) > 0) and c.APPROACH_GAP_FRACTION[-1] == 1.
   for v, ceiling in zip(c.APPROACH_BP, c.APPROACH_V, strict=True):
-    assert c.approach_accel(v, v + 10.) == pytest.approx(ceiling)
-    assert c.approach_accel(v, v) == pytest.approx(c.APPROACH_GAP_FRACTION[0] * ceiling)
-  assert c.approach_accel(V_EGO, V_EGO + 1.) < 0.42  # a CX-5 5>4 kickdown at highway speed
+    assert c.approach_accel(v, v + 10., STANDARD) == pytest.approx(ceiling)
+    assert c.approach_accel(v, v, STANDARD) == pytest.approx(c.APPROACH_GAP_FRACTION[0] * ceiling)
+  assert c.approach_accel(V_EGO, V_EGO + 1., STANDARD) < 0.42  # a CX-5 5>4 kickdown at highway speed
+
+
+def test_approach_follows_the_personality():
+  # Standard is the table; Relaxed and Aggressive sit a 0.15 step either side of it at a full
+  # shortfall, and closer near the target. Read from a message as the planner does.
+  def personality(name):
+    msg = messaging.new_message('selfdriveState')
+    msg.selfdriveState.personality = name
+    return msg.as_reader().selfdriveState.personality.raw
+  relaxed_p, standard_p, aggressive_p = (personality(n) for n in ('relaxed', 'standard', 'aggressive'))
+  for v in c.APPROACH_BP:
+    relaxed, standard, aggressive = (c.approach_accel(v, v + 10., p) for p in (relaxed_p, standard_p, aggressive_p))
+    assert relaxed == pytest.approx(standard - 0.15) and aggressive == pytest.approx(standard + 0.15)
+    assert c.approach_accel(v, v + 1., aggressive_p) - c.approach_accel(v, v + 1., standard_p) < 0.15
