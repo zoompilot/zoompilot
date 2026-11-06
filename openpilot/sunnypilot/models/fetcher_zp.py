@@ -63,7 +63,8 @@ class ModelFetcherZP(ModelFetcher):
   def _fetch_and_cache_models(self, source: str):
     if source != "chestnut" or not jetlink_adapter.lists_big_models():
       return super()._fetch_and_cache_models(source)
-    catalog = jetlink_adapter.big_catalog()
+    from openpilot.sunnypilot.models.helpers import REQUIRED_JSON_VERSION
+    catalog = jetlink_adapter.big_catalog(REQUIRED_JSON_VERSION)
     if catalog is None:  # offline, or no jetlink: the cache stands
       return None
     catalog = {**catalog, JETLINK_KEY: True}

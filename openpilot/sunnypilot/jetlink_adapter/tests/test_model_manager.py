@@ -85,7 +85,7 @@ class JetlinkTest(OpenpilotTestCase):
 class TestBigCatalog(JetlinkTest):
   def test_the_index_is_a_list_the_model_manager_takes(self):
     with serving(INDEX):
-      out = jetlink_adapter.big_catalog()
+      out = jetlink_adapter.big_catalog(REQUIRED_JSON_VERSION)
     bundles = ModelParser.parse_models(out)
     self.assertEqual([(b.ref, {o.key: o.value for o in b.overrides}['folder']) for b in bundles],
                      [(V4, '2026 Deep RL Models'), (V3, 'Master Models')])
@@ -98,11 +98,11 @@ class TestBigCatalog(JetlinkTest):
 
   def test_offline_there_is_no_list_and_the_model_manager_keeps_its_own(self):
     with serving(NetworkError('offline')):
-      self.assertIsNone(jetlink_adapter.big_catalog())
+      self.assertIsNone(jetlink_adapter.big_catalog(REQUIRED_JSON_VERSION))
 
   def test_a_recompile_is_found_under_the_ref_that_lists_its_onnx(self):
     with serving(index_json(entry(V41, 'Cinque Terre V4.1', V4_OID), refs={V4: {'oid': V4_OID, 'size': 766_000_000}})):
-      jetlink_adapter.big_catalog()
+      jetlink_adapter.big_catalog(REQUIRED_JSON_VERSION)
     self.assertEqual(jetlink_adapter.listed_ref(V4), V41)
     self.assertIsNone(jetlink_adapter.listed_ref(V3))
 
@@ -144,7 +144,7 @@ class TestFetcherHook(OpenpilotTestCase):
 
   def test_without_a_chestnut_the_big_model_list_is_jetlinks_and_says_so(self):
     hook, asked, get, cached, _ = self.fetch('chestnut')
-    hook.assert_called_once_with()
+    hook.assert_called_once_with(REQUIRED_JSON_VERSION)
     asked.assert_called_once_with()
     get.assert_not_called()
     self.assertIs(cached[JETLINK_KEY], True)

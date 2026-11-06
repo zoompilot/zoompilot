@@ -100,11 +100,6 @@ def _adapter_class():
     # MADS's state rides on carControlSP
     IN_CONTROL_SERVICES = ('carState', 'carControl', 'carControlSP')
 
-    @property
-    def catalog_selector(self) -> int:
-      from openpilot.sunnypilot.models.helpers import REQUIRED_JSON_VERSION
-      return REQUIRED_JSON_VERSION
-
     def chestnut_present(self) -> bool:
       # modeld's own test, the one it runs the big model on: a chestnut whose
       # firmware names itself. The owner's port walk is wider (CHESTNUT_IDS,
