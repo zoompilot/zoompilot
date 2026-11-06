@@ -1,17 +1,16 @@
 zoompilot vUNRELEASED
 ========================
 * chestnut
-  * Fixed the yellow "!" icon and the small model running on a new install.
-  * The Default big model now downloads like any other model, while parked on Wi-Fi.
-  * A picked big model downloads right away, even if the chestnut only has power while driving.
+  * Tested with a chestnut and fixed what came up.
+  * Fixed the comma not downloading the big model when a chestnut connects.
   * Home says when the chestnut model is downloading, or needs Wi-Fi.
-  * Fixed model lagging and locationd errors below 12 mph: the small model no longer steers beside a chestnut.
+  * Small Model Steer removed for chestnut, fixing model lag and locationd errors below 12 mph.
 * jetlink
   * A jetlink cable is no longer mistaken for a chestnut.
-  * Uses jetlink's own model index, so no jetlink updates are needed when comma changes its release strategy for models.
+  * Uses jetlink's own model index, so no jetlink update is needed when comma changes how it releases models.
 * Mazda
-  * Alpha longitudinal: quicker throttle in town and faster launch from a stop.
-* Speed Limit Assist no longer turns itself off after installing.
+  * Alpha longitudinal: less throttle lag, and a quicker launch from a stop.
+* Fixed Speed Limit Assist not turning on reliably on some cars.
 * sunnylink: Lane Center Assist can be turned on with the Default model.
 
 zoompilot v2026.11.02-18
