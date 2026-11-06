@@ -9,7 +9,7 @@ unchanged (shown engaged on openpilot longitudinal control, hidden under alerts,
 the personality highlight, the gas-override blink); only its size and place are tizi's: twice the
 mici size, stacked on the driver monitor with mici's spacing, so it follows the monitor's side.
 """
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
 from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect

@@ -18,9 +18,11 @@ import os
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
-import pyray as rl
+import numpy as np
+import raylib_nb as rl
 
 from pathlib import Path
+from PIL import Image
 from opendbc.car.structs import car
 from openpilot.cereal import custom
 from openpilot.common.params import Params
@@ -122,34 +124,24 @@ def capture(widget, filename, frames=SETTLE_FRAMES):
   if hasattr(widget, '_pos_filter'):
     widget._pos_filter.x = 0.0
 
-  # Keep alpha opaque: blend RGB normally, but force alpha to stay at dst (1.0 from clear)
-  GL_FUNC_ADD = 0x8006
-  rl.rl_set_blend_factors_separate(
-    0x0302, 0x0303,  # RGB: GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
-    0x0000, 0x0001,  # Alpha: GL_ZERO, GL_ONE (preserves dst alpha = 1.0)
-    GL_FUNC_ADD, GL_FUNC_ADD,
-  )
-
   rect = rl.Rectangle(0, 0, gui_app.width, gui_app.height)
   for _ in range(frames):
     rl.begin_texture_mode(rt)
     rl.clear_background(rl.BLACK)
-    rl.begin_blend_mode(rl.BLEND_CUSTOM_SEPARATE)
     widget.render(rect)
-    rl.end_blend_mode()
     rl.end_texture_mode()
     rl.begin_drawing()
     rl.end_drawing()
 
   image = rl.load_image_from_texture(rt.texture)
-  rl.image_flip_vertical(image)
-
-  OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-  path = str(OUTPUT_DIR / filename)
-  rl.export_image(image, path)
-
+  w, h = image.width, image.height
+  pixels = np.frombuffer(image.to_bytes(w * h * 4), dtype=np.uint8).reshape(h, w, 4)
   rl.unload_image(image)
   rl.unload_render_texture(rt)
+
+  # render textures are stored bottom-up; drop alpha, which blending leaves below 1 under translucent ink
+  OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+  Image.fromarray(pixels[::-1, :, :3]).save(OUTPUT_DIR / filename)
   print(f"  {filename}")
 
 

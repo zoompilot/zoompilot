@@ -4,11 +4,11 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import BLUE, nudge_share, pull_at_lookahead
+from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import BLUE, color_lerp, nudge_share, pull_at_lookahead
 from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.elements import UiElement
 
 
@@ -29,4 +29,4 @@ class LaneCenterElement:
     pull = self._pull.x
     cm = round(abs(pull) * 100)
     side = "" if cm == 0 else "L " if pull < 0 else "R "
-    return UiElement(f"{side}{cm}", self.LABEL, self.UNIT, rl.color_lerp(rl.WHITE, BLUE, nudge_share(pull)))
+    return UiElement(f"{side}{cm}", self.LABEL, self.UNIT, color_lerp(rl.WHITE, BLUE, nudge_share(pull)))

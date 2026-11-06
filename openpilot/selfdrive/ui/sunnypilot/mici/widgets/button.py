@@ -10,11 +10,11 @@ See the LICENSE.md file in the root directory for more details.
 import math
 from collections.abc import Callable
 
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigMultiParamToggle, BigMultiToggle, BigParamControl, BigToggle
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.system.ui.lib.application import FontWeight, gui_app
+from openpilot.system.ui.lib.application import FontWeight, TextAlignmentVertical, gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.sunnypilot.lib.switch import SWITCH_VALUE, Switch
@@ -134,7 +134,7 @@ class BigButtonSP(BigButton):
 
   def _update_label_layout(self):
     self._label.set_font_size(self._get_label_font_size())
-    align = rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP if (self.value or self._badge_labels) else rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM
+    align = TextAlignmentVertical.TOP if (self.value or self._badge_labels) else TextAlignmentVertical.BOTTOM
     self._label.set_alignment_vertical(align)
 
   def _draw_badges(self, rect: rl.Rectangle):
@@ -160,9 +160,9 @@ class BigButtonSP(BigButton):
       scaled_rect = rl.Rectangle(btn_x, btn_y, self._rect.width * scale, self._rect.height * scale)
       rl.draw_rectangle_rounded(scaled_rect, 0.4, 7, rl.Color(0, 0, 0, int(255 * 0.5)))
       self._draw_content(btn_y)
-      rl.draw_texture_ex(txt_bg, (btn_x, btn_y), 0, scale, bg_tint)
+      rl.draw_texture_ex(txt_bg, rl.Vector2(btn_x, btn_y), 0, scale, bg_tint)
     else:
-      rl.draw_texture_ex(txt_bg, (btn_x, btn_y), 0, scale, bg_tint)
+      rl.draw_texture_ex(txt_bg, rl.Vector2(btn_x, btn_y), 0, scale, bg_tint)
       self._draw_content(btn_y)
 
 
@@ -212,7 +212,7 @@ class SupersededPill:
       super()._draw_pill(x, y, checked)
 
   def _draw_grey_pill(self, x: float, y: float):
-    rl.draw_texture_ex(self._txt_inactive_toggle, (x, y), 0, 1.0, rl.Color(255, 255, 255, int(255 * 0.6)))
+    rl.draw_texture_ex(self._txt_inactive_toggle, rl.Vector2(x, y), 0, 1.0, rl.Color(255, 255, 255, int(255 * 0.6)))
 
 
 class BigParamControlSP(SupersededPill, BigParamControl):

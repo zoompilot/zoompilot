@@ -14,7 +14,7 @@ gauge is drawn as polygons rather than a texture, so it stays sharp at any size 
 import math
 
 import numpy as np
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import Widget
@@ -83,7 +83,7 @@ def draw_gauge(x: float, y: float, height: float, alpha: float = 1.0) -> None:
   """The Set Speed Assist gauge with its ink's top-left at (x, y), `height` tall."""
   s = height / (_BOTTOM - _TOP)
   cx, cy = x - _LEFT * s, y - _TOP * s
-  color = rl.color_alpha(rl.WHITE, alpha)
+  color = rl.fade(rl.WHITE, alpha)
 
   dial = np.linspace(DIAL_FROM, DIAL_TO, DIAL_SEGMENTS + 1)
   _ribbon([_pt(cx, cy, DIAL_R * s, d) for d in dial], [_pt(cx, cy, (DIAL_R - DIAL_T) * s, d) for d in dial], color)
@@ -152,7 +152,7 @@ class LongitudinalIcon(Widget):
     self.set_enabled(False)
 
   def _render(self, _) -> None:
-    color = rl.color_alpha(rl.WHITE, STATUS_ICON_ALPHA)
+    color = rl.fade(rl.WHITE, STATUS_ICON_ALPHA)
     x, y = self._rect.x, self._rect.y
     for texture in (self._car, *self._bars):
       # whole pixels: the bars are a few px tall and blur on a half-pixel offset
