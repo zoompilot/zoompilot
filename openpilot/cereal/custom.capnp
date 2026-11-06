@@ -738,9 +738,9 @@ struct LongitudinalPlanZP @0xc3b0556e1118c2db {
       disabled @0;      # the LeadForecast toggle is off (and logs from before it)
       none @1;
       noLead @2;
-      radar @3;         # a radar track: measured, keeps upstream's extrapolation
+      radar @3;         # a radar track with LeadForecastRadar off: keeps upstream's extrapolation
       invalid @4;
-      mismatch @5;      # radarState's lead is not the model's lead
+      mismatch @5;      # radarState's lead is not the model's lead (radar: off the track's range or speed)
     }
   }
 

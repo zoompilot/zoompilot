@@ -4,7 +4,8 @@ Code: `openpilot/sunnypilot/selfdrive/controls/lib/lead_forecast/forecast.py`. `
 wraps the MPC instance's `process_lead` at init and refreshes the forecast in its `update()`, so
 `long_mpc.py` and the upstream planner stay byte-identical. On by default with no setting: it is
 how the planner models the car ahead, not a preference. `LeadForecast` (default 1) stays as a
-hidden off switch for testing. Logged in `longitudinalPlanSP.zoompilot.leadForecast` (per lead: blend weight,
+hidden off switch for testing. Radar leads take it only with `LeadForecastRadar` (default 1 since 2026-11-06, hidden;
+see [Radar leads](#radar-leads-leadforecastradar)). Logged in `longitudinalPlanSP.zoompilot.leadForecast` (per lead: blend weight,
 inhibit reason, the x/v trajectory the MPC got). Tests: `lead_forecast/tests/`. Tools:
 `tools/mazda_long/lead_event_index.py` (cached per-frame index of every engaged segment, slowing
 leads, brake taps, cut-ins, following gaps), `tools/mazda_long/lead_forecast_replay.py` (A/B of
@@ -110,6 +111,82 @@ above). Cut-ins followed by the new lead accelerating: none on camera leads in t
 | `MATCH_DIST` | 4 m | radarState's camera lead is `x[0] - 1.52` of the same or previous model frame |
 | `BLEND_RATE` | 4 /s | full switch in 0.25 s; no step in the obstacle |
 
+## Radar leads (`LeadForecastRadar`)
+
+On by default since 2026-11-06 (a 2021-24 Camry tester drives it first). The PR's Toyota process-replay segment that fired FCW on 575 frames (the reason radar
+leads were left out) is a fixture artifact: in all three Toyota regen segments (`TOYOTA`,
+`TOYOTA2`, `TOYOTA3`) `leadsV3.x` past t=0 is about 0 (`[52, 0.2, -0.3, 1.5, ...]`) while `v` is
+sane, and the PR's position is `dRel + (x - x[0])` made non-decreasing, so its lead becomes a
+stopped car at the current range. The replay reproduces it (35 FCW onsets on the three segments);
+the forecast integrates `v` and fires none.
+
+Accuracy, `tools/mazda_long/lead_forecast_accuracy.py --source radar`: every cached segment
+(engaged or stock ACC), lead on the same radar track for the next 6 s, truth the track's later
+vLead and dRel plus the ego's travel. 299k samples (0.2 s apart). Radar path = what the car runs:
+the radar path where `radar_matches`, upstream elsewhere (4 s position error, mean / MAE /
+optimistic p90, m):
+
+| case | upstream | camera formula | radar path |
+|---|---|---|---|
+| all | +0.34 / 1.62 / +2.69 | -0.03 / 1.72 / +2.38 | +0.10 / 1.49 / +2.23 |
+| lead slows > 2.5 m/s by 4 s | +4.21 / 5.19 / +10.09 | +3.95 / 4.88 / +10.10 | +2.78 / 4.12 / +8.48 |
+| lead braking now (aLeadK < -1) | -0.88 / 3.67 / +4.63 | +2.47 / 4.19 / +8.93 | -1.28 / 3.53 / +3.78 |
+| lead speeds up > 2 m/s | -1.78 / 3.83 / +3.40 | -4.77 / 4.99 / -0.19 | -2.35 / 3.11 / +1.47 |
+| brake tap | -5.92 / 6.27 / +0.71 | -1.44 / 3.01 / +2.46 | -5.98 / 6.33 / +0.71 |
+| steady | +0.35 / 0.79 / +1.42 | +0.27 / 0.80 / +1.45 | +0.27 / 0.79 / +1.39 |
+
+Radar measures what the model's 2 s knots miss: the lead's deceleration now. So the radar path:
+
+```
+allowance = max(interp(vLead, [3, 8], [0, 1]), interp(aLeadK, [0.1, 0.5], [0, 1])) * interp(aLeadK, [-1, -0.3], [0, 1])
+v_f(t)    = forecast_speed with that allowance, on the model's knots
+v_m(t)    = upstream's extrapolation of the measured aLeadK (its clip and tau)
+v(t)      = w(t) v_m + (1 - w(t)) v_f,  w = 1 -> 0 over RADAR_HANDOVER_T = 3 s
+v(t)     -= floor * max(v - v_m, 0),    floor = interp(aLeadK, [-0.5, -0.1], [1, 0])
+x(t)      = max(dRel, min_x_lead) + integral of v
+```
+
+- Handover 3 s: 2 s and 4 s were each worse on more cases (4 s is better on all-sample MAE, worse
+  behind slowing leads).
+- Braking floor: while radar measures the lead braking, never faster than upstream. Without it the
+  forecast's optimistic tail behind braking leads doubles (table). It also turns brake taps back
+  into upstream's (the camera formula ignored taps less; taps are upstream's behaviour, no worse).
+- Launch lift: under 3 m/s a predicted pull-away is right 77% of the time with radar truth, as with
+  the camera (75%), but a measured aLeadK > 0.5 is the lead already moving. Behind launches the 4 s
+  position MAE drops from upstream's 7.2 m to 4.5 m.
+
+Match (`radar_matches`): radard pairs a track with the model's lead loosely (25% of range, 10 m/s). The
+forecast needs radarState modelProb >= 0.5 (radard's low-speed override, a close stationary track no
+model lead confirmed, reports 0), range within max(5 m, 15% of dRel) of `x[0] - 1.52`, and relative
+speed (`v[0] - modelV2.velocity.x[0]` vs the track's own `vRel`) within 2 m/s. On our radar: |dx| p50 1.1 m,
+p99 10.9 m (16% of range); |dv| p50 0.6, p90 1.9, p99 4.6 m/s. Past 2 m/s the forecast's 4 s speed MAE
+is worse than upstream's (2-4 m/s: 0.82 vs 0.76, over 4: 1.56 vs 1.18), under it better or equal.
+The Toyota regen segments' older model sits further from the track (|dx| p50 4.4 m, 5% of range),
+hence the 15%. A changed radarTrackId drops the last forecast's shape: a matched new track takes
+its own forecast at the same weight, an unmatched one goes to upstream at once instead of fading
+the old car's shape onto it.
+
+FCW reads the trajectory the MPC solved against, as for camera leads.
+
+Replay, `lead_forecast_replay.py --source radar --arms upstream,radar,radar_fcwm,pr`, 8.57 h
+following radar leads on builds that reproduce, 232 slowing-lead events:
+
+| arm | FCW onsets | crash_cnt > 0 onsets | -0.3 earlier / later | frames off upstream by > 0.3 m/s^2 |
+|---|---|---|---|---|
+| upstream | 1 | 3 | | |
+| radar path | 0 | 2 | 14% / 0% | 0.0% |
+| radar path, FCW on the measured path | 1 | 9 | 14% / 0% | 0.0% |
+| PR | 1 (another) | 0 | 15% / 18% | 0.1% |
+
+Peak decel and brake taps are unchanged (paired p50 0.00). The effect in the MPC is small because
+the near term stays on the measured accel and the floor holds braking leads to upstream; the gain
+is at 3-6 s. Toyota fixtures (three 1-minute segments, old model): no FCW, candidate within
+-0.11/+0.02 m/s^2 (p1/p99) of upstream. With `LeadForecastRadar` off, the forecast is bit-identical
+to the camera-only version on routes 0000004a-62 (101k frames).
+
+Not covered by data: Toyota's radar with a current model (the only Toyota rlogs with modelV2 are
+the regen fixtures; commaCarSegments is CAN only). A Camry 2021-24 tester drives it first.
+
 ## Tried and rejected
 
 - Model `x` for position (the PR): optimistic by 2 m at 6 s; integrated speed is unbiased.
@@ -117,8 +194,11 @@ above). Cut-ins followed by the new lead accelerating: none on camera leads in t
   where the model was right 85% of the time, and does nothing for the slow-lead launch case that
   needs it, which the low-speed allowance covers. The braking-lead case it guards is covered by
   `SPEEDUP_A_BP` instead.
-- Forecast for radar leads: the radar measures the lead and the model's lead may be another
-  object (the PR's Toyota segment fired FCW on 575 frames master never did).
+- The camera formula for radar leads: optimistic behind a lead radar measures braking, and far
+  more pessimistic than upstream behind accelerating leads (see Radar leads).
+- FCW against the measured path for radar leads (crash check on upstream's extrapolation while
+  the MPC plans on the forecast): 9 crash_cnt onsets vs 3 for upstream and 2 for the forecast
+  path, and it keeps the FCW the forecast path drops.
 - Raising cruise max accel 1.6 -> 2.0 (rides along in the PR): works against the Mazda accel
   envelope in `mazda-longitudinal.md`.
 - Gating on lead probability: the forecast beat upstream even at raw prob < 0.8 (6 s speed MAE

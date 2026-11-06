@@ -42,10 +42,10 @@ def build_sm(d_rel=40., v_lead=15., model_v=None, radar=False, present=True, d_r
   return {'modelV2': md.modelV2.as_reader(), 'radarState': rs.radarState.as_reader()}
 
 
-def build(enabled=True):
+def build(enabled=True, radar=False):
   mpc = LongitudinalMpc()
   mpc.set_cur_state(V_EGO, 0.)
-  forecast = LeadForecast(params=FakeParams(LeadForecast=enabled))
+  forecast = LeadForecast(params=FakeParams(LeadForecast=enabled, LeadForecastRadar=radar))
   upstream = mpc.process_lead
   forecast.install(mpc)
   return mpc, forecast, upstream
