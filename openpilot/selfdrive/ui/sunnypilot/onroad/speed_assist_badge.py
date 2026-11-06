@@ -69,42 +69,66 @@ GAUGE_ASPECT = (_RIGHT - _LEFT) / (_BOTTOM - _TOP)  # ink width / height
 Point = tuple[float, float]
 
 
-def _ribbon(left: list[Point], right: list[Point], color: rl.Color) -> None:
+def _strip(left: list[Point], right: list[Point]) -> np.ndarray:
   """One triangle strip between two chains, so a translucent colour lays each pixel once: separate
   overlapping shapes would show darker seams wherever they meet."""
   (lx, ly), (rx, ry), (nx, ny) = left[0], right[0], left[1]
   if (rx - lx) * (ny - ly) - (ry - ly) * (nx - lx) > 0:
     left, right = right, left  # raylib culls clockwise triangles; the strip's first one sets the winding
-  strip = [rl.Vector2(*p) for pair in zip(left, right, strict=True) for p in pair]
-  rl.draw_triangle_strip(strip, len(strip), color)
+  return np.array([p for pair in zip(left, right, strict=True) for p in pair])
 
 
-def draw_gauge(x: float, y: float, height: float, alpha: float = 1.0) -> None:
-  """The Set Speed Assist gauge with its ink's top-left at (x, y), `height` tall."""
-  s = height / (_BOTTOM - _TOP)
-  cx, cy = x - _LEFT * s, y - _TOP * s
-  color = rl.color_alpha(rl.WHITE, alpha)
-
+def _unit_strips() -> list[np.ndarray]:
+  """The gauge's three strips at s = 1 about the dial's centre."""
   dial = np.linspace(DIAL_FROM, DIAL_TO, DIAL_SEGMENTS + 1)
-  _ribbon([_pt(cx, cy, DIAL_R * s, d) for d in dial], [_pt(cx, cy, (DIAL_R - DIAL_T) * s, d) for d in dial], color)
+  strips = [_strip([_pt(0, 0, DIAL_R, d) for d in dial], [_pt(0, 0, DIAL_R - DIAL_T, d) for d in dial])]
 
   # needle and hub as one teardrop: the tip, then the hub's back half from where the sides meet it
-  tip = _pt(cx, cy, NEEDLE_LEN * s, NEEDLE_DEG)
+  tip = _pt(0, 0, NEEDLE_LEN, NEEDLE_DEG)
   side = math.degrees(math.acos(HUB_R / NEEDLE_LEN))
   back = np.linspace(side, 180, HUB_SEGMENTS)
-  _ribbon([tip] + [_pt(cx, cy, HUB_R * s, NEEDLE_DEG + d) for d in back],
-          [tip] + [_pt(cx, cy, HUB_R * s, NEEDLE_DEG - d) for d in back], color)
+  strips.append(_strip([tip] + [_pt(0, 0, HUB_R, NEEDLE_DEG + d) for d in back],
+                       [tip] + [_pt(0, 0, HUB_R, NEEDLE_DEG - d) for d in back]))
 
   # swoosh and arrowhead as one ribbon: the tapered shaft, its barbs, then the tip
   outer, inner = [], []
   for f in np.linspace(0, 1, SWOOSH_SEGMENTS + 1):
     deg, t = SWOOSH_FROM + (SWOOSH_TO - SWOOSH_FROM) * f, _swoosh_t(f)
-    outer.append(_pt(cx, cy, (SWOOSH_R + t / 2) * s, deg))
-    inner.append(_pt(cx, cy, (SWOOSH_R - t / 2) * s, deg))
-  outer.append(_pt(cx, cy, (SWOOSH_R + HEAD_HALF) * s, SWOOSH_TO))
-  inner.append(_pt(cx, cy, (SWOOSH_R - HEAD_HALF) * s, SWOOSH_TO))
-  arrow_tip = _pt(cx, cy, SWOOSH_R * s, NEEDLE_DEG)
-  _ribbon(outer + [arrow_tip], inner + [arrow_tip], color)
+    outer.append(_pt(0, 0, SWOOSH_R + t / 2, deg))
+    inner.append(_pt(0, 0, SWOOSH_R - t / 2, deg))
+  outer.append(_pt(0, 0, SWOOSH_R + HEAD_HALF, SWOOSH_TO))
+  inner.append(_pt(0, 0, SWOOSH_R - HEAD_HALF, SWOOSH_TO))
+  arrow_tip = _pt(0, 0, SWOOSH_R, NEEDLE_DEG)
+  strips.append(_strip(outer + [arrow_tip], inner + [arrow_tip]))
+  return strips
+
+
+_UNIT_STRIPS = _unit_strips()
+# vertex arrays by (x, y, height): the gauge only moves while it slides in or out
+_placed: dict[tuple[float, float, float], list[tuple]] = {}
+PLACED_MAX = 8
+
+
+def draw_gauge(x: float, y: float, height: float, alpha: float = 1.0) -> None:
+  """The Set Speed Assist gauge with its ink's top-left at (x, y), `height` tall."""
+  # rounded: a sliding filter only approaches its rest, so its last digits never settle
+  key = (round(x, 1), round(y, 1), round(height, 1))
+  strips = _placed.get(key)
+  if strips is None:
+    x, y, height = key
+    s = height / (_BOTTOM - _TOP)
+    origin = np.array([x - _LEFT * s, y - _TOP * s])
+    strips = []
+    for unit in _UNIT_STRIPS:
+      points = rl.ffi.new("Vector2[]", (unit * s + origin).tolist())
+      strips.append((points, rl.ffi.cast("Vector2 *", points), len(unit)))  # the array owns the memory
+    if len(_placed) >= PLACED_MAX:
+      _placed.clear()
+    _placed[key] = strips
+  color = rl.color_alpha(rl.WHITE, alpha)
+  for _, points, count in strips:
+    rl.draw_triangle_strip(points, count, color)
+
 
 def draw_gauge_centered(cx: float, cy: float, height: float, alpha: float = 1.0) -> None:
   """Its ink box centred on (cx, cy), to sit beside other icons."""
