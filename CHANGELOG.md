@@ -8,8 +8,7 @@ zoompilot vUNRELEASED
   * Fixed model lagging and locationd errors below 12 mph: the small model no longer steers beside a chestnut.
 * jetlink
   * A jetlink cable is no longer mistaken for a chestnut.
-  * The big model list comes from jetlink's model index: every comma model, each listed once in its folder, with open comma pull requests in their own folder. New models show up within the hour.
-  * A big model picked before keeps its pick when the list names it under a newer commit.
+  * Uses jetlink's own model index, so no jetlink updates are needed when comma changes its release strategy for models.
 * Mazda
   * Alpha longitudinal: quicker throttle in town and faster launch from a stop.
 * Speed Limit Assist no longer turns itself off after installing.
