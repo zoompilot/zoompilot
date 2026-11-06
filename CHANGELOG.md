@@ -10,6 +10,7 @@ zoompilot vUNRELEASED
   * Uses jetlink's own model index, so no jetlink update is needed when comma changes how it releases models.
 * Mazda
   * Alpha longitudinal: less throttle lag, and a quicker launch from a stop.
+* Set Speed Assist follows the driving personality: gentler on Relaxed, quicker on Aggressive.
 * Fixed Speed Limit Assist not turning on reliably on some cars.
 * sunnylink: Lane Center Assist can be turned on with the Default model.
 
