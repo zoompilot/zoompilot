@@ -4,7 +4,6 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-import math
 
 import numpy as np
 import pytest
@@ -110,14 +109,6 @@ def test_gain_fades_the_lift_as_the_model_slows():
   assert ctl.lift == 0.
 
 
-def test_throttle_probability_scales_the_lift():
-  ctl = new_controller()
-  run(ctl, SETTLE_FRAMES, build_sm(V_EGO, throttle_prob=0.5))
-  assert ctl.lift == pytest.approx(0.5 * A_CRUISE)
-  run(ctl, SETTLE_FRAMES, build_sm(V_EGO, throttle_prob=0.))
-  assert ctl.lift == 0.
-
-
 def test_never_lowers_the_model():
   # over the set speed, braking or a bend ahead: the e2e candidate is the model's or above
   for sm, a_model, a_cruise in [(build_sm(V_EGO), 0.2, -0.5), (build_sm(V_EGO), -1.5, A_CRUISE),
@@ -128,11 +119,14 @@ def test_never_lowers_the_model():
     assert ctl.lift == 0.
 
 
-def test_lets_go_of_the_models_braking_fast():
+def test_lets_go_of_the_models_braking_at_once():
   ctl = settled(a_cruise=1.5)
-  run(ctl, 1, build_sm(V_EGO), a_model=-0.5, a_cruise=1.5)
-  assert ctl.lift == pytest.approx(1.5 - c.LIFT_FALL * DT)
-  run(ctl, math.ceil(1.5 / (c.LIFT_FALL * DT)), build_sm(V_EGO), a_model=-0.5, a_cruise=1.5)
+  # halfway into the fade, the lift drops to its new value in one frame instead of easing off
+  a_model = sum(c.GAIN_BP) / 2
+  run(ctl, 1, build_sm(V_EGO), a_model=a_model, a_cruise=1.5)
+  assert ctl.lift == pytest.approx(0.5 * (ctl.floor - a_model))
+  ctl = settled(a_cruise=1.5)
+  assert run(ctl, 1, build_sm(V_EGO), a_model=-0.5, a_cruise=1.5) == -0.5
   assert ctl.lift == 0.
 
 
@@ -175,7 +169,7 @@ def test_invalid_model_passes_through():
   assert run(ctl, 1, sm, a_model=0.05) == 0.05
   assert ctl.inhibit == Inhibit.invalid
 
-  assert run(ctl, 1, build_sm(V_EGO, throttle_prob=float('nan')), a_model=0.05) == 0.05
+  assert run(ctl, 1, build_sm(float('nan')), a_model=0.05) == 0.05
   assert ctl.inhibit == Inhibit.invalid
 
 

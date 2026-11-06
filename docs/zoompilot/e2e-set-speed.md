@@ -35,10 +35,10 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 
 ```
 e2e   = a_model + lift
-lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall 2.4 m/s^3
+lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall max(2.4 m/s^3, (1 - gain) * lift per frame)
 floor = min(a_mpc, a_cruise, approach_accel(v_ego, v_target, personality))
-gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * gasPressProbs[1] * fade-in over 5-8 m/s
-fade  = interp(v_ego^2 * max curvature over the next 10 s (or now), [0.6, 1.0] m/s^2, [1, 0])
+gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * fade-in over 5-8 m/s
+fade  = interp(max(steer lat accel, v_ego^2 * max path curvature over 10 s), [0.6, 1.0] m/s^2, [1, 0])
 ```
 
 The floor is chill mode's answer: the lower of the planner's own lead MPC candidate (this frame's
@@ -83,12 +83,15 @@ Why each input:
   settles near -0.05..-0.1 at the set speed, where it pushes back toward its pace, so the band sits
   below both: [-0.2, -0.05] crossed 5-16 times a minute near the set speed, [-0.3, -0.1] 1-4
   times, and [-0.5, -0.2] fights gentle slowdowns (mean lift 0.26 m/s^2 through them against
-  0.10). The model's throttle probability (gasPressProbs[1], upstream's `allow_throttle` input) is
-  p50 0.94 in cruise, 0.5-0.6 through gentle slowdowns and 0.14-0.22 when it starts braking: a
-  continuous version of the coast gate, which as a boolean toggled 4-9 times a minute in cruise.
+  0.10). The model's throttle probability (gasPressProbs[1]) is not used: in engaged cruise it is
+  p50 0.93, the lift was 0.45 m/s^2 with it against 0.47 without, and where it is low the
+  acceleration band has already closed the lift 92% of the time (2026-11-04, routes 4a-62).
 - `fade` reads the road's geometry, not the plan's speeds. On a straight road the plan's speed
   10 s out swings p90 2.5 mph per 0.5 s; curvature at the current speed flags 86-100% of real bend
-  approaches and is over 1.0 m/s^2 on hindsight-straight road for 0.1-3% of frames.
+  approaches and is over 1.0 m/s^2 on hindsight-straight road for 0.1-3% of frames. The model's
+  desiredCurvature is not used: over 61 engaged minutes the path covers it (fade differs in 2.7%
+  of frames, ~10 s of lift), but the path reads sustained bends 10-20% low, so the measured
+  steering lateral acceleration stays.
 - Leads, FCW, hardBrakePredicted and forceDecel need no case: the lead's MPC sits below the lift
   in the planner's min(), as it bounds chill mode, and the others drive the model's acceleration
   (and so the gain) down.
@@ -128,7 +131,7 @@ add under DEC.
 | rise | 1.6/1.2/0.8/0.6 m/s^3 at 0/10/25/40 m/s | upstream's cruise jerk (`op_long_cruise_jerk`): the lift stands in for cruise, on any car. Mazda's AccelShaper still caps the build at stock MRCC's 0.8 |
 | `APPROACH_V` over `APPROACH_BP` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s^2 at 0, 4, 9, 14, 18, 25 m/s | the CX-5's stock MRCC accelerating command p99 by speed, no lead (its wire ceiling eases 14 m/s to 0.95 for a 4>3 kickdown; that stays in the Mazda port) |
 | `APPROACH_GAP_FRACTION` over `APPROACH_GAP_BP` | 0.38, 0.47, 0.57, 0.72, 1 at 0, 1, 3, 5, 10 m/s under the target | between stock's p50 and p90 by shortfall: 0.31/0.37 at 0.5-1.5 m/s, 0.41/0.44 at 1.5-3, 0.51/0.55 at 3-5, 0.64/0.76 at 5-10 (20-24 m/s) |
-| `LIFT_FALL` | 2.4 m/s^3 | at 0.5 the lift was still over 0.2 for 1.8% of frames with the model braking past -0.5; at 2.4, none |
+| `LIFT_FALL` | 2.4 m/s^3 | the slowest fall, for lane changes, bends and a lower floor. Chosen when it was the only fall: at 0.5 the lift was still over 0.2 for 1.8% of frames with the model braking past -0.5; at 2.4, none. The model's braking now also drops the lift through the gain |
 
 ## Expected behaviour
 

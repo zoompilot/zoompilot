@@ -19,14 +19,14 @@ floor is chill mode's answer, the lower of the planner's own lead MPC and cruise
 (upstream's cruise law with SCC and SLA's targets), so with nothing to slow for experimental mode
 drives and follows as chill does, closing on the target speed no harder than a production ACC
 (approach.py, a step gentler on Relaxed and firmer on Aggressive). gain fades the lift out as
-the model eases off (its own acceleration and its throttle probability) and below walking pace,
-and fade as the road ahead bends at the current speed. Every slowdown is the model's: the lift
+the model eases off and below walking pace, and fade as the road bends, now or ahead, at the
+current speed. Every slowdown is the model's: the lift
 only lets go of it, and a lead that brakes binds through the MPC candidate at once.
 
 A lift that could go negative made the car pump on a straight road: the plan's far end flickers
 by several mph from one frame to the next, and handing back added speed on each flicker
 alternated throttle and brake every 15-20 s. Read only through the model's own acceleration and
-probability, and the road's geometry, the lift has no such input to chase. Design and data:
+the road's geometry, the lift has no such input to chase. Design and data:
 docs/zoompilot/e2e-set-speed.md.
 """
 import math
@@ -58,8 +58,8 @@ GAIN_BP = [-0.3, -0.1]  # m/s^2
 FADE_LAT_BP = [0.6, 1.0]  # m/s^2
 LAT_HORIZON = 10.0  # s
 
-# The lift rises at upstream's cruise jerk, as the cruise candidate it stands in for, and falls fast
-# so the model's own braking is never held off.
+# The lift rises at upstream's cruise jerk, as the cruise candidate it stands in for. This is the
+# slowest it eases off, e.g. on a lane change or a bend.
 LIFT_FALL = 2.4  # m/s^3
 
 T_IDXS = np.asarray(ModelConstants.T_IDXS)
@@ -102,7 +102,7 @@ class E2ESetSpeedController:
     self.frame += 1
     self._update_params()
 
-    # switched off with a lift on: it goes out at LIFT_FALL below, then the controller idles
+    # switched off with a lift on: it eases out below, then the controller idles
     if not self.enabled and self.lift == 0.:
       self._reset(Inhibit.disabled)
       return a_model
@@ -114,24 +114,20 @@ class E2ESetSpeedController:
     v_ego = sm['carState'].vEgo
     vel = np.asarray(md.velocity.x, dtype=float)
     yaw_rate = np.asarray(md.orientationRate.z, dtype=float)
-    curvature = md.action.desiredCurvature
-    throttle_probs = md.meta.disengagePredictions.gasPressProbs
-    throttle_prob = throttle_probs[1] if len(throttle_probs) > 1 else 1.
     if (len(vel) != ModelConstants.IDX_N or len(yaw_rate) != ModelConstants.IDX_N or
         not (np.isfinite(vel).all() and np.isfinite(yaw_rate).all()) or
-        not all(math.isfinite(x) for x in (v_ego, a_model, a_chill, throttle_prob, curvature))):
+        not all(math.isfinite(x) for x in (v_ego, a_model, a_chill, steer_lat_accel))):
       self._reset(Inhibit.invalid)
       return a_model
 
-    # the road's geometry ahead at the current speed, not the plan's speeds, which flicker
-    lat_now = max(abs(curvature) * v_ego ** 2, abs(steer_lat_accel))
+    # the road's geometry at the current speed, not the plan's speeds, which flicker. The path
+    # reads a sustained bend 10-20% low, so the measured one counts too
     kappa_ahead = float(np.max((np.abs(yaw_rate) / np.maximum(vel, 1.))[LAT_MASK]))
-    lat_ahead = max(lat_now, kappa_ahead * v_ego ** 2)
+    lat_ahead = max(abs(steer_lat_accel), kappa_ahead * v_ego ** 2)
 
     self.floor = a_chill
     # stop-and-go stays the model's: the gain fades in above walking pace
-    self.gain = (float(np.interp(a_model, GAIN_BP, [0., 1.])) * float(np.clip(throttle_prob, 0., 1.)) *
-                 float(np.interp(v_ego, [MIN_SPEED, FULL_SPEED], [0., 1.])))
+    self.gain = float(np.interp(a_model, GAIN_BP, [0., 1.])) * float(np.interp(v_ego, [MIN_SPEED, FULL_SPEED], [0., 1.]))
     self.fade = float(np.interp(lat_ahead, FADE_LAT_BP, [1., 0.]))
 
     if not self.enabled:
@@ -141,5 +137,8 @@ class E2ESetSpeedController:
     else:
       self.inhibit = Inhibit.none
     target = self.gain * self.fade * max(0., self.floor - a_model) if self.inhibit == Inhibit.none else 0.
-    self.lift = rate_limit(target, self.lift, -LIFT_FALL * self.dt, op_long_cruise_jerk(v_ego) * self.dt)
+    # Normally the lift eases off at LIFT_FALL. When the model starts to brake the gain drops, and
+    # the lift may drop with it in one frame, so at gain 0 the model's braking is not delayed.
+    fall = max(LIFT_FALL * self.dt, (1. - self.gain) * self.lift)
+    self.lift = rate_limit(target, self.lift, -fall, op_long_cruise_jerk(v_ego) * self.dt)
     return a_model + self.lift

@@ -101,18 +101,6 @@ def test_plan_reports_the_floor():
   assert (report.gain, report.fade) == (1., 1.)
 
 
-def test_throttle_probability_reaches_the_floor():
-  planner = run_planner(True, frames=0)
-  sm = planner_sm()
-  model = sm['modelV2'].as_builder()
-  model.meta.disengagePredictions.gasPressProbs = [0.9, 0.25, 0.1]
-  sm['modelV2'] = model.as_reader()
-  for _ in range(200):
-    planner.update(sm)
-  assert planner.e2e_set_speed.gain == pytest.approx(0.25)
-  assert planner.e2e_set_speed.lift == pytest.approx(0.25 * planner.e2e_set_speed.floor, rel=1e-3)
-
-
 def gas_pressed_planner(enabled: bool) -> LongitudinalPlanner:
   """Model-limited with the gas held: upstream's boost latches eligibility, then learns."""
   planner = run_planner(enabled, frames=1)  # the first frame installs the gated boost
