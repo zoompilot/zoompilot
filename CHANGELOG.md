@@ -1,5 +1,6 @@
 zoompilot vUNRELEASED
 ========================
+* Synced with sunnypilot and openpilot of 2026-11-05, on AGNOS 20.3.
 * chestnut
   * Tested with a chestnut and fixed what came up.
   * Fixed the comma not downloading the big model when a chestnut connects.
