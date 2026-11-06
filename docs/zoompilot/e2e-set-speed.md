@@ -37,8 +37,8 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 e2e   = a_model + lift
 lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall 2.4 m/s^3
 floor = min(a_mpc, a_cruise, approach_accel(v_ego, v_target, personality))
-gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * gasPressProbs[1] * fade-in over 5-8 m/s
-fade  = interp(v_ego^2 * max curvature over the next 10 s (or now), [0.6, 1.0] m/s^2, [1, 0])
+gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * fade-in over 5-8 m/s
+fade  = interp(max(steer lat accel, v_ego^2 * max path curvature over 10 s), [0.6, 1.0] m/s^2, [1, 0])
 ```
 
 The floor is chill mode's answer: the lower of the planner's own lead MPC candidate (this frame's
@@ -83,12 +83,15 @@ Why each input:
   settles near -0.05..-0.1 at the set speed, where it pushes back toward its pace, so the band sits
   below both: [-0.2, -0.05] crossed 5-16 times a minute near the set speed, [-0.3, -0.1] 1-4
   times, and [-0.5, -0.2] fights gentle slowdowns (mean lift 0.26 m/s^2 through them against
-  0.10). The model's throttle probability (gasPressProbs[1], upstream's `allow_throttle` input) is
-  p50 0.94 in cruise, 0.5-0.6 through gentle slowdowns and 0.14-0.22 when it starts braking: a
-  continuous version of the coast gate, which as a boolean toggled 4-9 times a minute in cruise.
+  0.10). The model's throttle probability (gasPressProbs[1]) is not used: in engaged cruise it is
+  p50 0.93, the lift was 0.45 m/s^2 with it against 0.47 without, and where it is low the
+  acceleration band has already closed the lift 92% of the time (2026-11-04, routes 4a-62).
 - `fade` reads the road's geometry, not the plan's speeds. On a straight road the plan's speed
   10 s out swings p90 2.5 mph per 0.5 s; curvature at the current speed flags 86-100% of real bend
-  approaches and is over 1.0 m/s^2 on hindsight-straight road for 0.1-3% of frames.
+  approaches and is over 1.0 m/s^2 on hindsight-straight road for 0.1-3% of frames. The model's
+  desiredCurvature is not used: over 61 engaged minutes the path covers it (fade differs in 2.7%
+  of frames, ~10 s of lift), but the path reads sustained bends 10-20% low, so the measured
+  steering lateral acceleration stays.
 - Leads, FCW, hardBrakePredicted and forceDecel need no case: the lead's MPC sits below the lift
   in the planner's min(), as it bounds chill mode, and the others drive the model's acceleration
   (and so the gain) down.
