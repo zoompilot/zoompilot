@@ -23,10 +23,10 @@ A_CRUISE_MIN = -0.5
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 
-def get_cruise_accel(v_cruise, v_ego, a_cruise_prev, dt):
+def get_cruise_accel(v_cruise, v_ego, a_cruise_prev, a_target_prev, dt):
   target_accel = np.clip(v_cruise - v_ego, A_CRUISE_MIN, ACCEL_MAX)
   j_cruise = np.interp(v_ego, J_CRUISE_BP, J_CRUISE_VALS)
-  target_accel = float(np.clip(target_accel, a_cruise_prev - j_cruise * dt, a_cruise_prev + j_cruise * dt))
+  target_accel = float(np.clip(target_accel, min(a_cruise_prev, a_target_prev) - j_cruise * dt, a_cruise_prev + j_cruise * dt))
 
   return target_accel
 
@@ -108,7 +108,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_a_target_e2e, output_should_stop_e2e = LongitudinalPlannerSP.update_e2e_target(self, sm, output_a_target_e2e,
                                                                                           output_should_stop_e2e, reset_state)
 
-    self.a_cruise = get_cruise_accel(v_cruise, v_ego, self.a_cruise, self.dt)
+    self.a_cruise = get_cruise_accel(v_cruise, v_ego, self.a_cruise, self.output_a_target, self.dt)
     self.a_cruise = LongitudinalPlannerSP.update_cruise_accel(self, self.a_cruise)
     cruise_should_stop = should_stop(v_ego, self.a_cruise)
 
@@ -131,7 +131,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     longitudinalPlan = plan_send.longitudinalPlan
     longitudinalPlan.modelMonoTime = sm.logMonoTime['modelV2']
-    longitudinalPlan.processingDelay = (plan_send.logMonoTime / 1e9) - sm.logMonoTime['modelV2']
+    longitudinalPlan.processingDelay = (plan_send.logMonoTime - sm.logMonoTime['modelV2']) / 1e9
     longitudinalPlan.solverExecutionTime = self.mpc.solve_time
 
     longitudinalPlan.speeds = self.v_desired_trajectory.tolist()
