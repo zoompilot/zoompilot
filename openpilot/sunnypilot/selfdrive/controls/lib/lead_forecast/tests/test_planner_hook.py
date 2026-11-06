@@ -81,3 +81,32 @@ def test_on_reaches_the_mpc():
   # a lead the model sees slowing hard: the plan brakes harder than upstream's extrapolation
   assert planner.mpc.a_solution[:6].min() < off.mpc.a_solution[:6].min() - 0.1
 
+
+
+def radar_run(radar_on: bool, frames: int = 20):
+  planner = build_planner()
+  planner.lead_forecast.params = FakeParams(LeadForecast=True, LeadForecastRadar=radar_on)
+  planner.lead_forecast.frame = -1
+  sm = lead_sm()
+  rs = sm['radarState'].as_builder()
+  rs.leadOne.radar = True
+  rs.leadOne.radarTrackId = 3
+  rs.leadOne.aLeadTau = 1.5
+  sm['radarState'] = rs.as_reader()
+  for _ in range(frames):
+    planner.update(sm)
+  return planner, sm
+
+
+def test_radar_lead_off_is_upstream():
+  planner, sm = radar_run(False)
+  lead = publish(planner, sm).leadForecast.leadOne
+  assert lead.inhibit == Inhibit.radar and lead.weight == 0.
+
+
+def test_radar_lead_on_reaches_the_mpc():
+  off, _ = radar_run(False)
+  planner, sm = radar_run(True)
+  lead = publish(planner, sm).leadForecast.leadOne
+  assert lead.inhibit == Inhibit.none and lead.weight == pytest.approx(1.)
+  assert planner.mpc.a_solution[:6].min() < off.mpc.a_solution[:6].min() - 0.1
