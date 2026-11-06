@@ -1,8 +1,9 @@
 # Use the zoompilot opendbc fork. Changes to this file make submodule sync refresh
-# legacy URLs.
+# legacy URLs. panda and msgq point at zoompilot forks until sunnypilot/panda#128 and
+# sunnypilot/msgq#36 merge; go back to sunnyhaibin/panda and sunnypilot/msgq then.
 [submodule "panda"]
   path = panda
-  url = https://github.com/sunnyhaibin/panda.git
+  url = https://github.com/zoompilot/panda.git
 [submodule "opendbc"]
   path = opendbc_repo
   url = https://github.com/zoompilot/opendbc.git
@@ -11,7 +12,7 @@
   url = https://github.com/zoompilot/jetlink.git
 [submodule "msgq"]
   path = msgq_repo
-  url = https://github.com/sunnypilot/msgq.git
+  url = https://github.com/zoompilot/msgq.git
 [submodule "rednose_repo"]
   path = rednose_repo
   url = https://github.com/commaai/rednose.git
