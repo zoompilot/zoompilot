@@ -12,6 +12,8 @@ that has booted before.
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.car.mazda_torque_seed import seed_car_defaults_offroad
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.source_auto import AUTO
 
 E2E_ASSISTS_MIGRATED = "ExperimentalAssistsDefaultOn"
 E2E_ASSISTS = ("ExperimentalModeSetSpeed",)
@@ -31,6 +33,18 @@ def _migrate_e2e_assists_on(params: Params) -> None:
     cloudlog.exception("params_migration_zp: e2e assists migration failed, retrying next boot")
 
 
+def _fold_speed_limit_sources(params: Params) -> None:
+  # Car-first, map-first and combined became one Auto source 2026-11-05. No marker: the settings
+  # can no longer write 3 or 4, but a restored backup can.
+  try:
+    if params.get("SpeedLimitPolicy", return_default=True) in (Policy.map_data_priority, Policy.combined):
+      params.put("SpeedLimitPolicy", int(AUTO), block=True)
+      cloudlog.info("params_migration_zp: SpeedLimitPolicy folded into Auto")
+  except Exception:
+    cloudlog.exception("params_migration_zp: SpeedLimitPolicy fold failed, retrying next boot")
+
+
 def run_migration_zp(params: Params) -> None:
   _migrate_e2e_assists_on(params)
+  _fold_speed_limit_sources(params)
   seed_car_defaults_offroad(params)

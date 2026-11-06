@@ -12,6 +12,7 @@ from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode as SpeedLimitMode
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import OffsetType as SpeedLimitOffsetType
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.source_auto import car_shows_limit
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.widgets import get_highlighted_description
 from openpilot.system.ui.sunnypilot.widgets.list_view import multiple_button_item_sp, option_item_sp, simple_button_item_sp, LineSeparatorSP
@@ -68,6 +69,8 @@ class SpeedLimitSettingsLayout(Widget):
       button_width=720,
       callback=lambda: self._set_current_panel(PanelType.POLICY)
     )
+    # cars that report no limit always use the map
+    self._source_button.set_visible(lambda: car_shows_limit(ui_state.CP, ui_state.CP_SP))
 
     self._speed_limit_offset_type = multiple_button_item_sp(
       title=lambda: tr("Speed Limit Offset"),

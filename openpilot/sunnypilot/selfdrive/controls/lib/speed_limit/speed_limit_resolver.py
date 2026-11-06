@@ -16,6 +16,7 @@ from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD, get_sanitize_int_param
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, LIMIT_ADAPT_ACC
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import COMMIT_FRAC, OP_LONG_COAST_A, get_planning_limits
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy, OffsetType
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.source_auto import AutoSource, CarLimitHold, car_shows_limit, is_auto
 
 SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
 
@@ -34,7 +35,7 @@ class SpeedLimitResolver:
   source: custom.LongitudinalPlanSP.SpeedLimit.Source
   speed_limit_offset: float
 
-  def __init__(self, CP=None):
+  def __init__(self, CP=None, CP_SP=None):
     self.params = Params()
     self.frame = -1
     # swap to the upcoming lower limit once we are inside the braking distance the
@@ -44,6 +45,10 @@ class SpeedLimitResolver:
     else:
       a_budget = OP_LONG_COAST_A if CP.openpilotLongitudinalControl else get_planning_limits(CP).a_budget
       self._adapt_acc = -COMMIT_FRAC * a_budget
+
+    self._car_reports = car_shows_limit(CP, CP_SP)
+    self._car_hold = CarLimitHold()
+    self._auto = AutoSource()
 
     self._gps_location_service = get_gps_location_service(self.params)
     self.limit_solutions = {}  # Store for speed limit solutions from different sources
@@ -120,7 +125,7 @@ class SpeedLimitResolver:
 
   def _get_from_car_state(self, sm: messaging.SubMaster) -> None:
     self._reset_limit_sources(SpeedLimitSource.car)
-    self.limit_solutions[SpeedLimitSource.car] = sm['carStateSP'].speedLimit
+    self.limit_solutions[SpeedLimitSource.car] = self._car_hold.update(sm['carStateSP'].speedLimit)
     self.distance_solutions[SpeedLimitSource.car] = 0.
 
   def _get_from_map_data(self, sm: messaging.SubMaster) -> None:
@@ -160,6 +165,11 @@ class SpeedLimitResolver:
         self.distance_solutions[SpeedLimitSource.map] = distance_to_speed_limit_ahead
 
   def _get_source_solution_according_to_policy(self) -> custom.LongitudinalPlanSP.SpeedLimit.Source:
+    # Auto (source_auto.py) takes every policy but car-only and map-only, so below runs only for those two
+    if is_auto(self.policy, self._car_reports):
+      return self._auto.pick(self.limit_solutions[SpeedLimitSource.car], self.limit_solutions[SpeedLimitSource.map],
+                             self.distance_solutions[SpeedLimitSource.map], self.v_ego)
+
     sources_for_policy = self._policy_to_sources_map[Policy(self.policy)]
 
     if Policy(self.policy) != Policy.combined:

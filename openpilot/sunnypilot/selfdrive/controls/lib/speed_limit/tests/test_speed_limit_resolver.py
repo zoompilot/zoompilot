@@ -63,7 +63,9 @@ parametrized_policies = parameterized.expand(
     (Policy.car_state_only, 'carStateSP', SpeedLimitSource.car),
     (Policy.car_state_priority, 'carStateSP', SpeedLimitSource.car),
     (Policy.map_data_only, 'liveMapDataSP', SpeedLimitSource.map),
-    (Policy.map_data_priority, 'liveMapDataSP', SpeedLimitSource.map),
+    # map-first and combined fold into Auto, which follows the car while it shows a limit (source_auto.py)
+    (Policy.map_data_priority, 'carStateSP', SpeedLimitSource.car),
+    (Policy.combined, 'carStateSP', SpeedLimitSource.car),
   ],
   names=["policy", "sm_key", "function_key"]
 )
@@ -95,20 +97,6 @@ class TestSpeedLimitResolverValidation(OpenpilotTestCase):
     resolver.update(source_speed_limit, sm_mock)
     assert resolver.speed_limit == source_speed_limit
     assert resolver.source == ALL_SOURCES[function_key]
-
-  def test_resolver_combined(self, resolver_class, mocker):
-    resolver = resolver_class()
-    resolver.policy = Policy.combined
-    sm_mock = setup_sm_mock(mocker)
-    socket_to_source = {'carStateSP': SpeedLimitSource.car, 'liveMapDataSP': SpeedLimitSource.map}
-    minimum_key, minimum_speed_limit = min(
-      ((key, sm_mock[key].speedLimit) for key in
-       socket_to_source.keys()), key=lambda x: x[1])
-
-    # Assert the resolver
-    resolver.update(minimum_speed_limit, sm_mock)
-    assert resolver.speed_limit == minimum_speed_limit
-    assert resolver.source == socket_to_source[minimum_key]
 
   @parametrized_policies
   def test_parser(self, resolver_class, policy, sm_key, function_key, mocker):
