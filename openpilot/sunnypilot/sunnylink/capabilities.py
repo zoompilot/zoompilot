@@ -11,7 +11,7 @@ from opendbc.car.structs import car
 from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, UNSUPPORTED_LONGITUDINAL_CAR
 from opendbc.car.subaru.values import CAR as SUBARU_CAR, SubaruFlags
 from opendbc.car.toyota.values import CAR as TOYOTA_CAR, ToyotaFlags
-from opendbc.sunnypilot.car.interfaces import has_bsm
+from opendbc.sunnypilot.car.interfaces import has_bsm, has_speed_limit
 from opendbc.sunnypilot.car.tesla.values import TeslaFlagsSP
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
@@ -36,6 +36,7 @@ CAPABILITY_FIELDS = (
   "alpha_long_available",
   "steer_control_type",
   "has_bsm",
+  "has_speed_limit",
   "is_release",
   "is_sp_release",
   "is_development",
@@ -60,6 +61,7 @@ CAPABILITY_LABELS: dict[str, str] = {
   "alpha_long_available": "Alpha Longitudinal available",
   "steer_control_type": "Steer control type",
   "has_bsm": "BSM available",
+  "has_speed_limit": "speed limit from the car",
   "is_release": "Release branch",
   "is_sp_release": "SP release branch",
   "is_development": "Development branch",
@@ -85,6 +87,7 @@ CAR_CAPABILITY_FIELDS = (
   "alpha_long_available",
   "steer_control_type",
   "has_bsm",
+  "has_speed_limit",
   "tesla_has_vehicle_bus",
   "has_stop_and_go",
   "subaru_has_sng",
@@ -220,6 +223,7 @@ def generate_capabilities(params: Params | None = None) -> dict:
 
   if CP is not None:
     caps["has_bsm"] = has_bsm(CP, CP_SP)
+    caps["has_speed_limit"] = has_speed_limit(CP, CP_SP)
 
   _resolve_brand_capabilities(caps, bundle_platform, CP)
 

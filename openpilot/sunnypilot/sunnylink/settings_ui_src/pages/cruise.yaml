@@ -183,7 +183,11 @@ sections:
       widget: multiple_button
       title: Speed Limit Source
       description: Auto follows the limit your car shows, and the map where it shows none. The map also slows you before
-        a lower limit ahead. Cars that report no limit always use the map.
+        a lower limit ahead.
+      visibility:
+      - type: capability
+        field: has_speed_limit
+        equals: true
       options:
       - value: 2
         label: Auto
