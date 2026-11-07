@@ -40,7 +40,7 @@ class TestSetSpeedLimitAssistAvailability:
     assert self.params.get("SpeedLimitMode", return_default=True) == int(Mode.assist)
 
   def test_mazda_alpha_long_without_icbm_is_pcm_op_long(self):
-    # no brand rule: like every pcm-op-long car, the planner machine and its required-max confirm
+    # no brand rule: like every pcm-op-long car, the planner machine
     self.params.put("SpeedLimitMode", int(Mode.assist), block=True)
     assert set_speed_limit_assist_availability(car_params("mazda", True), car_params_sp(True), self.params)
 

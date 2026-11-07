@@ -14,7 +14,7 @@ There are three kinds of car, and the setpoint has a different owner on each.
 
 | class | CarParams | who steps the set speed | SLA session runs in |
 |---|---|---|---|
-| pcm-op-long | `openpilotLongitudinalControl and pcmCruise` | openpilot (set speed held at the required max) | plannerd, `SpeedLimitAssistZP` |
+| pcm-op-long | `openpilotLongitudinalControl and pcmCruise` | openpilot (set speed is the ceiling) | plannerd, `SpeedLimitAssistZP` |
 | ICBM (stock ACC buttons) | `pcmCruise and not pcmCruiseSpeed` | the stock ECU, on every wheel press | card, `CruiseArbiter`; mirrored by plannerd |
 | op-long without pcmCruise | `not pcmCruise` | openpilot's `v_cruise` | card, `CruiseArbiter`; mirrored by plannerd |
 
