@@ -27,6 +27,7 @@ AudibleAlert = car.CarControl.HUDControl.AudibleAlert
 AudibleAlertSP = custom.SelfdriveStateSP.AudibleAlert
 EventNameSP = custom.OnroadEventSP.EventName
 EventNameZP = custom.OnroadEventZP.EventName
+AssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
 IS_MICI = HARDWARE.get_device_type() == 'mici'
 
@@ -91,10 +92,17 @@ def speed_limit_adjust_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.
     speed = min(speed, set_speed)
   # mici wraps the unit off its number; break before the speed instead
   sep = "\n" if IS_MICI else " "
+  # the planner's machine applies a lower limit unasked and the gas declines it
+  # (speed_limit_assist_zp); the arbiter publishes its session wherever it owns SLA instead
+  planner_owns = CP.openpilotLongitudinalControl and CP.pcmCruise and \
+                 sm['carStateSP'].zoompilot.cruiseSession.state == AssistState.disabled
+  speed_conv = CV.MS_TO_KPH if metric else CV.MS_TO_MPH
+  slowing = round(speed * speed_conv) < round(CS.vEgo * speed_conv)
+  cancel = "Press gas to cancel" if planner_owns and slowing else ""
   return Alert(
     f'Adjusting to{sep}{get_display_speed(speed, metric)}',
-    "",
-    AlertStatus.normal, AlertSize.small,
+    cancel,
+    AlertStatus.normal, AlertSize.mid if cancel else AlertSize.small,
     Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 5.)
 
 
