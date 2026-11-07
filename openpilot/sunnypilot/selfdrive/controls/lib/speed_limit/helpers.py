@@ -44,8 +44,8 @@ def settle_conv(v_cap: float, cluster_conv: int, is_metric: bool) -> int:
 
 def pcm_machine_owns_sla(CP: car.CarParams, icbm_active: bool) -> bool:
   """The plannerd SLA machine runs where openpilot commands acceleration, the car's ECU keeps
-  the setpoint on its cluster, and nothing can move that setpoint but the driver: it confirms
-  through the driver setting the required-max speed. Everywhere else the setpoint is
+  the setpoint on its cluster, and nothing can move that setpoint but the driver: the setpoint
+  is only the ceiling and the limit applies unasked (speed_limit_assist_zp). Everywhere else the setpoint is
   reachable, by openpilot writing it (non-pcmCruise) or by the ICBM buttons (Mazda alpha long
   while ICBM is active), and the card-side cruise arbiter owns the session. icbm_active is
   card's decision this frame (icbm_latch), so the owner can change between engagements."""

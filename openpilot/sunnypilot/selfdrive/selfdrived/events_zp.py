@@ -18,6 +18,7 @@ from openpilot.common.hardware import HARDWARE
 from openpilot.selfdrive.selfdrived.events import get_display_speed
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, NoEntryAlert, \
   EngagementAlert, NormalPermanentAlert, AlertCallbackType
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import pcm_machine_owns_sla
 from openpilot.sunnypilot.selfdrive.selfdrived.selfdrived_zp import SelfdrivedZP
 
 AlertSize = log.SelfdriveState.AlertSize
@@ -28,6 +29,7 @@ AudibleAlertSP = custom.SelfdriveStateSP.AudibleAlert
 EventNameSP = custom.OnroadEventSP.EventName
 EventNameZP = custom.OnroadEventZP.EventName
 AssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
+IcbmActivation = custom.CarStateZP.IcbmActivation
 
 IS_MICI = HARDWARE.get_device_type() == 'mici'
 
@@ -92,12 +94,10 @@ def speed_limit_adjust_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.
     speed = min(speed, set_speed)
   # mici wraps the unit off its number; break before the speed instead
   sep = "\n" if IS_MICI else " "
-  # the planner's machine applies a lower limit unasked and the gas declines it
-  # (speed_limit_assist_zp); the arbiter publishes its session wherever it owns SLA instead
-  planner_owns = CP.openpilotLongitudinalControl and CP.pcmCruise and \
-                 sm['carStateSP'].zoompilot.cruiseSession.state == AssistState.disabled
-  speed_conv = CV.MS_TO_KPH if metric else CV.MS_TO_MPH
-  slowing = round(speed * speed_conv) < round(CS.vEgo * speed_conv)
+  # the planner's machine applies a lower limit unasked and the gas declines it while it slows
+  # the car (speed_limit_assist_zp); the arbiter confirms with the buttons instead
+  planner_owns = pcm_machine_owns_sla(CP, sm['carStateSP'].zoompilot.icbmActivation == IcbmActivation.active)
+  slowing = sm['longitudinalPlanSP'].speedLimit.assist.state == AssistState.adapting
   cancel = "Press gas to cancel" if planner_owns and slowing else ""
   return Alert(
     f'Adjusting to{sep}{get_display_speed(speed, metric)}',

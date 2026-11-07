@@ -19,12 +19,14 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events_base import ET, AlertSize
 EventNameSP = custom.OnroadEventSP.EventName
 
 
-def _alert(event, target: float, set_speed: float, metric: bool = False, pcm_long: bool = False, v_ego: float = 0.):
+def _alert(event, target: float, set_speed: float, metric: bool = False, pcm_long: bool = False, adapting: bool = False):
   """target and set_speed in display units; the resolver carries m/s, carState kph."""
   to_ms = CV.KPH_TO_MS if metric else CV.MPH_TO_MS
   lp_sp = messaging.new_message('longitudinalPlanSP').longitudinalPlanSP
   lp_sp.speedLimit.resolver.speedLimitFinalLast = target * to_ms
   lp_sp.speedLimit.assist.vTarget = target * to_ms
+  if adapting:
+    lp_sp.speedLimit.assist.state = custom.LongitudinalPlanSP.SpeedLimit.AssistState.adapting
   sm = {
     'longitudinalPlanSP': lp_sp,
     'controlsState': messaging.new_message('controlsState').controlsState,
@@ -35,7 +37,6 @@ def _alert(event, target: float, set_speed: float, metric: bool = False, pcm_lon
   CP.pcmCruise = pcm_long
   CS = structs.CarState()
   CS.vCruiseCluster = set_speed * to_ms * CV.MS_TO_KPH
-  CS.vEgo = v_ego * to_ms
   return EVENTS_SP[event][ET.WARNING](CP, CS, sm, metric, 0, None)
 
 
@@ -54,7 +55,6 @@ class TestPreActivePrompt:
 
   def test_tizi_draws_the_sign_instead(self):
     assert _alert(EventNameSP.speedLimitPreActive, 45, 40).alert_size == AlertSize.none
-
 
 
 class TestActiveNotice:
@@ -82,28 +82,25 @@ class TestActiveNotice:
 
 
 class TestGasCancel:
-  """pcm long applies a lower limit unasked; the notice says the gas declines it."""
+  """pcm long applies a lower limit unasked; while it slows the car the notice says the gas declines it."""
 
   def test_slowing_offers_the_gas(self):
-    alert = _alert(EventNameSP.speedLimitChanged, 20, 60, pcm_long=True, v_ego=35)
+    alert = _alert(EventNameSP.speedLimitChanged, 20, 60, pcm_long=True, adapting=True)
     assert alert.alert_text_1 == "Adjusting to 20 mph"
     assert alert.alert_text_2 == "Press gas to cancel"
     assert alert.alert_size == AlertSize.mid  # tizi draws the second line only on mid
 
   def test_mici_keeps_both_lines(self, mici):
-    alert = _alert(EventNameSP.speedLimitChanged, 20, 60, pcm_long=True, v_ego=35)
+    alert = _alert(EventNameSP.speedLimitChanged, 20, 60, pcm_long=True, adapting=True)
     assert alert.alert_text_1 == "Adjusting to\n20 mph"
     assert alert.alert_text_2 == "Press gas to cancel"
 
-  @pytest.mark.parametrize("target, set_speed, v_ego", [
-    (45, 60, 35),  # a raise: the gas has nothing to decline
-    (35, 60, 35),  # already there
-  ])
-  def test_not_slowing_stays_small(self, target, set_speed, v_ego):
-    alert = _alert(EventNameSP.speedLimitActive, target, set_speed, pcm_long=True, v_ego=v_ego)
+  def test_not_slowing_stays_small(self):
+    """A raise, or a limit the car is already at: the gas has nothing to decline."""
+    alert = _alert(EventNameSP.speedLimitActive, 45, 60, pcm_long=True)
     assert alert.alert_text_2 == ""
     assert alert.alert_size == AlertSize.small
 
   def test_arbiter_cars_get_no_gas_line(self):
     """ICBM and non-pcm cars confirm with the buttons, and the gas declines nothing there."""
-    assert _alert(EventNameSP.speedLimitChanged, 20, 60, v_ego=35).alert_text_2 == ""
+    assert _alert(EventNameSP.speedLimitChanged, 20, 60, adapting=True).alert_text_2 == ""
