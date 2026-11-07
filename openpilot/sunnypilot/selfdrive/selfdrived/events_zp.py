@@ -98,11 +98,11 @@ def speed_limit_adjust_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.
   # the car (speed_limit_assist_zp); the arbiter confirms with the buttons instead
   planner_owns = pcm_machine_owns_sla(CP, sm['carStateSP'].zoompilot.icbmActivation == IcbmActivation.active)
   slowing = sm['longitudinalPlanSP'].speedLimit.assist.state == AssistState.adapting
-  cancel = "Press gas to cancel" if planner_owns and slowing else ""
+  keep = "Tap gas to keep speed" if planner_owns and slowing else ""
   return Alert(
     f'Adjusting to{sep}{get_display_speed(speed, metric)}',
-    cancel,
-    AlertStatus.normal, AlertSize.mid if cancel else AlertSize.small,
+    keep,
+    AlertStatus.normal, AlertSize.mid if keep else AlertSize.small,
     Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 5.)
 
 

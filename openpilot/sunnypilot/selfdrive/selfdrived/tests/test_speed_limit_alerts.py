@@ -87,13 +87,13 @@ class TestGasCancel:
   def test_slowing_offers_the_gas(self):
     alert = _alert(EventNameSP.speedLimitChanged, 20, 60, pcm_long=True, adapting=True)
     assert alert.alert_text_1 == "Adjusting to 20 mph"
-    assert alert.alert_text_2 == "Press gas to cancel"
+    assert alert.alert_text_2 == "Tap gas to keep speed"
     assert alert.alert_size == AlertSize.mid  # tizi draws the second line only on mid
 
   def test_mici_keeps_both_lines(self, mici):
     alert = _alert(EventNameSP.speedLimitChanged, 20, 60, pcm_long=True, adapting=True)
     assert alert.alert_text_1 == "Adjusting to\n20 mph"
-    assert alert.alert_text_2 == "Press gas to cancel"
+    assert alert.alert_text_2 == "Tap gas to keep speed"
 
   def test_not_slowing_stays_small(self):
     """A raise, or a limit the car is already at: the gas has nothing to decline."""

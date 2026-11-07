@@ -31,7 +31,7 @@ SPEED_LIMIT_MODE_DESCRIPTIONS = [
 ]
 # where only the driver can move the set speed, assist applies the limit unasked
 # (speed_limit_assist_zp); elsewhere it asks for a +/- press (cruise_arbiter)
-SPEED_LIMIT_ASSIST_CEILING = tr("Assist: Slows to the speed limit, up to your set speed. Press gas to cancel.")
+SPEED_LIMIT_ASSIST_CEILING = tr("Assist: Slows to the speed limit, up to your set speed. Tap gas to keep your speed.")
 SPEED_LIMIT_ASSIST_BUTTONS = tr("Assist: Sets cruise to the speed limit. When asked, press + or - to accept.")
 
 SPEED_LIMIT_OFFSET_DESCRIPTIONS = [

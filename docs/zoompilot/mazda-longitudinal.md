@@ -332,7 +332,7 @@ and plannerd mirrors it. Nothing Mazda-specific decides this; two predicates do:
   which treats the set speed as a ceiling and applies the limit unasked (the gas holds a speed
   over it), keeps only the cars whose setpoint nobody but the driver can move:
   `openpilotLongitudinalControl` and `pcmCruise` with ICBM not running. The planner, the
-  arbiter's `applicable` and the "Press gas to cancel" line of the adjust alert all read it.
+  arbiter's `applicable` and the "Tap gas to keep speed" line of the adjust alert all read it.
 
 Under alpha long the servo differs in two ways (`OP_LONG_PLANNER_SOURCES`): a curve target from
 Smart Cruise never walks the dash, because the planner slows the car itself and the dash keeps
