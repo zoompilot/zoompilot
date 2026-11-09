@@ -31,23 +31,28 @@ def read_scale(params) -> float:
 
 
 def scale_targets(targets: list, speed_scale: float) -> list:
-  """Map target velocities at speed_scale; the same list, untouched, at 1.0."""
-  if speed_scale == 1.0:
-    return targets
-  return [{**p, "velocity": p["velocity"] * speed_scale} for p in targets]
+  """Map target velocities at speed_scale, in place: every caller hands over the list
+  velocities_from_param just parsed."""
+  for p in targets:
+    p["velocity"] *= speed_scale
+  return targets
 
 
 class CurveSpeedProfile:
-  """lat_scale follows the param on the controller's own params refresh."""
+  """lat_scale, and speed_scale for speeds, follow the param on the controller's own params refresh."""
   lat_scale = 1.0
+  speed_scale = 1.0
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.lat_scale = read_scale(self.params)
+    self._set_scale(read_scale(self.params))
+
+  def _set_scale(self, scale: float) -> None:
+    self.lat_scale, self.speed_scale = scale, math.sqrt(scale)
 
   def _refresh_profile(self) -> None:
-    if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
-      self.lat_scale = read_scale(self.params)
+    if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0 and (scale := read_scale(self.params)) != self.lat_scale:
+      self._set_scale(scale)
 
 
 class VisionProfile(CurveSpeedProfile):
@@ -67,7 +72,7 @@ class MapProfile(CurveSpeedProfile):
 
   @target_velocities.setter
   def target_velocities(self, targets: list) -> None:
-    self._target_velocities = scale_targets(targets, math.sqrt(self.lat_scale))
+    self._target_velocities = scale_targets(targets, self.speed_scale)
 
   def update_params(self) -> None:
     super().update_params()
@@ -79,8 +84,8 @@ class SmartCruiseControlVision(VisionProfile, SPVision):
   def _update_calculations(self, sm) -> None:
     super()._update_calculations(sm)
     # v_target is only computed with long enabled; elsewhere it is stale and must not compound
-    if self.long_enabled and self.lat_scale != 1.0:
-      self.v_target *= math.sqrt(self.lat_scale)
+    if self.long_enabled:
+      self.v_target *= self.speed_scale
 
 
 class SmartCruiseControlMap(MapProfile, SPMap):

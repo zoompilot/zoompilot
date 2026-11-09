@@ -308,11 +308,11 @@ def test_curve_speed_follows_slow_for_curves(params, monkeypatch, has_long, visi
   try:
     cruise = CruiseLayout()
     items = cruise._scroller._items
-    assert items.index(cruise.curve_speed) == items.index(cruise.scc_m_toggle) + 1 == items.index(cruise.scc_v_toggle) + 2
+    assert items.index(cruise.curve_speed.item) == items.index(cruise.scc_m_toggle) + 1 == items.index(cruise.scc_v_toggle) + 2
     cruise.show_event()
     cruise._update_state()
-    assert cruise.curve_speed.action_item.enabled == enabled
-    assert cruise.curve_speed.action_item.selected_button == 2
+    assert cruise.curve_speed.item.action_item.enabled == enabled
+    assert cruise.curve_speed.item.action_item.selected_button == 2
   finally:
     for key in ("SmartCruiseControlVision", "SmartCruiseControlMap", "CurveSpeedProfile"):
       params.remove(key)

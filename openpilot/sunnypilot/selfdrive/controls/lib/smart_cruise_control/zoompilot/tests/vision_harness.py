@@ -94,7 +94,8 @@ def patch_gain(gain):
 
 
 def flat_ceiling(a_lat: float):
-  """A flat lateral ceiling, for tests whose geometry pins numbers to one ceiling."""
+  """A flat lateral ceiling, for tests whose geometry pins numbers to one ceiling. A controller
+  builds its table on construction, so it applies to controllers built under it."""
   return mock.patch.object(vision_controller, '_A_LAT_KAPPA', [a_lat * vision_controller._PLAN_MARGIN] * len(vision_controller._A_LAT_KAPPA))
 
 

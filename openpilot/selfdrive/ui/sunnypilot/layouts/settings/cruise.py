@@ -8,11 +8,12 @@ from enum import IntEnum
 
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_zp import CurveSpeed
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_moves_speed_limits
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.sunnypilot.lib.styles import style
-from openpilot.system.ui.sunnypilot.widgets.list_view import multiple_button_item_sp, toggle_item_sp, option_item_sp, simple_button_item_sp
+from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp, simple_button_item_sp
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 
@@ -50,14 +51,7 @@ class CruiseLayout(Widget):
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
 
-    # stored value is the index into curve_speed_profile.SCALES
-    self.curve_speed = multiple_button_item_sp(
-      title=lambda: tr("Curve Speed"),
-      description=lambda: tr("How fast Slow for Curves takes turns. Gentle slows more, Sporty slows less."),
-      buttons=[lambda: tr("Gentle"), lambda: tr("Normal"), lambda: tr("Sporty")],
-      param="CurveSpeedProfile",
-      button_width=280,
-      inline=False)
+    self.curve_speed = CurveSpeed(self.scc_v_toggle, self.scc_m_toggle)
 
     self.custom_acc_toggle = toggle_item_sp(
       title=tr("Custom ACC Speed Increments"),
@@ -88,7 +82,7 @@ class CruiseLayout(Widget):
       *self._alpha_long.items,
       self.scc_v_toggle,
       self.scc_m_toggle,
-      self.curve_speed,
+      self.curve_speed.item,
       self.sla_settings_button,
       self.custom_acc_toggle,
       self.custom_acc_short_increment,
@@ -140,9 +134,7 @@ class CruiseLayout(Widget):
     else:
       has_icbm = has_long = False
 
-    # nothing reads it with both curve features off
-    scc_on = self.scc_v_toggle.action_item.get_state() or self.scc_m_toggle.action_item.get_state()
-    self.curve_speed.action_item.set_enabled((has_long or has_icbm) and scc_on)
+    self.curve_speed.update_state(has_long or has_icbm)
 
     show_custom_acc_desc = False
 

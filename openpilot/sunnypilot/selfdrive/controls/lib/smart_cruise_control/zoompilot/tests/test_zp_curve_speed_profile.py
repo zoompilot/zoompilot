@@ -7,6 +7,8 @@ See the LICENSE.md file in the root directory for more details.
 Curve Speed profiles scale the lateral ceiling on both planner paths. Normal must leave every
 output bit-identical to the unscaled planners.
 """
+import copy
+import json
 import math
 
 import numpy as np
@@ -58,7 +60,7 @@ class TestReadScale:
 class TestMazdaTable:
   def test_normal_is_bit_identical(self):
     unscaled = allowed_speed(KAPPAS, np.interp(KAPPAS, zp_vision._A_LAT_KAPPA_BP, zp_vision._A_LAT_KAPPA))
-    assert np.array_equal(zp_vision.curve_speed(KAPPAS, 1.0), unscaled)
+    assert np.array_equal(zp_vision.curve_speed(KAPPAS, zp_vision.curve_table(1.0)), unscaled)
     assert np.array_equal(zp_vision.curve_speed(KAPPAS), unscaled)
 
   @pytest.mark.parametrize("scale", profile.SCALES)
@@ -66,10 +68,10 @@ class TestMazdaTable:
     for v, a_lat in zip(zp_vision._A_LAT_CURVE_BP, zp_vision._A_LAT_CURVE, strict=True):
       a = a_lat * scale * zp_vision._PLAN_MARGIN
       kappa = a / v ** 2
-      assert float(zp_vision.curve_speed(kappa, scale)) == pytest.approx(v)
+      assert float(zp_vision.curve_speed(kappa, zp_vision.curve_table(scale))) == pytest.approx(v)
 
   def test_profiles_order(self):
-    gentle, normal, sporty = (zp_vision.curve_speed(KAPPAS, s) for s in profile.SCALES)
+    gentle, normal, sporty = (zp_vision.curve_speed(KAPPAS, zp_vision.curve_table(s)) for s in profile.SCALES)
     assert np.all(gentle < normal) and np.all(normal < sporty)
 
 
@@ -82,7 +84,7 @@ class TestVisionControllers:
     for _ in range(3):
       scc.update(sm_for(12., kappa), True, False, 12., 0., 20.)
     # the model arrays are float32
-    assert scc.v_near_min == pytest.approx(float(zp_vision.curve_speed(kappa, profile.SCALES[stored])), rel=1e-6)
+    assert scc.v_near_min == pytest.approx(float(zp_vision.curve_speed(kappa, zp_vision.curve_table(profile.SCALES[stored]))), rel=1e-6)
 
   @pytest.mark.parametrize("stored", [GENTLE, NORMAL, SPORTY])
   def test_sunnypilot_ceiling_scales(self, params, stored):
@@ -116,17 +118,23 @@ class TestMapControllers:
   def test_targets_scale_by_the_root(self, params, make, stored):
     params.put("CurveSpeedProfile", stored, block=True)
     scc = make()
-    scc.target_velocities = TARGETS
+    scc.target_velocities = copy.deepcopy(TARGETS)
     root = math.sqrt(profile.SCALES[stored])
     assert [p["velocity"] for p in scc.target_velocities] == [p["velocity"] * root for p in TARGETS]
     assert [(p["latitude"], p["longitude"]) for p in scc.target_velocities] == [(p["latitude"], p["longitude"]) for p in TARGETS]
     if stored == NORMAL:
-      assert scc.target_velocities is TARGETS
+      assert scc.target_velocities == TARGETS
 
-  def test_sunnypilot_map_keeps_its_targets_untouched(self, params):
-    params.put("CurveSpeedProfile", GENTLE, block=True)
-    profile.SmartCruiseControlMap().target_velocities = TARGETS
-    assert TARGETS[1]["velocity"] == 13.3
+  def test_targets_are_parsed_fresh_each_frame(self, params):
+    """The setter scales in place: the controllers' list must be their own each frame."""
+    from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.map_controller import velocities_from_param
+    params.put("MapTargetVelocities", json.dumps(TARGETS), block=True)
+    try:
+      first, second = (velocities_from_param("MapTargetVelocities", params) for _ in range(2))
+      assert first == second == TARGETS
+      assert first is not second and first[0] is not second[0]
+    finally:
+      params.remove("MapTargetVelocities")
 
 
 class TestRefresh:
