@@ -17,6 +17,7 @@ from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.elements import (
   SteeringTorqueEpsElement, BearingDegElement, AltitudeElement, DesiredSteeringPIDElement
 )
 from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.lane_center import LaneCenterElement
+from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import LANE_CENTER_UI_DEBUG
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget
@@ -191,8 +192,8 @@ class DeveloperUiRenderer(Widget):
       if sm.valid['gpsLocationExternal'] or sm.valid['gpsLocation']:
         elements.append(self.bearing_elem.update(sm, ui_state.is_metric))
 
-    # zoompilot: lane center assist's push
-    if ui_state.lane_center:
+    # zoompilot: lane center assist's push, with LaneCenterUI on debug
+    if ui_state.lane_center_ui == LANE_CENTER_UI_DEBUG:
       elements.append(self.lane_center_elem.update(sm, ui_state.is_metric))
 
     # Add altitude if GPS available

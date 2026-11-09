@@ -246,3 +246,40 @@ def test_multi_button_follows_its_param(params):
   params.put("SpeedLimitMode", int(Mode.information), block=True)
   buttons._update_state()
   assert buttons.selected_button == Mode.information
+
+
+@pytest.mark.parametrize("lane_center", [False, True])
+def test_lane_center_ui_sits_after_the_steering_arc(params, lane_center):
+  """Off / Gauge / Debug, after the steering arc's toggle; greyed out with lane center assist off."""
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.visuals import VisualsLayout
+
+  params.put_bool("Blendful", lane_center, block=True)
+  params.put("LaneCenterUI", 2, block=True)
+  layout = VisualsLayout()
+  layout._update_state()
+  row = layout._lane_center_ui
+  items = layout._scroller._items
+  assert items.index(row) == items.index(layout._toggles["TorqueBar"]) + 1
+  assert row.action_item.selected_button == 2
+  assert row.action_item.enabled == lane_center
+
+
+def test_lane_center_assist_is_off_on(params):
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.models import ModelsLayout
+
+  layout = ModelsLayout()
+  assert len(layout.blendful_toggle.action_item.buttons) == 2
+  for on in (True, False):
+    layout.blendful_toggle.action_item.callback(int(on))
+    assert params.get_bool("Blendful") is on
+
+
+@pytest.mark.parametrize(("lane_center", "stored", "shown"), [(False, 2, 0), (True, 0, 0), (True, 1, 1), (True, 2, 2)])
+def test_lane_center_ui_is_off_with_lane_center_off(params, lane_center, stored, shown):
+  """The gauge and the push follow LaneCenterUI only while lane center assist is on; its line follows Blendful."""
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  params.put_bool("Blendful", lane_center, block=True)
+  params.put("LaneCenterUI", stored, block=True)
+  ui_state.update_params()
+  assert (ui_state.lane_center, ui_state.lane_center_ui) == (lane_center, shown)

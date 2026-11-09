@@ -4,11 +4,16 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-from openpilot.common.params import Params
+from pathlib import Path
+
+import pytest
+
+from openpilot.common.params import Params, UnknownKeyName
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.source_auto import AUTO
-from openpilot.sunnypilot.system.params_migration_zp import E2E_ASSISTS, E2E_ASSISTS_MIGRATED, LANE_CENTER_MIGRATED, run_migration_zp
+from openpilot.sunnypilot.system.params_migration_zp import E2E_ASSISTS, E2E_ASSISTS_MIGRATED, LANE_CENTER_MIGRATED, OLD_LANE_CENTER_READOUT, \
+  run_migration_zp
 
 
 class TestE2EAssistsMigration(OpenpilotTestCase):
@@ -40,7 +45,6 @@ class TestLaneCenterMigration(OpenpilotTestCase):
     run_migration_zp(params)
     assert params.get_bool("Blendful")
     assert params.get_bool(LANE_CENTER_MIGRATED)
-    assert not params.get_bool("BlendfulReadout")
 
   def test_runs_once(self):
     params = Params()
@@ -48,6 +52,39 @@ class TestLaneCenterMigration(OpenpilotTestCase):
     params.put_bool("Blendful", False, block=True)  # the driver turns it off
     run_migration_zp(params)
     assert not params.get_bool("Blendful")
+
+
+class TestLaneCenterUIMigration(OpenpilotTestCase):
+  """BlendfulReadout, no longer a declared key, is left on disk as a file: debug becomes debug,
+  anything else the gauge, and the file goes so it runs once."""
+
+  @staticmethod
+  def _old_readout(params: Params) -> Path:
+    return Path(params.get_param_path(OLD_LANE_CENTER_READOUT))
+
+  def _check(self, old: bytes, expected: int):
+    params = Params()
+    params.put("LaneCenterUI", 0, block=True)
+    self._old_readout(params).write_bytes(old)
+    run_migration_zp(params)
+    assert params.get("LaneCenterUI") == expected
+    assert not self._old_readout(params).exists()
+
+  def test_debug_stays_debug(self):
+    self._check(b"1", 2)
+
+  def test_readout_off_gets_the_gauge(self):
+    self._check(b"0", 1)
+
+  def test_no_old_file_leaves_the_setting(self):
+    params = Params()
+    params.put("LaneCenterUI", 0, block=True)  # the driver turned it off after migrating
+    run_migration_zp(params)
+    assert params.get("LaneCenterUI") == 0
+
+  def test_old_key_is_gone(self):
+    with pytest.raises(UnknownKeyName):
+      Params().get(OLD_LANE_CENTER_READOUT)
 
 
 class TestSpeedLimitSourceFold(OpenpilotTestCase):

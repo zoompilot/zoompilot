@@ -14,7 +14,7 @@ sections:
   - key: Blendful
     widget: toggle
     title: Lane Center Assist (Alpha)
-    description: Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear. Yields around obstacles.
+    description: Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear. Yields around obstacles. The center line turns blue as it nudges; Lane Center UI in Visuals adds a gauge.
   - key: SmallModelSteering
     widget: option
     title: Small Model Steering

@@ -1508,6 +1508,33 @@
               ]
             },
             {
+              "key": "LaneCenterUI",
+              "widget": "option",
+              "title": "Lane Center UI",
+              "description": "Shows lane center assist's nudge as a gauge under the steering arc. Debug also shows the nudge in cm.",
+              "options": [
+                {
+                  "value": 0,
+                  "label": "Off"
+                },
+                {
+                  "value": 1,
+                  "label": "Gauge"
+                },
+                {
+                  "value": 2,
+                  "label": "Debug"
+                }
+              ],
+              "enablement": [
+                {
+                  "type": "param",
+                  "key": "Blendful",
+                  "equals": true
+                }
+              ]
+            },
+            {
               "key": "ConfidenceBall",
               "widget": "toggle",
               "title": "Confidence Ball",
@@ -2177,7 +2204,7 @@
               "key": "Blendful",
               "widget": "toggle",
               "title": "Lane Center Assist (Alpha)",
-              "description": "Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear. Yields around obstacles."
+              "description": "Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear. Yields around obstacles. The center line turns blue as it nudges; Lane Center UI in Visuals adds a gauge."
             },
             {
               "key": "SmallModelSteering",

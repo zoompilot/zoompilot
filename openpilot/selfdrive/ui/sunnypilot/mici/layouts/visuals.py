@@ -7,7 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 
 
 from opendbc.sunnypilot.car.interfaces import has_bsm
-from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP
+from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP, BigParamControlSP
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.scroller import NavScroller
@@ -42,9 +42,16 @@ class VisualsLayoutMici(NavScroller):
 
     # the indicators need the car's blind spot monitor
     self._toggles["BlindSpot"].set_superseded(lambda: ui_state.CP is not None and not has_bsm(ui_state.CP, ui_state.CP_SP))
-    self._scroller.add_widgets(items)
+
+    # lane center assist's gauge under the steering arc; first, as the tici panel puts it beside the arc's toggle
+    self._lane_center_ui = BigMultiParamToggleSP(tr("lane center ui"), "LaneCenterUI", [tr("off"), tr("gauge"), tr("debug")], off_index=0,
+                                                 description=tr("Shows lane center assist's nudge as a gauge under the steering arc.\n" +
+                                                                "Debug also shows the nudge in cm."))
+    self._lane_center_ui.set_superseded(lambda: not ui_state.lane_center)  # Blendful, off in Models
+    self._scroller.add_widgets([self._lane_center_ui, *items])
 
   def _update_state(self):
     super()._update_state()
     for _param, toggle in self._toggles.items():
       toggle.refresh()
+    self._lane_center_ui.refresh()

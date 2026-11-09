@@ -1124,6 +1124,30 @@ class TestOverriddenToggles:
     assert toggle.enabled == bsm
     assert toggle.superseded == (not bsm)
 
+  @pytest.mark.parametrize("lane_center", [False, True])
+  def test_lane_center_ui_locks_with_lane_center_off(self, params, monkeypatch, lane_center):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.visuals import VisualsLayoutMici
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    monkeypatch.setattr(ui_state, "lane_center", lane_center)
+    params.put("LaneCenterUI", 2, block=True)
+    item = VisualsLayoutMici()._lane_center_ui
+    assert item.value == "debug"  # the stored value stays on screen while locked
+    assert item.enabled == lane_center
+    assert item.superseded == (not lane_center)
+
+  def test_lane_center_ui_cycles_off_gauge_debug(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.visuals import VisualsLayoutMici
+
+    params.remove("LaneCenterUI")
+    item = VisualsLayoutMici()._lane_center_ui
+    assert item.text == "lane center ui"
+    assert item.value == "gauge"  # the declared default
+    for expected, stored in (("debug", 2), ("off", 0), ("gauge", 1)):
+      item._store((item._get_param_index() + 1) % 3)
+      item.refresh()
+      assert (item.value, params.get("LaneCenterUI")) == (expected, stored)
+
   @pytest.mark.parametrize("mode", [0, 1])
   def test_speed_limit_settings_lock_with_the_mode_off(self, params, monkeypatch, mode):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
@@ -1232,16 +1256,13 @@ class TestModelsPanelMici:
         monkeypatch.setattr(ui_state, "chestnut_present", chestnut)
         assert options.small_steering.enabled is (runner_tinygrad and not chestnut)
 
-  def test_lane_center_cycles_off_on_debug(self, params):
+  def test_lane_center_is_a_plain_toggle(self, params):
     params.put_bool("Blendful", False, block=True)
-    params.put_bool("BlendfulReadout", True, block=True)  # stale readout reads as off while Blendful is off
     lane_center = self._options().lane_center
-    assert lane_center.value == "off"
-    for _ in range(3):
-      lane_center._store((lane_center._get_param_index() + 1) % 3)
-      lane_center.refresh()
-      state = (params.get_bool("Blendful"), params.get_bool("BlendfulReadout"))
-      assert state == {"on": (True, False), "debug ui": (True, True), "off": (False, False)}[lane_center.value]
+    assert not lane_center._checked
+    params.put_bool("Blendful", True, block=True)
+    lane_center.refresh()
+    assert lane_center._checked
 
   def test_live_steer_delay_is_live_in_its_picker(self, params):
     params.put_bool("LagdToggle", True, block=True)

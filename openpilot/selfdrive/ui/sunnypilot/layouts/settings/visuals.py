@@ -17,6 +17,12 @@ CHEVRON_INFO_DESCRIPTION = {
   "disabled": tr_noop("This feature requires zoompilot longitudinal control to be available.")
 }
 
+LANE_CENTER_UI_DESCRIPTION = {
+  "enabled": tr_noop("Shows lane center assist's nudge as a gauge under the steering arc. " +
+                     "Debug also shows the nudge in cm in the developer UI."),
+  "disabled": tr_noop("This feature requires Lane Center Assist, in Models, to be on.")
+}
+
 
 class VisualsLayout(Widget):
   def __init__(self):
@@ -127,7 +133,18 @@ class VisualsLayout(Widget):
       inline=False
     )
 
-    items = list(self._toggles.values()) + [
+    # zoompilot: lane center assist's gauge, beside the steering arc it sits under
+    self._lane_center_ui = multiple_button_item_sp(
+      title=lambda: tr("Lane Center UI"),
+      description="",
+      buttons=[lambda: tr("Off"), lambda: tr("Gauge"), lambda: tr("Debug")],
+      param="LaneCenterUI",
+      inline=False
+    )
+    toggles = list(self._toggles.values())
+    after_arc = toggles.index(self._toggles["TorqueBar"]) + 1
+
+    items = toggles[:after_arc] + [self._lane_center_ui] + toggles[after_arc:] + [
       self._chevron_info,
       self._dev_ui_info,
     ]
@@ -140,6 +157,11 @@ class VisualsLayout(Widget):
       self._toggles[param].action_item.set_state(self._params.get_bool(param))
 
     self._dev_ui_info.action_item.set_selected_button(ui_state.params.get("DevUIInfo", return_default=True))
+
+    lane_center = ui_state.params.get_bool("Blendful")
+    self._lane_center_ui.set_description(tr(LANE_CENTER_UI_DESCRIPTION["enabled" if lane_center else "disabled"]))
+    self._lane_center_ui.action_item.set_selected_button(ui_state.params.get("LaneCenterUI", return_default=True))
+    self._lane_center_ui.action_item.set_enabled(lane_center)
 
     if ui_state.has_longitudinal_control:
       self._chevron_info.set_description(tr(CHEVRON_INFO_DESCRIPTION["enabled"]))

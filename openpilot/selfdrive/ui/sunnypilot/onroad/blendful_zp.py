@@ -6,9 +6,10 @@ See the LICENSE.md file in the root directory for more details.
 
 Lane center assist on the comma 4 and 3X: a muted center line that turns blue as the nudge grows, a thin gauge
 under the torque bar filled blue from its middle toward the side it nudges, and the push in cm: on the comma 4 a
-box with debug ui, on the 3X an item in the developer UI's bottom bar (developer_ui/lane_center.py). The gauge is drawn in screen space, so it
-stays readable where road-space marks shrink to a few pixels, and apart from the torque bar so planning's nudge is
-not read as steering torque.
+box, on the 3X an item in the developer UI's bottom bar (developer_ui/lane_center.py). The line shows whenever lane
+center is on; the gauge and the push follow LaneCenterUI (gauge, or debug for both). The gauge is drawn in screen
+space, so it stays readable where road-space marks shrink to a few pixels, and apart from the torque bar so
+planning's nudge is not read as steering torque.
 """
 import math
 
@@ -20,6 +21,7 @@ from openpilot.selfdrive.ui.mici.onroad.torque_bar import TORQUE_ANGLE_SPAN, Tor
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.sunnypilot.onroad.blendful import FULL_BAR, BlendfulRenderer
 from openpilot.selfdrive.ui.sunnypilot.ui_state import UIStateSP
+from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import LANE_CENTER_UI_DEBUG, LANE_CENTER_UI_GAUGE
 from openpilot.sunnypilot.modeld_v2.blendful import LOOKAHEAD_TIME, MIN_LOOKAHEAD
 from openpilot.system.ui.lib.shader_polygon import draw_polygon
 from openpilot.system.ui.lib.text_measure import measure_text_cached
@@ -60,8 +62,8 @@ def nudge_share(pull: float, full: float = COLOR_FULL) -> float:
 
 
 class BlendfulRendererZP(BlendfulRenderer):
-  """The line colored by the nudge, and with `readout` the debug ui box (the comma 4; the 3X shows the push in
-  its developer UI)."""
+  """The line colored by the nudge, and with `readout` the box LaneCenterUI's debug shows (the comma 4; the 3X
+  shows the push in its developer UI)."""
 
   def __init__(self, rect_relative: bool = False, readout: bool = True):
     super().__init__(readout=readout, rect_relative=rect_relative)
@@ -82,7 +84,7 @@ class BlendfulRendererZP(BlendfulRenderer):
       offset = np.array([rect.x, rect.y]) if self._rect_relative else np.zeros(2)
       fade = self._alpha.x  # the whole overlay fades in and out with trust
       draw_polygon(rect, self._center_points + offset, rl.fade(self._line_color, self._line_color.a / 255 * fade))
-    if self._readout and ui_state.blendful_readout:
+    if self._readout and ui_state.lane_center_ui == LANE_CENTER_UI_DEBUG:
       self._draw_readout_box(rect.x + rect.width / 2, rect.y + READOUT_TOP)
 
   def _draw_readout_box(self, cx: float, top: float) -> None:
@@ -104,8 +106,8 @@ class BlendfulRendererZP(BlendfulRenderer):
 
 
 class TorqueBarZP(TorqueBar):
-  """TorqueBar with a thin lane center gauge under its track: a faint track while lane center is active, filled
-  blue from the middle toward the side it nudges. It scales and fades like the readout's bar: sqrt of the push
+  """TorqueBar with a thin lane center gauge under its track: a faint track while lane center is active and
+  LaneCenterUI is not off, filled blue from the middle toward the side it nudges. It scales and fades like the readout's bar: sqrt of the push
   up to FULL_BAR, brighter with trust. Its filters share BlendfulRenderer's 0.5 s time constant; the push reads
   zero while lane center has no trust, so the gauge empties as it lets go."""
 
@@ -125,7 +127,7 @@ class TorqueBarZP(TorqueBar):
       trusted = blendful.blendfulTrust > 0.0
       self._pull.update(pull_at_lookahead(blendful.blendfulCurvature, ui_state.sm['carState'].vEgo) if trusted else 0.0)
       self._trust_filter.update(blendful.blendfulTrust)
-    self._active = blendful.blendfulTrust > 0.05 and UIStateSP.lateral_active(ui_state)
+    self._active = blendful.blendfulTrust > 0.05 and UIStateSP.lateral_active(ui_state) and ui_state.lane_center_ui >= LANE_CENTER_UI_GAUGE
     self._extent = math.copysign(nudge_share(self._pull.x, FULL_BAR), self._pull.x)
 
   def _render(self, rect: rl.Rectangle) -> None:
