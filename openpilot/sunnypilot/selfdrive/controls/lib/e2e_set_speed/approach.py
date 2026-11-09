@@ -15,8 +15,10 @@ from openpilot.cereal import log
 # scaled by the shortfall (docs/zoompilot/e2e-set-speed.md).
 APPROACH_BP = [0., 4., 9., 14., 18., 25.]  # m/s
 APPROACH_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s^2
+# The last 1 m/s tapers to 0 at the target, so the pace is continuous there and 0 over it: about
+# 0.5-0.8 m/s^2 per m/s, under upstream's cruise law (1 per m/s).
 APPROACH_GAP_BP = [0., 1., 3., 5., 10.]  # m/s below the target speed
-APPROACH_GAP_FRACTION = [0.38, 0.47, 0.57, 0.72, 1.]
+APPROACH_GAP_FRACTION = [0., 0.47, 0.57, 0.72, 1.]
 # The table is Standard; the others move it by sunnypilot's accel boost step as of #2089
 # (docs/zoompilot/e2e-set-speed.md).
 APPROACH_PERSONALITY_OFFSET = {
@@ -34,6 +36,4 @@ def approach_ceiling(v_ego: float, personality: int) -> float:
 
 def approach_accel(v_ego: float, v_target: float, personality: int) -> float:
   """Max floor accel while closing on v_target; 0 at or above it."""
-  if v_ego >= v_target:
-    return 0.
   return approach_ceiling(v_ego, personality) * float(np.interp(v_target - v_ego, APPROACH_GAP_BP, APPROACH_GAP_FRACTION))

@@ -56,8 +56,8 @@ brakes binds through the MPC candidate at once. With no lead the MPC chases its 
 upstream's friction circle.)
 
 The floor also closes on the target speed no harder than a production ACC
-(`approach_accel(v_ego, v_target)`, the target after SCC and SLA; 0 at or over the target since
-2026-11-08, when it still asked 0.38 of the ceiling there). Upstream's cruise law asks 2.0
+(`approach_accel(v_ego, v_target)`, the target after SCC and SLA; since 2026-11-08 it tapers to 0
+over the last 1 m/s and is 0 over the target, where it used to ask 0.38 of the ceiling). Upstream's cruise law asks 2.0
 for any 2 m/s shortfall, and on the CX-5 the lift toward it drove 23 of 24 kickdowns on the
 2026-10-30 drives. The Mazda port capped its whole command for this from 10-30 to 11-01
 (mazda-longitudinal.md, "Gap to the set speed"); the cap only ever bound this lift. Replayed over
@@ -144,7 +144,7 @@ add under DEC.
 | `FADE_LAT_BP`, `LAT_HORIZON` | 0.6-1.0 m/s^2, 10 s | the envelope's 1.0 bend ceiling, as a ramp |
 | rise | 1.6/1.2/0.8/0.6 m/s^3 at 0/10/25/40 m/s | upstream's cruise jerk (`op_long_cruise_jerk`): the lift stands in for cruise, on any car. Mazda's AccelShaper still caps the build at stock MRCC's 0.8 |
 | `APPROACH_V` over `APPROACH_BP` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s^2 at 0, 4, 9, 14, 18, 25 m/s | the CX-5's stock MRCC accelerating command p99 by speed, no lead (its wire ceiling eases 14 m/s to 0.95 for a 4>3 kickdown; that stays in the Mazda port) |
-| `APPROACH_GAP_FRACTION` over `APPROACH_GAP_BP` | 0.38, 0.47, 0.57, 0.72, 1 at 0, 1, 3, 5, 10 m/s under the target | between stock's p50 and p90 by shortfall: 0.31/0.37 at 0.5-1.5 m/s, 0.41/0.44 at 1.5-3, 0.51/0.55 at 3-5, 0.64/0.76 at 5-10 (20-24 m/s) |
+| `APPROACH_GAP_FRACTION` over `APPROACH_GAP_BP` | 0, 0.47, 0.57, 0.72, 1 at 0, 1, 3, 5, 10 m/s under the target | 0 at the target so the pace is continuous (it was 0.38, a step to 0 over the target); the rest between stock's p50 and p90 by shortfall: 0.31/0.37 at 0.5-1.5 m/s, 0.41/0.44 at 1.5-3, 0.51/0.55 at 3-5, 0.64/0.76 at 5-10 (20-24 m/s) |
 | `LIFT_FALL` | 2.4 m/s^3 | the slowest fall, for lane changes, bends and a lower floor. Chosen when it was the only fall: at 0.5 the lift was still over 0.2 for 1.8% of frames with the model braking past -0.5; at 2.4, none. The model's braking now also drops the lift through the gain |
 
 ## Expected behaviour

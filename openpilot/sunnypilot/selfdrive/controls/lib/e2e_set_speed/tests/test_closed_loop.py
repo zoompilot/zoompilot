@@ -112,3 +112,14 @@ def test_open_road_plan_keeps_the_lift():
   log = simulate(True, coast_at=45., plan_drop=0.)
   after = log[log[:, 0] >= 50.]
   assert (after[:, 3] - after[:, 2]).min() > 0.
+
+
+def test_holds_the_set_speed_without_oscillating():
+  # converged at the set speed, the command settles instead of hunting across it
+  log = simulate(True, seconds=120.)
+  hold = log[log[:, 0] >= 80.]
+  assert np.ptp(hold[:, 1]) < 0.1  # m/s
+  assert (V_CRUISE - hold[:, 1]).max() < 0.5 and (hold[:, 1] - V_CRUISE).max() < 0.1
+  # no throttle-brake flips
+  out = np.diff(hold[:, 1]) / DT
+  assert np.count_nonzero(np.diff(np.sign(np.round(out, 3)[np.round(out, 3) != 0.]))) <= 1
