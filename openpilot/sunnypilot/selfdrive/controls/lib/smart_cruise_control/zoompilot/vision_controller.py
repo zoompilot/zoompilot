@@ -23,6 +23,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_prof
   allowed_speed, backward_pass, lead_distance, min_profile_speed, required_decel)
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.vision_controller import (
   ACTIVE_STATES, ENABLED_STATES, VisionState, SmartCruiseControlVision as UpstreamVision)
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.curve_speed_profile import VisionProfile
 
 __all__ = ['ACTIVE_STATES', 'ENABLED_STATES', 'SmartCruiseControlVision', 'VisionState']
 
@@ -90,12 +91,15 @@ _LEAVING_LAT_ACC_TH = 1.3  # turning displays as leaving below this
 _FINISH_LAT_ACC_TH = 1.1  # leaving ends below this
 
 
-def curve_speed(kappa) -> np.ndarray:
-  """Allowed speed at each path point under the curve-speed ceiling, planning margin included."""
-  return allowed_speed(kappa, np.interp(kappa, _A_LAT_KAPPA_BP, _A_LAT_KAPPA))
+def curve_speed(kappa, scale: float = 1.0) -> np.ndarray:
+  """Allowed speed at each path point under the curve-speed ceiling, planning margin included.
+  scale is the Curve Speed profile's: the whole table, ceiling and its curvature keys, scales."""
+  if scale == 1.0:
+    return allowed_speed(kappa, np.interp(kappa, _A_LAT_KAPPA_BP, _A_LAT_KAPPA))
+  return allowed_speed(kappa, np.interp(kappa, [k * scale for k in _A_LAT_KAPPA_BP], [a * scale for a in _A_LAT_KAPPA]))
 
 
-class SmartCruiseControlVision(UpstreamVision):
+class SmartCruiseControlVision(VisionProfile, UpstreamVision):
   def __init__(self, CP):
     super().__init__()
     self.limits = get_planning_limits(CP)
@@ -142,7 +146,7 @@ class SmartCruiseControlVision(UpstreamVision):
     near_d = max(self.v_ego, MIN_V) * (_NEAR_T_BIG if model.big else _NEAR_T)
     near = dist <= near_d  # dist[0] is 0, so never empty
     k_near = float(np.max(kappa[near]))
-    self.v_near_min = float(curve_speed(k_near))
+    self.v_near_min = float(curve_speed(k_near, self.lat_scale))
     # Publish near-path lateral acceleration for UI state.
     self.max_pred_lat_acc = k_near * self.v_ego ** 2
 
@@ -150,8 +154,8 @@ class SmartCruiseControlVision(UpstreamVision):
     fade = np.interp(self.v_ego, _KAPPA_BIAS_V_BP, _KAPPA_BIAS_V_FADE)
     depth_fade = min(fade, np.interp(self.v_cruise_setpoint, _KAPPA_DEPTH_SET_BP, [1., 0.]))
     bias = np.interp(dist, _KAPPA_BIAS_D, _KAPPA_BIAS_GAIN) - 1.
-    v_allowed = curve_speed(kappa * (1. + bias * fade))
-    v_profile = curve_speed(kappa * (1. + bias * depth_fade))
+    v_allowed = curve_speed(kappa * (1. + bias * fade), self.lat_scale)
+    v_profile = curve_speed(kappa * (1. + bias * depth_fade), self.lat_scale)
 
     # Stock ACC lead time includes the set-speed traversal to the lowest target.
     t_lead = lim.t_lead
