@@ -174,13 +174,20 @@ def test_invalid_model_passes_through():
 
 
 def test_approach_closes_small_gaps_gently():
-  # the floor's pace grows with the shortfall to the whole speed envelope at 10 m/s, and is a third
-  # of it at the target
+  # the floor's pace grows with the shortfall to the whole speed envelope at 10 m/s, from a third
+  # of it just under the target
   assert all(np.diff(approach.APPROACH_GAP_FRACTION) > 0) and approach.APPROACH_GAP_FRACTION[-1] == 1.
   for v, ceiling in zip(approach.APPROACH_BP, approach.APPROACH_V, strict=True):
     assert approach.approach_accel(v, v + 10., STANDARD) == pytest.approx(ceiling)
-    assert approach.approach_accel(v, v, STANDARD) == pytest.approx(approach.APPROACH_GAP_FRACTION[0] * ceiling)
+    assert approach.approach_accel(v, v + 1e-3, STANDARD) == pytest.approx(approach.APPROACH_GAP_FRACTION[0] * ceiling, abs=1e-3)
   assert approach.approach_accel(V_EGO, V_EGO + 1., STANDARD) < 0.42  # a CX-5 5>4 kickdown at highway speed
+
+
+@pytest.mark.parametrize("over", [0., 0.5, 5.])
+def test_approach_asks_nothing_at_or_over_the_target(over):
+  for personality in (log.LongitudinalPersonality.relaxed, STANDARD, log.LongitudinalPersonality.aggressive):
+    for v in approach.APPROACH_BP:
+      assert approach.approach_accel(v + over, v, personality) == 0.
 
 
 def test_approach_follows_the_personality():

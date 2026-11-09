@@ -33,5 +33,7 @@ def approach_ceiling(v_ego: float, personality: int) -> float:
 
 
 def approach_accel(v_ego: float, v_target: float, personality: int) -> float:
-  """Max floor accel while closing on v_target."""
+  """Max floor accel while closing on v_target; 0 at or above it."""
+  if v_ego >= v_target:
+    return 0.
   return approach_ceiling(v_ego, personality) * float(np.interp(v_target - v_ego, APPROACH_GAP_BP, APPROACH_GAP_FRACTION))
