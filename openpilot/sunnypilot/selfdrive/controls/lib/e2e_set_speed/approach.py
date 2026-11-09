@@ -7,19 +7,25 @@ See the LICENSE.md file in the root directory for more details.
 Set Speed Assist's approach pace: how hard the lift may pull toward the target speed, by speed and
 personality. Its own module so the UI can read the ceiling without importing the controller.
 """
+import math
+
 import numpy as np
 
 from openpilot.cereal import log
 
-# Stock ACC approach to the target speed, gentler than the cruise planner's: max accel by speed,
-# scaled by the shortfall (docs/zoompilot/e2e-set-speed.md).
+# Stock ACC approach to the target speed, gentler than the cruise planner's: max accel by speed
+# (docs/zoompilot/e2e-set-speed.md).
 APPROACH_BP = [0., 4., 9., 14., 18., 25.]  # m/s
 APPROACH_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s^2
-# The last 1 m/s tapers to 0 at the target, so the pace is continuous there and 0 over it: about
-# 0.5-0.8 m/s^2 per m/s, under upstream's cruise law (1 per m/s).
-APPROACH_GAP_BP = [0., 1., 3., 5., 10.]  # m/s below the target speed
-APPROACH_GAP_FRACTION = [0., 0.47, 0.57, 0.72, 1.]
-# The table is Standard; the others move it by sunnypilot's accel boost step as of #2089
+# Under the ceiling the pace is the acceleration that eases off at a steady jerk and arrives at the
+# target with none left, sqrt(2 * jerk * gap). Near the target it turns linear at upstream's cruise
+# gain (1 m/s^2 per m/s), meeting the root with the same value and slope, so the pace is smooth
+# through the target and 0 over it. The jerk matches the stock-derived table it replaced (0.38-1 of
+# the ceiling over 0-10 m/s under) on the drives' frames 2 m/s or more under the target.
+APPROACH_JERK = 0.065  # m/s^3
+APPROACH_GAIN = 1.0  # 1/s
+APPROACH_LINEAR_GAP = APPROACH_JERK / APPROACH_GAIN ** 2  # m/s, where the line meets the root
+# The ceiling is Standard; the others move it by sunnypilot's accel boost step as of #2089
 # (docs/zoompilot/e2e-set-speed.md).
 APPROACH_PERSONALITY_OFFSET = {
   log.LongitudinalPersonality.relaxed: -0.15,
@@ -36,4 +42,11 @@ def approach_ceiling(v_ego: float, personality: int) -> float:
 
 def approach_accel(v_ego: float, v_target: float, personality: int) -> float:
   """Max floor accel while closing on v_target; 0 at or above it."""
-  return approach_ceiling(v_ego, personality) * float(np.interp(v_target - v_ego, APPROACH_GAP_BP, APPROACH_GAP_FRACTION))
+  gap = v_target - v_ego
+  if gap <= 0.:
+    return 0.
+  if gap <= APPROACH_LINEAR_GAP:
+    pace = APPROACH_GAIN * gap
+  else:
+    pace = math.sqrt(2. * APPROACH_JERK * (gap - APPROACH_LINEAR_GAP / 2.))
+  return min(pace, approach_ceiling(v_ego, personality))

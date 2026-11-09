@@ -17,7 +17,7 @@ from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL as DT
 from openpilot.selfdrive.controls.lib.longitudinal_planner import get_cruise_accel
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel, approach_ceiling
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import LIFT_FALL, E2ESetSpeedController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, build_sm
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
@@ -26,18 +26,23 @@ V_PREF = 20.  # m/s, the model's own pace
 V_CRUISE = V_PREF + 6 * CV.MPH_TO_MS  # set 6 mph above it, the median gap in the logs
 STANDARD = cereal_log.LongitudinalPersonality.standard
 ACTUATOR_TAU = 0.5  # s
+# The model's acceleration wanders around its pull near the set speed: logged sd 0.08 m/s^2 below
+# 0.3 Hz (11-0x drives, open road within 1 m/s of the target). Three slow tones stand in for it.
+WANDER = ((0.065, 7.), (0.065, 13.), (0.065, 29.))  # (m/s^2, period s)
 
 
-def simulate(enabled, seconds=60., tau=50., brake_at=None, coast_at=None, plan_drop=4.):
+def simulate(enabled, seconds=60., tau=50., brake_at=None, coast_at=None, plan_drop=4., v0=V_PREF, wander=False):
   """Rows of (t, v_ego, a_model, e2e candidate). brake_at: the model brakes at -0.5 from then on.
   coast_at: from then on the model eases off gently, inside the gain's band, toward a stop its plan
-  shows plan_drop m/s under the current speed at the end of the horizon."""
+  shows plan_drop m/s under the current speed at the end of the horizon. wander: add WANDER."""
   ctl = E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled), dt=DT)
-  v, a_act, a_cruise, out = V_PREF, 0., 0., 0.
+  v, a_act, a_cruise, out = v0, 0., 0., 0.
   log = []
   for i in range(int(seconds / DT)):
     t = i * DT
     a_model = float(np.clip((V_PREF - v) / tau, -1., 1.))
+    if wander:
+      a_model += float(sum(amp * np.sin(2 * np.pi * t / period) for amp, period in WANDER))
     if brake_at is not None and t >= brake_at:
       a_model = -0.5
     plan_v = None
@@ -50,7 +55,7 @@ def simulate(enabled, seconds=60., tau=50., brake_at=None, coast_at=None, plan_d
     out = min(e2e, a_cruise)
     a_act += DT / ACTUATOR_TAU * (out - a_act)
     v += a_act * DT
-    log.append((t, v, a_model, e2e))
+    log.append((t, v, a_model, e2e, out))
   return np.asarray(log)
 
 
@@ -114,12 +119,28 @@ def test_open_road_plan_keeps_the_lift():
   assert (after[:, 3] - after[:, 2]).min() > 0.
 
 
-def test_holds_the_set_speed_without_oscillating():
-  # converged at the set speed, the command settles instead of hunting across it
-  log = simulate(True, seconds=120.)
-  hold = log[log[:, 0] >= 80.]
-  assert np.ptp(hold[:, 1]) < 0.1  # m/s
-  assert (V_CRUISE - hold[:, 1]).max() < 0.5 and (hold[:, 1] - V_CRUISE).max() < 0.1
-  # no throttle-brake flips
-  out = np.diff(hold[:, 1]) / DT
-  assert np.count_nonzero(np.diff(np.sign(np.round(out, 3)[np.round(out, 3) != 0.]))) <= 1
+def flips(command, deadband=0.05):
+  """Throttle-brake changes: sign changes of the planner's command outside a small deadband."""
+  signs = np.sign(command[np.abs(command) > deadband])
+  return int(np.count_nonzero(np.diff(signs)))
+
+
+@pytest.mark.parametrize("wander", [False, True])
+def test_holds_the_set_speed_without_oscillating(wander):
+  # at the set speed for 120 s, with and without the model's wander: no hunting across it
+  log = simulate(True, seconds=160., v0=V_CRUISE - 0.3, wander=wander)
+  hold = log[log[:, 0] >= 40.]
+  assert np.median(V_CRUISE - hold[:, 1]) < 0.1
+  # the tones line up to -0.2 m/s^2 now and then, where the gain hands the slowdown to the model
+  assert (V_CRUISE - hold[:, 1]).max() < 0.3 and (hold[:, 1] - V_CRUISE).max() < 0.1
+  # no throttle-brake changes of its own: steady, at most one; wandering, no more than the model's
+  assert flips(hold[:, 4]) <= (flips(hold[:, 2]) if wander else 1)
+
+
+def test_closes_a_shortfall_without_overshoot():
+  # 5 m/s under the set speed: within 0.2 m/s in about 10 s, never past it, no harder than the ceiling
+  log = simulate(True, seconds=40., v0=V_CRUISE - 5.)
+  within = log[np.abs(V_CRUISE - log[:, 1]) < 0.2, 0]
+  assert within[0] < 13.
+  assert log[:, 1].max() - V_CRUISE < 0.05
+  assert log[:, 4].max() <= approach_ceiling(V_CRUISE - 5., STANDARD) + 1e-6

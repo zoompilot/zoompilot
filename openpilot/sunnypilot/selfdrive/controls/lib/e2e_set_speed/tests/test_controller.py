@@ -226,22 +226,37 @@ def test_invalid_model_passes_through():
   assert ctl.inhibit == Inhibit.invalid
 
 
+FAR = 40.  # m/s under the target: the root is past every ceiling
+
+
 def test_approach_closes_small_gaps_gently():
-  # the floor's pace grows with the shortfall from 0 at the target to the whole speed envelope at 10 m/s
-  assert all(np.diff(approach.APPROACH_GAP_FRACTION) > 0) and approach.APPROACH_GAP_FRACTION[-1] == 1.
+  # the floor's pace: arrive at the target at a steady jerk, up to the speed's ceiling
   for v, ceiling in zip(approach.APPROACH_BP, approach.APPROACH_V, strict=True):
-    assert approach.approach_accel(v, v + 10., STANDARD) == pytest.approx(ceiling)
-    assert approach.approach_accel(v, v + 1., STANDARD) == pytest.approx(approach.APPROACH_GAP_FRACTION[1] * ceiling)
+    assert approach.approach_accel(v, v + FAR, STANDARD) == pytest.approx(ceiling)
+    for gap in (1., 2., 5.):
+      pace = approach.approach_accel(v, v + gap, STANDARD)
+      # easing off from this pace at the jerk closes the gap: a^2 / 2j, less the linear part's head start
+      assert pace == pytest.approx(min(ceiling, np.sqrt(2 * approach.APPROACH_JERK * (gap - approach.APPROACH_LINEAR_GAP / 2))))
   assert approach.approach_accel(V_EGO, V_EGO + 1., STANDARD) < 0.42  # a CX-5 5>4 kickdown at highway speed
+
+
+def test_approach_joins_the_line_smoothly():
+  # value and slope match where the cruise gain's line meets the root
+  g0, eps = approach.APPROACH_LINEAR_GAP, 1e-6
+  pace = lambda gap: approach.approach_accel(V_EGO, V_EGO + gap, STANDARD)  # noqa: E731
+  assert pace(g0 - eps) == pytest.approx(pace(g0 + eps), abs=1e-5)
+  below = (pace(g0) - pace(g0 - 1e-4)) / 1e-4
+  above = (pace(g0 + 1e-4) - pace(g0)) / 1e-4
+  assert below == pytest.approx(approach.APPROACH_GAIN, rel=1e-3) and above == pytest.approx(approach.APPROACH_GAIN, rel=1e-2)
 
 
 @pytest.mark.parametrize("v", [5., 15., 25.])
 def test_approach_is_continuous_at_the_target(v):
   # no step where the car reaches the target: the pace falls smoothly to 0 and stays there
-  gaps = np.linspace(-1., 2., 3001)
+  gaps = np.linspace(-1., 10., 11001)
   paces = np.array([approach.approach_accel(v - g, v, STANDARD) for g in gaps])
   assert all(np.diff(paces) >= 0.)
-  assert max(np.diff(paces)) < 1e-3
+  assert max(np.diff(paces)) <= approach.APPROACH_GAIN * 1e-3 + 1e-9  # never steeper than the cruise gain
   assert paces[gaps <= 0.].max() == 0.
 
 
@@ -253,7 +268,7 @@ def test_approach_asks_nothing_at_or_over_the_target(over):
 
 
 def test_approach_follows_the_personality():
-  # Standard is the table; Relaxed and Aggressive sit a 0.15 step either side of it at a full
+  # Standard is the ceiling; Relaxed and Aggressive sit a 0.15 step either side of it at a full
   # shortfall, and closer near the target. Read from a message as the planner does.
   def personality(name):
     msg = messaging.new_message('selfdriveState')
@@ -261,6 +276,6 @@ def test_approach_follows_the_personality():
     return msg.as_reader().selfdriveState.personality.raw
   relaxed_p, standard_p, aggressive_p = (personality(n) for n in ('relaxed', 'standard', 'aggressive'))
   for v in approach.APPROACH_BP:
-    relaxed, standard, aggressive = (approach.approach_accel(v, v + 10., p) for p in (relaxed_p, standard_p, aggressive_p))
+    relaxed, standard, aggressive = (approach.approach_accel(v, v + FAR, p) for p in (relaxed_p, standard_p, aggressive_p))
     assert relaxed == pytest.approx(standard - 0.15) and aggressive == pytest.approx(standard + 0.15)
     assert approach.approach_accel(v, v + 1., aggressive_p) - approach.approach_accel(v, v + 1., standard_p) < 0.15
