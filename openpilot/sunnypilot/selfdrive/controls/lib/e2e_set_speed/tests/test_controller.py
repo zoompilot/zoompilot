@@ -230,23 +230,14 @@ def test_approach_closes_small_gaps_gently():
   assert approach.approach_accel(V_EGO, V_EGO + 1., STANDARD) < 0.42  # a CX-5 5>4 kickdown at highway speed
 
 
-def test_approach_joins_the_line_smoothly():
-  # value and slope match where the cruise gain's line meets the root
-  g0, eps = approach.APPROACH_LINEAR_GAP, 1e-6
-  pace = lambda gap: approach.approach_accel(V_EGO, V_EGO + gap, STANDARD)  # noqa: E731
-  assert pace(g0 - eps) == pytest.approx(pace(g0 + eps), abs=1e-5)
-  below = (pace(g0) - pace(g0 - 1e-4)) / 1e-4
-  above = (pace(g0 + 1e-4) - pace(g0)) / 1e-4
-  assert below == pytest.approx(approach.APPROACH_GAIN, rel=1e-3) and above == pytest.approx(approach.APPROACH_GAIN, rel=1e-2)
-
-
 @pytest.mark.parametrize("v", [5., 15., 25.])
 def test_approach_is_continuous_at_the_target(v):
   # no step where the car reaches the target: the pace falls smoothly to 0 and stays there
+  step = 1e-3
   gaps = np.linspace(-1., 10., 11001)
   paces = np.array([approach.approach_accel(v - g, v, STANDARD) for g in gaps])
   assert all(np.diff(paces) >= 0.)
-  assert max(np.diff(paces)) <= approach.APPROACH_GAIN * 1e-3 + 1e-9  # never steeper than the cruise gain
+  assert max(np.diff(paces)) <= np.sqrt(2 * approach.APPROACH_JERK * step) + 1e-9  # the root's steepest step, off the target
   assert paces[gaps <= 0.].max() == 0.
 
 

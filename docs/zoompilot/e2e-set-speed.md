@@ -67,12 +67,19 @@ lift, and slightly less time above the 0.42 kickdown point at 14-24 m/s (7.1% ag
 Since 2026-11-08 the pace is a jerk-limited arrival, capped at the speed's ceiling:
 
 ```
-approach = min(ceiling(v_ego), sqrt(2 * 0.065 * (gap - 0.0325)))   gap over 0.065 m/s
-         = gap * 1 /s                                              below; 0 at or over the target
+approach = min(ceiling(v_ego), sqrt(2 * 0.065 * max(gap, 0)))
 ```
 
 the acceleration that, eased off at 0.065 m/s^3, reaches the target with none left. Near the
-target it is upstream's cruise gain, joined with the same value and slope. It replaced a table of
+target upstream's cruise candidate, which the planner takes the minimum with, is the gentler of the
+two; it heads for the same target, since the planner lowers v_cruise to the SLA or SCC target
+before building it. Until 2026-11-09 a line at the cruise gain (1 /s) ran under 0.065 m/s, joined
+with the same slope; dropping it moves the pace by at most 0.017 m/s^2 after the minimum (45% of
+frames, 9b-a7), and the closed loop below is unchanged (from 5 m/s under 10.1 s against 10.2,
+overshoot 0.010 against 0.008; holding, flips over +-0.05 / +-0.02 0.0 / 5.5 a minute either way).
+On those drives the target is not v_cruise on 20% of frames (SLA or SCC); were the cruise
+candidate to head for v_cruise instead, a hold at a lower target flips as often under both laws
+(+-0.05: 3.0 a minute). It replaced a table of
 0.38-1 of the ceiling over 0-10 m/s under, which stepped from 0.38 to 0 at the target (a pumping
 risk at the set speed); a 1 m/s taper to 0 (f554787d8, one day) cost 21% of the open-road lift.
 The jerk matches the table's push on the drives' frames 2 m/s or more under the target (routes
@@ -161,8 +168,7 @@ add under DEC.
 | `FADE_LAT_BP`, `LAT_HORIZON` | 0.6-1.0 m/s^2, 10 s | the envelope's 1.0 bend ceiling, as a ramp |
 | rise | 1.6/1.2/0.8/0.6 m/s^3 at 0/10/25/40 m/s | upstream's cruise jerk (`op_long_cruise_jerk`): the lift stands in for cruise, on any car. Mazda's AccelShaper still caps the build at stock MRCC's 0.8 |
 | `APPROACH_V` over `APPROACH_BP` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s^2 at 0, 4, 9, 14, 18, 25 m/s | the CX-5's stock MRCC accelerating command p99 by speed, no lead (its wire ceiling eases 14 m/s to 0.95 for a 4>3 kickdown; that stays in the Mazda port) |
-| `APPROACH_JERK` | 0.065 m/s^3 | matches the table it replaced on frames 2 m/s or more under the target; that table sat between stock's p50 and p90 by shortfall (0.31/0.37 at 0.5-1.5 m/s, 0.41/0.44 at 1.5-3, 0.51/0.55 at 3-5, 0.64/0.76 at 5-10, 20-24 m/s) |
-| `APPROACH_GAIN` | 1 /s | upstream's cruise law near the target; the floor never sits above the cruise candidate there anyway |
+| `APPROACH_JERK` | 0.065 m/s^3 | matches the table it replaced on frames 2 m/s or more under the target; that table sat between stock's p50 and p90 by shortfall (0.31/0.37 at 0.5-1.5 m/s, 0.41/0.44 at 1.5-3, 0.51/0.55 at 3-5, 0.64/0.76 at 5-10, 20-24 m/s). Kept when the line near the target went: the root moves under 1% at 2 m/s and more under |
 | `LIFT_FALL` | 2.4 m/s^3 | the slowest fall, for lane changes, bends and a lower floor. Chosen when it was the only fall: at 0.5 the lift was still over 0.2 for 1.8% of frames with the model braking past -0.5; at 2.4, none. The model's braking now also drops the lift through the gain |
 
 ## Expected behaviour

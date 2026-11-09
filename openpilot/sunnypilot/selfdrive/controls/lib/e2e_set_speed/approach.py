@@ -18,13 +18,11 @@ from openpilot.cereal import log
 APPROACH_BP = [0., 4., 9., 14., 18., 25.]  # m/s
 APPROACH_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s^2
 # Under the ceiling the pace is the acceleration that eases off at a steady jerk and arrives at the
-# target with none left, sqrt(2 * jerk * gap). Near the target it turns linear at upstream's cruise
-# gain (1 m/s^2 per m/s), meeting the root with the same value and slope, so the pace is smooth
-# through the target and 0 over it. The jerk matches the stock-derived table it replaced (0.38-1 of
-# the ceiling over 0-10 m/s under) on the drives' frames 2 m/s or more under the target.
+# target with none left, sqrt(2 * jerk * gap): continuous through the target and 0 over it. Near
+# the target upstream's cruise candidate, which the planner takes the minimum with, is the gentler
+# of the two. The jerk matches the stock-derived table it replaced (0.38-1 of the ceiling over
+# 0-10 m/s under) on the drives' frames 2 m/s or more under the target.
 APPROACH_JERK = 0.065  # m/s^3
-APPROACH_GAIN = 1.0  # 1/s
-APPROACH_LINEAR_GAP = APPROACH_JERK / APPROACH_GAIN ** 2  # m/s, where the line meets the root
 # The ceiling is Standard; the others move it by sunnypilot's accel boost step as of #2089
 # (docs/zoompilot/e2e-set-speed.md).
 APPROACH_PERSONALITY_OFFSET = {
@@ -42,11 +40,4 @@ def approach_ceiling(v_ego: float, personality: int) -> float:
 
 def approach_accel(v_ego: float, v_target: float, personality: int) -> float:
   """Max floor accel while closing on v_target; 0 at or above it."""
-  gap = v_target - v_ego
-  if gap <= 0.:
-    return 0.
-  if gap <= APPROACH_LINEAR_GAP:
-    pace = APPROACH_GAIN * gap
-  else:
-    pace = math.sqrt(2. * APPROACH_JERK * (gap - APPROACH_LINEAR_GAP / 2.))
-  return min(pace, approach_ceiling(v_ego, personality))
+  return min(math.sqrt(2. * APPROACH_JERK * max(v_target - v_ego, 0.)), approach_ceiling(v_ego, personality))
