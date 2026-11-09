@@ -130,15 +130,68 @@ def test_lets_go_of_the_models_braking_at_once():
   assert ctl.lift == 0.
 
 
-def test_far_plan_speeds_do_not_move_the_lift():
-  # the flicker that pumped the old envelope: the plan's far end dropping 10 mph and back
+def test_far_plan_flicker_does_not_move_the_lift():
+  # the plan's far end flickering on a straight road, up to the drop band
   ctl = settled()
   lifts = []
   for i in range(100):
-    dip = 4.5 if (i // 5) % 2 else 0.
+    dip = 0.99 * -c.GAIN_BP[1] * c.HORIZON if (i // 5) % 2 else 0.
     plan_v = V_EGO - dip * np.minimum(T_IDXS, 10.) / 10.
     lifts.append(run(ctl, 1, build_sm(V_EGO, plan_v=plan_v)))
   assert np.ptp(lifts) == 0.
+  assert ctl.plan_fade == 1.
+
+
+def coast_to_stop(drop):
+  """The model's plan easing from V_EGO down by drop over the horizon."""
+  return V_EGO - drop * np.minimum(T_IDXS, 10.) / 10.
+
+
+@pytest.mark.parametrize("drop, plan_fade", [(0., 1.), (1., 1.), (2., 0.5), (3., 0.), (8., 0.)])
+def test_plan_drop_fades_the_lift(drop, plan_fade):
+  # a gentle coast (inside the gain's band) toward a stop or a light: the lift lets it coast
+  ctl = new_controller()
+  a_model = -0.05
+  run(ctl, SETTLE_FRAMES, build_sm(V_EGO, plan_v=coast_to_stop(drop)), a_model=a_model)
+  assert ctl.plan_fade == pytest.approx(plan_fade)
+  assert ctl.gain == pytest.approx(plan_fade)
+  assert ctl.lift == pytest.approx(plan_fade * (A_CRUISE - a_model))
+
+
+def test_coast_toward_a_stop_lets_go_of_the_lift():
+  # lifted on an open road, then the plan starts ending at a stop: the lift goes, never below the model
+  ctl = settled()
+  drops = np.linspace(0., 6., 60)
+  out = [run(ctl, 1, build_sm(V_EGO, plan_v=coast_to_stop(d)), a_model=-0.05) for d in drops]
+  assert min(out) >= -0.05
+  assert all(o == -0.05 for o, d in zip(out, drops, strict=True) if d >= c.HORIZON * -c.GAIN_BP[0])
+  assert ctl.lift == 0.
+
+
+@pytest.mark.parametrize("lead, plan_fade", [
+  ((60., 0.), 1.),     # steady lead
+  ((60., -0.9), 1.),   # barely closing
+  ((30., -3.), 0.),    # closing hard, 10 s to contact
+  ((60., -3.), 0.75),  # closing hard, 20 s to contact
+  ((150., -3.), 1.),   # 50 s to contact
+  ((20., -2.), 0.5),   # closing gently, 10 s to contact
+  ((60., 2.), 1.),     # pulling away
+])
+def test_closing_lead_fades_the_lift(lead, plan_fade):
+  ctl = new_controller()
+  run(ctl, SETTLE_FRAMES, build_sm(V_EGO, lead=lead))
+  assert ctl.plan_fade == pytest.approx(plan_fade)
+  assert ctl.lift == pytest.approx(plan_fade * A_CRUISE)
+
+
+def test_closing_lead_fade_is_smooth():
+  ctl = new_controller()
+  fades = []
+  for d in np.linspace(120., 20., 101):  # closing at 3 m/s from 40 s to 7 s out
+    run(ctl, 1, build_sm(V_EGO, lead=(d, -3.)))
+    fades.append(ctl.plan_fade)
+  assert fades[0] == 1. and fades[-1] == 0.
+  assert max(np.abs(np.diff(fades))) <= 0.05 + 1e-9  # 1 m of 100 per step
 
 
 @pytest.mark.parametrize("lat, fade", [(0.4, 1.), (0.8, 0.5), (1.2, 0.)])

@@ -37,7 +37,9 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 e2e   = a_model + lift
 lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall max(2.4 m/s^3, (1 - gain) * lift per frame)
 floor = min(a_mpc, a_cruise, approach_accel(v_ego, v_target, personality))
-gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * fade-in over 5-8 m/s
+gain  = min(interp(a_model, GAIN_BP, [0, 1]), planFade) * fade-in over 5-8 m/s,  GAIN_BP = [-0.3, -0.1] m/s^2
+planFade = interp(-slowdown / 10 s, GAIN_BP, [0, 1])
+slowdown = max(v_ego - min(plan v over 10 s), closing speed * interp(time to contact, [15, 25] s, [1, 0]))
 fade  = interp(max(steer lat accel, v_ego^2 * max path curvature over 10 s), [0.6, 1.0] m/s^2, [1, 0])
 ```
 
@@ -54,7 +56,8 @@ brakes binds through the MPC candidate at once. With no lead the MPC chases its 
 upstream's friction circle.)
 
 The floor also closes on the target speed no harder than a production ACC
-(`approach_accel(v_ego, v_target)`, the target after SCC and SLA). Upstream's cruise law asks 2.0
+(`approach_accel(v_ego, v_target)`, the target after SCC and SLA; 0 at or over the target since
+2026-11-08, when it still asked 0.38 of the ceiling there). Upstream's cruise law asks 2.0
 for any 2 m/s shortfall, and on the CX-5 the lift toward it drove 23 of 24 kickdowns on the
 2026-10-30 drives. The Mazda port capped its whole command for this from 10-30 to 11-01
 (mazda-longitudinal.md, "Gap to the set speed"); the cap only ever bound this lift. Replayed over
@@ -86,6 +89,16 @@ Why each input:
   0.10). The model's throttle probability (gasPressProbs[1]) is not used: in engaged cruise it is
   p50 0.93, the lift was 0.45 m/s^2 with it against 0.47 without, and where it is low the
   acceleration band has already closed the lift 92% of the time (2026-11-04, routes 4a-62).
+- `planFade` is the same decision over the plan: the model's acceleration alone filled a gentle
+  coast (-0.05..-0.25) toward a light, a stop or a closing lead up to the floor, turning it into a
+  hold (0000004a t+521, 00000062 t+685). The slowdown the plan sets (its lowest speed in 10 s, or
+  a closing radarState lead as it nears contact) is read as a mean deceleration through the gain's
+  own band, so 1-3 m/s of drop fades it, above the ~1 m/s the far plan flickers on a straight
+  road. It enters through the gain, so a planned slowdown lets go as fast as the model's own
+  braking does, and like the gain it only ever lets go. The lead term is there because the lead
+  MPC floor stays positive while closing at a distance (p50 +0.34 m/s^2 at 75 m, -3.8 m/s on
+  routes 4a-62) and the plan shows only 30% of those slowdowns. On those drives: lift on
+  in 0% of plan-drop >= 3 m/s frames (was 6%), 4.1% of open-road lift removed.
 - `fade` reads the road's geometry, not the plan's speeds. On a straight road the plan's speed
   10 s out swings p90 2.5 mph per 0.5 s; curvature at the current speed flags 86-100% of real bend
   approaches and is over 1.0 m/s^2 on hindsight-straight road for 0.1-3% of frames. The model's
@@ -127,6 +140,7 @@ add under DEC.
 |---|---|---|
 | `MIN_SPEED`, `FULL_SPEED` | 5, 8 m/s | floor 1.2-1.6 against a creeping model |
 | `GAIN_BP` | -0.3, -0.1 | above |
+| `HORIZON`, `LEAD_TTC_BP` | 10 s; 15-25 s to contact | the plan's horizon; a lead past 25 s out is the MPC's |
 | `FADE_LAT_BP`, `LAT_HORIZON` | 0.6-1.0 m/s^2, 10 s | the envelope's 1.0 bend ceiling, as a ramp |
 | rise | 1.6/1.2/0.8/0.6 m/s^3 at 0/10/25/40 m/s | upstream's cruise jerk (`op_long_cruise_jerk`): the lift stands in for cruise, on any car. Mazda's AccelShaper still caps the build at stock MRCC's 0.8 |
 | `APPROACH_V` over `APPROACH_BP` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s^2 at 0, 4, 9, 14, 18, 25 m/s | the CX-5's stock MRCC accelerating command p99 by speed, no lead (its wire ceiling eases 14 m/s to 0.95 for a 4>3 kickdown; that stays in the Mazda port) |

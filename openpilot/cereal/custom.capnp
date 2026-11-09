@@ -755,6 +755,7 @@ struct LongitudinalPlanZP @0xc3b0556e1118c2db {
     bound @5 :Float32;         # retired 2026-10-27; m/s^2 the speed envelope allowed
     added @6 :Float32;         # retired 2026-10-27; m/s the envelope had put on the car
     fade @7 :Float32;          # 0..1 from the bend ahead at the current speed
+    planFade @8 :Float32;      # 0..1 from the slowdown the plan or a closing lead sets over 10 s; caps gain
 
     enum Inhibit {
       disabled @0;      # the ExperimentalModeSetSpeed toggle is off (and logs from before it)

@@ -19,7 +19,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_planner import get_cruise_acc
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import LIFT_FALL, E2ESetSpeedController
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, build_sm
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, build_sm
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
 
 V_PREF = 20.  # m/s, the model's own pace
@@ -28,8 +28,10 @@ STANDARD = cereal_log.LongitudinalPersonality.standard
 ACTUATOR_TAU = 0.5  # s
 
 
-def simulate(enabled, seconds=60., tau=50., brake_at=None):
-  """Rows of (t, v_ego, a_model, e2e candidate). brake_at: the model brakes at -0.5 from then on."""
+def simulate(enabled, seconds=60., tau=50., brake_at=None, coast_at=None, plan_drop=4.):
+  """Rows of (t, v_ego, a_model, e2e candidate). brake_at: the model brakes at -0.5 from then on.
+  coast_at: from then on the model eases off gently, inside the gain's band, toward a stop its plan
+  shows plan_drop m/s under the current speed at the end of the horizon."""
   ctl = E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled), dt=DT)
   v, a_act, a_cruise, out = V_PREF, 0., 0., 0.
   log = []
@@ -38,8 +40,12 @@ def simulate(enabled, seconds=60., tau=50., brake_at=None):
     a_model = float(np.clip((V_PREF - v) / tau, -1., 1.))
     if brake_at is not None and t >= brake_at:
       a_model = -0.5
+    plan_v = None
+    if coast_at is not None and t >= coast_at:
+      a_model = -0.05
+      plan_v = v - plan_drop * np.minimum(T_IDXS, 10.) / 10.
     # the host passes last frame's cruise candidate at the approach pace, then builds this frame's
-    e2e = ctl.update(build_sm(v), a_model, min(a_cruise, approach_accel(v, V_CRUISE, STANDARD)), **ENGAGED)
+    e2e = ctl.update(build_sm(v, plan_v=plan_v), a_model, min(a_cruise, approach_accel(v, V_CRUISE, STANDARD)), **ENGAGED)
     a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, out, DT)
     out = min(e2e, a_cruise)
     a_act += DT / ACTUATOR_TAU * (out - a_act)
@@ -91,3 +97,18 @@ def test_yields_to_a_slowdown_within_half_a_second():
   log = simulate(True, brake_at=45.)
   after = log[log[:, 0] >= 45. + 0.5]
   assert np.allclose(after[:, 3], after[:, 2])
+
+
+@pytest.mark.parametrize("plan_drop", [3., 6.])
+def test_coasts_toward_a_stop_the_plan_shows(plan_drop):
+  # converged, then the model eases off gently for a stop its plan ends at: the lift lets it coast
+  log = simulate(True, coast_at=45., plan_drop=plan_drop)
+  after = log[log[:, 0] >= 45.]
+  assert np.allclose(after[:, 3], after[:, 2])
+
+
+def test_open_road_plan_keeps_the_lift():
+  # the same gentle ease-off with a flat plan is the model's wander at its pace: still lifted
+  log = simulate(True, coast_at=45., plan_drop=0.)
+  after = log[log[:, 0] >= 50.]
+  assert (after[:, 3] - after[:, 2]).min() > 0.
