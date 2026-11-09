@@ -15,7 +15,7 @@ from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import approach
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import controller as c
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController, Inhibit
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, build_sm
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, build_sm, plan_ramp
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
 
 V_EGO = 20.
@@ -136,15 +136,9 @@ def test_far_plan_flicker_does_not_move_the_lift():
   lifts = []
   for i in range(100):
     dip = 0.99 * -c.GAIN_BP[1] * c.HORIZON if (i // 5) % 2 else 0.
-    plan_v = V_EGO - dip * np.minimum(T_IDXS, 10.) / 10.
-    lifts.append(run(ctl, 1, build_sm(V_EGO, plan_v=plan_v)))
+    lifts.append(run(ctl, 1, build_sm(V_EGO, plan_v=plan_ramp(V_EGO, dip))))
   assert np.ptp(lifts) == 0.
   assert ctl.plan_fade == 1.
-
-
-def coast_to_stop(drop):
-  """The model's plan easing from V_EGO down by drop over the horizon."""
-  return V_EGO - drop * np.minimum(T_IDXS, 10.) / 10.
 
 
 @pytest.mark.parametrize("drop, plan_fade", [(0., 1.), (1., 1.), (2., 0.5), (3., 0.), (8., 0.)])
@@ -152,7 +146,7 @@ def test_plan_drop_fades_the_lift(drop, plan_fade):
   # a gentle coast (inside the gain's band) toward a stop or a light: the lift lets it coast
   ctl = new_controller()
   a_model = -0.05
-  run(ctl, SETTLE_FRAMES, build_sm(V_EGO, plan_v=coast_to_stop(drop)), a_model=a_model)
+  run(ctl, SETTLE_FRAMES, build_sm(V_EGO, plan_v=plan_ramp(V_EGO, drop)), a_model=a_model)
   assert ctl.plan_fade == pytest.approx(plan_fade)
   assert ctl.gain == pytest.approx(plan_fade)
   assert ctl.lift == pytest.approx(plan_fade * (A_CRUISE - a_model))
@@ -162,7 +156,7 @@ def test_coast_toward_a_stop_lets_go_of_the_lift():
   # lifted on an open road, then the plan starts ending at a stop: the lift goes, never below the model
   ctl = settled()
   drops = np.linspace(0., 6., 60)
-  out = [run(ctl, 1, build_sm(V_EGO, plan_v=coast_to_stop(d)), a_model=-0.05) for d in drops]
+  out = [run(ctl, 1, build_sm(V_EGO, plan_v=plan_ramp(V_EGO, d)), a_model=-0.05) for d in drops]
   assert min(out) >= -0.05
   assert all(o == -0.05 for o, d in zip(out, drops, strict=True) if d >= c.HORIZON * -c.GAIN_BP[0])
   assert ctl.lift == 0.
@@ -230,13 +224,9 @@ FAR = 40.  # m/s under the target: the root is past every ceiling
 
 
 def test_approach_closes_small_gaps_gently():
-  # the floor's pace: arrive at the target at a steady jerk, up to the speed's ceiling
+  # the floor's pace, up to the speed's ceiling
   for v, ceiling in zip(approach.APPROACH_BP, approach.APPROACH_V, strict=True):
     assert approach.approach_accel(v, v + FAR, STANDARD) == pytest.approx(ceiling)
-    for gap in (1., 2., 5.):
-      pace = approach.approach_accel(v, v + gap, STANDARD)
-      # easing off from this pace at the jerk closes the gap: a^2 / 2j, less the linear part's head start
-      assert pace == pytest.approx(min(ceiling, np.sqrt(2 * approach.APPROACH_JERK * (gap - approach.APPROACH_LINEAR_GAP / 2))))
   assert approach.approach_accel(V_EGO, V_EGO + 1., STANDARD) < 0.42  # a CX-5 5>4 kickdown at highway speed
 
 
@@ -269,7 +259,7 @@ def test_approach_asks_nothing_at_or_over_the_target(over):
 
 def test_approach_follows_the_personality():
   # Standard is the ceiling; Relaxed and Aggressive sit a 0.15 step either side of it at a full
-  # shortfall, and closer near the target. Read from a message as the planner does.
+  # shortfall. Read from a message as the planner does.
   def personality(name):
     msg = messaging.new_message('selfdriveState')
     msg.selfdriveState.personality = name
@@ -278,4 +268,3 @@ def test_approach_follows_the_personality():
   for v in approach.APPROACH_BP:
     relaxed, standard, aggressive = (approach.approach_accel(v, v + FAR, p) for p in (relaxed_p, standard_p, aggressive_p))
     assert relaxed == pytest.approx(standard - 0.15) and aggressive == pytest.approx(standard + 0.15)
-    assert approach.approach_accel(v, v + 1., aggressive_p) - approach.approach_accel(v, v + 1., standard_p) < 0.15

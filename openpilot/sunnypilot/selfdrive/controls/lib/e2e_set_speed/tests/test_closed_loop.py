@@ -19,7 +19,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_planner import get_cruise_acc
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel, approach_ceiling
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import LIFT_FALL, E2ESetSpeedController
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, build_sm
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, build_sm, plan_ramp
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
 
 V_PREF = 20.  # m/s, the model's own pace
@@ -48,7 +48,7 @@ def simulate(enabled, seconds=60., tau=50., brake_at=None, coast_at=None, plan_d
     plan_v = None
     if coast_at is not None and t >= coast_at:
       a_model = -0.05
-      plan_v = v - plan_drop * np.minimum(T_IDXS, 10.) / 10.
+      plan_v = plan_ramp(v, plan_drop)
     # the host passes last frame's cruise candidate at the approach pace, then builds this frame's
     e2e = ctl.update(build_sm(v, plan_v=plan_v), a_model, min(a_cruise, approach_accel(v, V_CRUISE, STANDARD)), **ENGAGED)
     a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, out, DT)

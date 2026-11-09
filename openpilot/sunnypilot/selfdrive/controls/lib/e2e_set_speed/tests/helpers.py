@@ -14,6 +14,11 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import
 ENGAGED = {'is_e2e': True, 'reset_state': False}
 
 
+def plan_ramp(v_ego: float, drop: float) -> np.ndarray:
+  """The model's plan easing from v_ego down by drop over the first 10 s of the horizon."""
+  return v_ego - drop * np.minimum(T_IDXS, 10.) / 10.
+
+
 def build_sm(v_ego: float, plan_v=None, yaw_rate=0., gas=False, brake=False, should_stop=False,
              hard_brake=False, force_decel=False, lane_change=False, lead=None) -> dict:
   """Readers for the four services the controller reads. plan_v and yaw_rate take a scalar or a
