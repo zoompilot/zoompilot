@@ -249,15 +249,16 @@ def test_multi_button_follows_its_param(params):
 
 
 @pytest.mark.parametrize("lane_center", [False, True])
-def test_lane_center_ui_sits_after_the_steering_arc(params, lane_center):
+def test_lane_center_ui_sits_after_the_steering_arc(params, monkeypatch, lane_center):
   """Off / Gauge / Debug, after the steering arc's toggle; greyed out with lane center assist off."""
   from openpilot.selfdrive.ui.sunnypilot.layouts.settings.visuals import VisualsLayout
+  from openpilot.selfdrive.ui.ui_state import ui_state
 
-  params.put_bool("Blendful", lane_center, block=True)
+  monkeypatch.setattr(ui_state, "lane_center", lane_center)
   params.put("LaneCenterUI", 2, block=True)
   layout = VisualsLayout()
   layout._update_state()
-  row = layout._lane_center_ui
+  row = layout._lane_center_ui.item
   items = layout._scroller._items
   assert items.index(row) == items.index(layout._toggles["TorqueBar"]) + 1
   assert row.action_item.selected_button == 2

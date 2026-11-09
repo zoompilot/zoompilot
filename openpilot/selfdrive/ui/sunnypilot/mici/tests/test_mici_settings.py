@@ -1136,17 +1136,14 @@ class TestOverriddenToggles:
     assert item.enabled == lane_center
     assert item.superseded == (not lane_center)
 
-  def test_lane_center_ui_cycles_off_gauge_debug(self, params):
+  def test_lane_center_ui_is_off_gauge_debug(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.visuals import VisualsLayoutMici
 
     params.remove("LaneCenterUI")
     item = VisualsLayoutMici()._lane_center_ui
     assert item.text == "lane center ui"
+    assert item._options == ["off", "gauge", "debug"]  # stored as the index; cycling is TestRoadEdgeLaneChange's
     assert item.value == "gauge"  # the declared default
-    for expected, stored in (("debug", 2), ("off", 0), ("gauge", 1)):
-      item._store((item._get_param_index() + 1) % 3)
-      item.refresh()
-      assert (item.value, params.get("LaneCenterUI")) == (expected, stored)
 
   @pytest.mark.parametrize("mode", [0, 1])
   def test_speed_limit_settings_lock_with_the_mode_off(self, params, monkeypatch, mode):
