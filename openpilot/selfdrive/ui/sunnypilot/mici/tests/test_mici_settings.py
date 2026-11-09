@@ -1370,9 +1370,10 @@ class TestSpeedAssistBadge:
     drawn = self._settle(hud, monkeypatch)
     assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA_IDLE, abs=0.02)
 
-  @pytest.mark.parametrize(("fraction", "expected"), [(0.5, 0.55), (1.0, 0.7)])
-  def test_brightens_with_the_lift(self, params, monkeypatch, fraction, expected):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import HudRendererSP
+  @pytest.mark.parametrize("fraction", [0.5, 1.0])
+  def test_brightens_with_the_lift(self, params, monkeypatch, fraction):
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, SPEED_ASSIST_ALPHA_LIFT, HudRendererSP
+    expected = SPEED_ASSIST_ALPHA_IDLE + (SPEED_ASSIST_ALPHA_LIFT - SPEED_ASSIST_ALPHA_IDLE) * fraction
     from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
 
     monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
