@@ -1382,3 +1382,52 @@ class TestSpeedAssistBadge:
     monkeypatch.setattr(HudRendererSP, "_speed_assist_lift_fraction", staticmethod(lambda: fraction))
     drawn = self._settle(HudRendererSP(), monkeypatch)
     assert drawn and drawn[-1][3] == pytest.approx(expected, abs=0.02)
+
+
+class TestCurveSpeed:
+  """One multi toggle after the two Slow for Curves toggles; grey with both of them off."""
+
+  @pytest.mark.parametrize(("has_long", "vision", "map_", "superseded"), [
+    (True, True, False, False),
+    (True, False, True, False),
+    (True, False, False, True),
+    (False, True, True, True),
+  ])
+  def test_follows_slow_for_curves(self, params, monkeypatch, has_long, vision, map_, superseded):
+    from opendbc.car.structs import car
+    from openpilot.cereal import custom
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(openpilotLongitudinalControl=has_long))
+    monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
+    monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
+    monkeypatch.setattr(ui_state, "has_icbm", False)
+    params.put_bool("SmartCruiseControlVision", vision, block=True)
+    params.put_bool("SmartCruiseControlMap", map_, block=True)
+    params.put("CurveSpeedProfile", 0, block=True)
+    try:
+      cruise = CruiseLayoutMici()
+      items = cruise._scroller.items
+      assert items.index(cruise._curve_speed) == items.index(cruise._scc_m_toggle) + 1 == items.index(cruise._scc_v_toggle) + 2
+      render(cruise)
+      toggle = cruise._curve_speed
+      assert toggle.superseded == superseded
+      assert toggle.value == "gentle", "a grey pill keeps the stored value"
+      assert toggle._off_index is None  # every profile is on
+    finally:
+      for key in ("SmartCruiseControlVision", "SmartCruiseControlMap", "CurveSpeedProfile"):
+        params.remove(key)
+
+  def test_tap_stores_the_next_profile(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
+
+    params.put("CurveSpeedProfile", 1, block=True)
+    try:
+      toggle = CruiseLayoutMici()._curve_speed
+      assert toggle.value == "normal"
+      toggle._handle_mouse_release(None)
+      assert params.get("CurveSpeedProfile") == 2
+      assert toggle.value == "sporty"
+    finally:
+      params.remove("CurveSpeedProfile")

@@ -283,3 +283,35 @@ def test_lane_center_ui_is_off_with_lane_center_off(params, lane_center, stored,
   params.put("LaneCenterUI", stored, block=True)
   ui_state.update_params()
   assert (ui_state.lane_center, ui_state.lane_center_ui) == (lane_center, shown)
+
+
+@pytest.mark.parametrize(("has_long", "vision", "map_", "enabled"), [
+  (True, True, False, True),
+  (True, False, True, True),
+  (True, False, False, False),  # nothing reads it with both curve features off
+  (False, True, True, False),
+])
+def test_curve_speed_follows_slow_for_curves(params, monkeypatch, has_long, vision, map_, enabled):
+  from opendbc.car.structs import car
+  from openpilot.cereal import custom
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(openpilotLongitudinalControl=has_long))
+  monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
+  monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
+  monkeypatch.setattr(ui_state, "has_icbm", False)
+  params.put_bool("SmartCruiseControlVision", vision, block=True)
+  params.put_bool("SmartCruiseControlMap", map_, block=True)
+  params.put("CurveSpeedProfile", 2, block=True)
+  try:
+    cruise = CruiseLayout()
+    items = cruise._scroller._items
+    assert items.index(cruise.curve_speed) == items.index(cruise.scc_m_toggle) + 1 == items.index(cruise.scc_v_toggle) + 2
+    cruise.show_event()
+    cruise._update_state()
+    assert cruise.curve_speed.action_item.enabled == enabled
+    assert cruise.curve_speed.action_item.selected_button == 2
+  finally:
+    for key in ("SmartCruiseControlVision", "SmartCruiseControlMap", "CurveSpeedProfile"):
+      params.remove(key)
