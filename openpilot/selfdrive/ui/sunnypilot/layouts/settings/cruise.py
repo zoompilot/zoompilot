@@ -8,6 +8,7 @@ from enum import IntEnum
 
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.alpha_longitudinal_toggles import AlphaLongitudinalToggles
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_sub_layouts.speed_limit_settings import SpeedLimitSettingsLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise_zp import CurveSpeed
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import icbm_moves_speed_limits
 from openpilot.system.ui.lib.multilang import tr, tr_noop
@@ -50,6 +51,8 @@ class CruiseLayout(Widget):
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
 
+    self.curve_speed = CurveSpeed(self.scc_v_toggle, self.scc_m_toggle)
+
     self.custom_acc_toggle = toggle_item_sp(
       title=tr("Custom ACC Speed Increments"),
       description="",
@@ -79,6 +82,7 @@ class CruiseLayout(Widget):
       *self._alpha_long.items,
       self.scc_v_toggle,
       self.scc_m_toggle,
+      self.curve_speed.item,
       self.sla_settings_button,
       self.custom_acc_toggle,
       self.custom_acc_short_increment,
@@ -129,6 +133,8 @@ class CruiseLayout(Widget):
 
     else:
       has_icbm = has_long = False
+
+    self.curve_speed.update_state(has_long or has_icbm)
 
     show_custom_acc_desc = False
 
