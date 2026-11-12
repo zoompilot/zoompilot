@@ -10,7 +10,7 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.ui.mici.onroad.hud_renderer import SET_SPEED_PERSISTENCE, HudRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.blind_spot_indicators import BlindSpotIndicators
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge_centered
-from openpilot.selfdrive.ui.ui_state import ChestnutState, UIStatus, ui_state
+from openpilot.selfdrive.ui.ui_state import ChestnutState, ui_state
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_ceiling
 from openpilot.system.ui.lib.application import gui_app
 
@@ -58,9 +58,10 @@ class HudRendererSP(HudRenderer):
     return rl.get_time() - self._chestnut_fade_time < SET_SPEED_PERSISTENCE
 
   def _draw_speed_assist(self, rect: rl.Rectangle) -> None:
-    # comes and goes with the wheel, and swaps in once the model icon is done with the shared corner
+    # comes and goes with the long indicator (not under MADS lateral-only), and swaps in once the
+    # model icon is done with the shared corner
     wheel = self._txt_wheel
-    shown = (ui_state.speed_assist_active and ui_state.status != UIStatus.DISENGAGED and
+    shown = (ui_state.speed_assist and ui_state.long_engaged and
              not self.blind_spot_indicators.right_detected and not self._chestnut_showing())
     lift = self._speed_assist_lift_filter.update(self._speed_assist_lift_fraction() if shown else 0.0)
     alpha = self._speed_assist_shown_filter.update(float(shown)) * \
