@@ -18,7 +18,7 @@ the limit holds the speed reached, up to the set speed, until the next sign.
 from openpilot.cereal import custom
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import A_PUB_MIN, get_planning_limits, publish_ramp
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import get_planning_limits, publish_ramp
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import settle_conv
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import ACTIVE_STATES, DISABLED_GUARD_PERIOD, ENABLED_STATES, \
   V_CRUISE_UNSET, SpeedLimitAssist
@@ -94,13 +94,15 @@ class SpeedLimitAssistZP(SpeedLimitAssist):
     return self.state in ENABLED_STATES, self.state in ACTIVE_STATES
 
   def get_a_target_from_control(self) -> float:
-    # active states publish through the shared ramp (the plan aTarget seeds the MPC, so a
-    # state change must never step it); idle states track a_ego, the ramp's starting point
-    a_des = float(min(max(self.acceleration_solutions[self.state](), A_PUB_MIN), -A_PUB_MIN))
-    if self.state in ACTIVE_STATES:
-      self._a_out = publish_ramp(a_des, self._a_out, self.limits, self.v_ego)
+    # The plan aTarget seeds the MPC as the car's acceleration (see update_targets). Only a decel
+    # below the plan's last output (a_ego) is published, ramped down from it so a state change
+    # never steps the seed; under the limit, where the solution is an acceleration toward it, and
+    # while the plan already slows harder, a_ego passes through.
+    a_des = float(self.acceleration_solutions[self.state]())
+    if self.state in ACTIVE_STATES and a_des < self.a_ego:
+      self._a_out = publish_ramp(a_des, min(self._a_out, self.a_ego), self.limits, self.v_ego)
     else:
-      self._a_out = a_des
+      self._a_out = self.a_ego
     return self._a_out
 
   def update_events(self, events_sp: EventsSP) -> None:

@@ -43,7 +43,7 @@ class TestSpeedLimitAssistZP:
     self.sla = SpeedLimitAssistZP(CI.CP, CI.CP_SP)
     self.events_sp = EventsSP()
 
-  def drive(self, cluster_mph, limit_mph, v_mph=None, gas=False, enabled=True, frames=1, raw_limit_mph=None, distance=0.):
+  def drive(self, cluster_mph, limit_mph, v_mph=None, gas=False, enabled=True, frames=1, raw_limit_mph=None, distance=0., a_ego=0.):
     """Speeds in mph; the car runs at the limit unless v_mph says otherwise. raw_limit_mph is the
     resolver's live reading, which can drop out while its last limit holds."""
     v = (limit_mph if v_mph is None else v_mph) * CV.MPH_TO_MS
@@ -51,7 +51,7 @@ class TestSpeedLimitAssistZP:
     raw = limit if raw_limit_mph is None else raw_limit_mph * CV.MPH_TO_MS
     for _ in range(frames):
       self.events_sp.clear()
-      self.sla.update(enabled, gas, v, 0, cluster_mph * CV.MPH_TO_MS, raw, limit, limit_mph > 0, distance, self.events_sp)
+      self.sla.update(enabled, gas, v, a_ego, cluster_mph * CV.MPH_TO_MS, raw, limit, limit_mph > 0, distance, self.events_sp)
 
   def announced(self) -> bool:
     return self.events_sp.has(EventNameSP.speedLimitActive) or self.events_sp.has(EventNameSP.speedLimitChanged)
@@ -80,6 +80,32 @@ class TestSpeedLimitAssistZP:
     expected = self.adapt(300.0)
     assert -self.sla.limits.a_budget < expected < 0.
     assert self.sla.output_a_target == pytest.approx(expected, abs=1e-3)
+
+  # the published aTarget seeds the MPC: only a decel below the plan's (a_ego) is published
+
+  def test_under_the_limit_passes_the_plan_through(self):
+    # braking behind a lead 20 mph under the limit: the solution is an acceleration toward it
+    self.engage(60, 45)
+    self.drive(60, 45, v_mph=25, a_ego=-1.5, frames=int(3. / DT_MDL))
+    assert self.sla.state == SpeedLimitAssistState.active
+    assert self.sla.output_a_target == -1.5
+
+  def test_plan_slowing_harder_than_the_limit_asks_passes_through(self):
+    expected = self.adapt(300.0)
+    self.drive(85, 65, v_mph=80, distance=300.0, a_ego=expected - 1.)
+    assert self.sla.output_a_target == expected - 1.
+
+  def test_decel_ramps_down_from_the_plan(self):
+    # accelerating under one limit when a lower one appears: the ramp starts at the plan's
+    # acceleration and never publishes above it
+    self.engage(85, 80)
+    self.drive(85, 80, v_mph=70, a_ego=1.0, frames=int(3. / DT_MDL))
+    assert self.sla.output_a_target == 1.0
+    self.drive(85, 55, v_mph=70, a_ego=1.0)
+    first = self.sla.output_a_target
+    assert 0.9 < first < 1.0
+    self.drive(85, 55, v_mph=70, a_ego=first)
+    assert self.sla.output_a_target < first
 
   # announcements: "Adjusting to" is raised only when the speed the car settles at,
   # min(target, set speed), moves; the cruise arbiter follows the same rule
