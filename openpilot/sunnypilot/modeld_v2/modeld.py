@@ -431,7 +431,8 @@ def main(demo=False):
     if settings.refresh(sm, params, model):
       model.PLANPLUS_CONTROL = params.get("PlanplusControl", return_default=True)
       small_lateral.speed = params.get("SmallModelSteering", return_default=True)
-    lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
+    big_lat_smooth = small_lateral.big_lat_smooth = settings.big_lat_smooth(model)
+    lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS + big_lat_smooth
     long_delay = CP.longitudinalActuatorDelay + model.LONG_SMOOTH_SECONDS
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["extrinsicsCalibration"].rpyCalib, dtype=np.float32)
@@ -513,6 +514,7 @@ def main(demo=False):
         prev_action.desiredCurvature = sm['controlsState'].curvature
       action = model.get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego,
                                            settings.blendful_callback(model_output, v_ego, desire, DH.lane_change_state))
+      settings.smooth_curvature(action, prev_action, v_ego, big_lat_smooth)
       small_lateral.curvature(action, prev_action, v_ego)
       prev_action = action
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,

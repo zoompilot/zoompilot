@@ -124,15 +124,21 @@ class ModelsLayout(Widget):
                                                  lambda v: f"{round(v / 100 * (CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH))}" +
                                                            f" {'km/h' if ui_state.is_metric else 'mph'}" if v else tr("Off"))
 
+    self.big_smoothing_toggle = multiple_button_item_sp(
+      tr("smooth big model"),
+      tr("Gives big models the small models' steering smoothing. Can calm small side-to-side wiggles on straight roads."),
+      buttons=[tr("Off"), tr("On")], button_width=300,
+      callback=lambda i: ui_state.params.put_bool("BigModelSmoothing", i == 1, block=True), inline=False)
+
     self.camera_offset = option_item_sp(tr("Adjust Camera Offset"), "CameraOffset", -35, 35,
                                         tr("Virtually shift camera's perspective to move model's center to Left(+ values) or Right (- values)"),
                                         1, None, True, "", style.BUTTON_ACTION_WIDTH, None, True,
                                         lambda v: f"{v / 100:.2f} m")
 
-    # as the comma 4 panel: jetlink and small model steering just before refresh
+    # as the comma 4 panel: jetlink, small model steering and big model smoothing just before refresh
     self.items = [self.small_model_item, self.big_model_item, self.cancel_download_item, self.download_item,
                   self.blendful_toggle, self.lane_turn_value_control, self.delay_control, self.camera_offset,
-                  self.accelerator_link_item, self.small_steering_control, self.refresh_item, self.clear_cache_item]
+                  self.accelerator_link_item, self.small_steering_control, self.big_smoothing_toggle, self.refresh_item, self.clear_cache_item]
     self._refresh_accelerator_items()
 
   @staticmethod
@@ -387,6 +393,7 @@ class ModelsLayout(Widget):
       control.action_item.refresh()
     live_delay: bool = self.delay_control.action_item.switched
     self.blendful_toggle.action_item.set_selected_button(int(ui_state.params.get_bool("Blendful")))
+    self.big_smoothing_toggle.action_item.set_selected_button(int(ui_state.params.get_bool("BigModelSmoothing")))
 
     new_step = int(round(100 / CV.MPH_TO_KPH)) if ui_state.is_metric else 100
     if self.lane_turn_value_control.action_item is not None and self.lane_turn_value_control.action_item.value_change_step != new_step:

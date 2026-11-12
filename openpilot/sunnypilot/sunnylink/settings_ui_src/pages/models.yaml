@@ -26,6 +26,10 @@ sections:
     unit: m/s
     enablement:
       - $ref: '#/macros/custom_model'
+  - key: BigModelSmoothing
+    widget: toggle
+    title: smooth big model
+    description: Gives big models the small models' steering smoothing. Can calm small side-to-side wiggles on straight roads.
   - key: LaneTurnDesire
     widget: toggle
     title: Use Lane Turn Desires

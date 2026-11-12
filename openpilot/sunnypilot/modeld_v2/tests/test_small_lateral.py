@@ -155,3 +155,16 @@ def test_off_never_runs_the_small_model():
   small = FakeSmall()
   assert frame(lateral(small, speed=0.0), big(), 0.0).desiredCurvature == pytest.approx(BIG_CURVATURE)
   assert small.calls == []
+
+
+def test_big_model_smoothing_is_not_counted_twice():
+  """With big model smoothing on, the large model's action_t already carries it: the small
+  model's horizon stays its own bundle's, not the large one's plus both smoothings."""
+  small = FakeSmall()
+  sl = lateral(small)
+  sl.big_lat_smooth = 0.1
+  inputs = big_inputs()
+  inputs['action_t'][0] += sl.big_lat_smooth
+  after = sl.after_enqueue(big(), None, 0, ('main', 'extra'), ('t_main', 't_extra'), inputs, 1.0)
+  after()
+  assert sl.action_t == pytest.approx((0.3 + small.LAT_SMOOTH_SECONDS, 0.4))

@@ -65,6 +65,10 @@ class ModelOptions:
                                                         "Default is 11 mph (18 km/h). Not with the Default model or a chestnut."))
     self.small_steering.set_enabled(small_steering_meaningful)
 
+    self.big_smoothing = BigParamControlSP(tr("smooth big model"), "BigModelSmoothing",
+                                           description=tr("Gives big models the small models' steering smoothing.\n" +
+                                                          "Can calm small side-to-side wiggles on straight roads."))
+
     # LagdToggle is the picker's live
     self.steer_delay = _option(tr("steer delay"), "LagdToggleDelay", _hundredths, "s", min_value=5, max_value=50,
                                switch=Switch("LagdToggle", True, tr("live")),
@@ -75,9 +79,10 @@ class ModelOptions:
                                  description=tr("Shifts where the model thinks the camera sits.\n" +
                                                 "Positive moves the car left, negative right."))
 
-    # between the panel's lane center and jetlink rows; small_steering sits after jetlink
+    # between the panel's lane center and jetlink rows; small_steering and big_smoothing sit after jetlink
     self.items = [self.lane_turn, self.steer_delay, self.camera_offset]
+    self.big_model_items = [self.small_steering, self.big_smoothing]
 
   def refresh(self):
-    for item in (*self.items, self.small_steering):
+    for item in (*self.items, *self.big_model_items):
       item.refresh()

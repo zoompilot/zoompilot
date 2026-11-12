@@ -32,6 +32,9 @@ class SmallLateral:
     self.action_t = (0.0, 0.0)
     self.running = False
     self.speed = 0.0  # m/s, at and below which the small model steers; 0 never
+    # the big model smoothing modeld adds this frame (ModelSettings.big_lat_smooth), already in the
+    # large model's action_t; the small model's own replaces it
+    self.big_lat_smooth = 0.0
 
   def runs_beside(self, model, v_ego: float) -> bool:
     """A large model drives slowly enough to want the small one beside it."""
@@ -69,7 +72,7 @@ class SmallLateral:
     bundle's lateral smoothing."""
     small = self.small
     small.PLANPLUS_CONTROL = model.PLANPLUS_CONTROL
-    smoothing = small.LAT_SMOOTH_SECONDS - model.LAT_SMOOTH_SECONDS
+    smoothing = small.LAT_SMOOTH_SECONDS - (model.LAT_SMOOTH_SECONDS + self.big_lat_smooth)
     self.action_t = (float(inputs['action_t'][0]) + smoothing, float(inputs['action_t'][1]))
     vec_desire = np.zeros(small.constants.DESIRE_LEN, dtype=np.float32)
     if 0 <= desire < small.constants.DESIRE_LEN:

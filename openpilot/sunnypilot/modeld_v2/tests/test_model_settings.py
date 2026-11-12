@@ -7,8 +7,10 @@ See the LICENSE.md file in the root directory for more details.
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from openpilot.cereal import log
-from openpilot.sunnypilot.modeld_v2.model_settings import PARAMS_FRAMES, ModelSettings
+from openpilot.sunnypilot.modeld_v2.model_settings import BIG_MODEL_LAT_SMOOTH_SECONDS, PARAMS_FRAMES, ModelSettings
 
 
 def _sm(frame: int, lateral_delay: float = 0.2):
@@ -47,3 +49,33 @@ class TestModelSettings:
                                         (log.Desire.laneChangeLeft, log.LaneChangeState.laneChangeStarting, False)):
       settings.blendful_callback({}, 20.0, desire, lane_change)(0.001)
       settings.blendful.update.assert_called_with({}, 20.0, active, 0.001, enabled=True)
+
+  def test_big_model_smoothing_reads_its_param(self):
+    settings, model = ModelSettings(), SimpleNamespace(lat_delay=0.0)
+    settings.refresh(_sm(0), _params({"BigModelSmoothing": True}), model)
+    assert settings.big_model_smoothing
+
+  def test_big_model_smoothing_only_for_a_big_model_that_smooths_none(self):
+    settings = ModelSettings()
+    big, small = SimpleNamespace(chestnut=True, LAT_SMOOTH_SECONDS=0.0), SimpleNamespace(chestnut=False, LAT_SMOOTH_SECONDS=0.0)
+    assert settings.big_lat_smooth(big) == 0.0, "off by default"
+    settings.big_model_smoothing = True
+    assert settings.big_lat_smooth(big) == BIG_MODEL_LAT_SMOOTH_SECONDS
+    assert settings.big_lat_smooth(SimpleNamespace(chestnut=True)) == BIG_MODEL_LAT_SMOOTH_SECONDS, "jetlink's stock face may lack the attribute"
+    assert settings.big_lat_smooth(small) == 0.0
+    assert settings.big_lat_smooth(SimpleNamespace(chestnut=True, LAT_SMOOTH_SECONDS=0.2)) == 0.0, "a bundle's own smoothing is kept"
+
+  def test_smooth_curvature_matches_a_bundles_smoothing(self):
+    from openpilot.selfdrive.controls.lib.drive_helpers import smooth_value
+    prev = log.ModelDataV2.Action(desiredCurvature=0.0)
+    action = log.ModelDataV2.Action(desiredCurvature=0.01)
+    ModelSettings.smooth_curvature(action, prev, 25.0, 0.1)
+    assert action.desiredCurvature == pytest.approx(smooth_value(0.01, 0.0, 0.1))
+    assert 0.0 < action.desiredCurvature < 0.01
+
+  def test_smooth_curvature_leaves_the_action_alone_when_off_or_stopped(self):
+    prev = log.ModelDataV2.Action(desiredCurvature=0.0)
+    for v_ego, seconds in ((25.0, 0.0), (0.1, 0.1)):
+      action = log.ModelDataV2.Action(desiredCurvature=0.01)
+      ModelSettings.smooth_curvature(action, prev, v_ego, seconds)
+      assert action.desiredCurvature == pytest.approx(0.01)

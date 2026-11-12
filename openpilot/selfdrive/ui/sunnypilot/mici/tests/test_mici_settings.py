@@ -1220,7 +1220,7 @@ class TestModelsPanelMici:
     items = [item for item in layout.main_items[1:] if item is not layout.cancel_download_btn]
     assert [item.text for item in items] == ["select model", "lane center assist",
                                              "lane turn desires", "steer delay",
-                                             "camera offset", "jetlink", "small model steer", "refresh models", "clear cache"]
+                                             "camera offset", "jetlink", "small model steer", "smooth big model", "refresh models", "clear cache"]
     assert {item._get_label_font_size() for item in items} == {BigButton("t")._get_label_font_size()}, "a long title shrinks its font"
 
   def test_the_default_model_and_a_chestnut_lock_small_model_steering(self, monkeypatch):
