@@ -521,9 +521,9 @@ class TestTiciModelsPanel(UITest):
     stamped = tuple(ModelCache(self.params, suffix=suffix)._LAST_SYNC_KEY for _, suffix in ModelFetcher.MODEL_SOURCES.values())
     assert MODEL_SYNC_KEYS == stamped
 
-  def test_jetlink_and_small_model_steering_sit_before_refresh(self):
+  def test_jetlink_and_big_model_smoothing_sit_before_refresh(self):
     layout = self._layout()
-    assert layout.items[-4:] == [layout.accelerator_link_item, layout.small_steering_control, layout.refresh_item, layout.clear_cache_item]
+    assert layout.items[-4:] == [layout.accelerator_link_item, layout.big_smoothing_toggle, layout.refresh_item, layout.clear_cache_item]
 
   @staticmethod
   def _press(item, button: str):
@@ -561,21 +561,6 @@ class TestTiciModelsPanel(UITest):
     layout._update_state()
     assert lane_turn.action_item.get_displayed_value() == "5 mph"
 
-  def test_small_model_steering_reads_ms_in_either_unit(self):
-    for name, value in (('is_metric', False), ('active_runner_tinygrad', False), ('chestnut_present', False)):
-      self.enterContext(mock.patch.object(self.ui_state, name, value))
-    for speed, metric, label, step in ((5.0, False, "11 mph", 45), (5.0, True, "18 km/h", 28), (0.0, False, "Off", 45)):
-      self.params.put("SmallModelSteering", speed, block=True)
-      self.ui_state.is_metric = metric
-      layout = self._layout()
-      layout._update_state()
-      control = layout.small_steering_control.action_item
-      assert (control.get_displayed_value(), control.value_change_step) == (label, step)
-    for runner_tinygrad in (False, True):
-      self.ui_state.active_runner_tinygrad = runner_tinygrad
-      assert control.enabled is runner_tinygrad
-    self.ui_state.chestnut_present = True   # it never runs beside a chestnut
-    assert not control.enabled
 
 
 def ui_state_module():

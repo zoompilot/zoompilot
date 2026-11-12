@@ -311,6 +311,8 @@ def main(demo=False):
   small_model = ModelState(cam_w, cam_h, False) if model is None or CHESTNUT else None
   if model is None:
     model = small_model
+  elif small_model is not None:
+    small_model.warmup()  # the chestnut's fallback: its first run is ~1.3 s
   model = jetlink_adapter.attach(model, small_model, vipc_client_main.width, vipc_client_main.height)
   assert model is not None
   params.put_bool("ChestnutLoading", False)
@@ -396,6 +398,7 @@ def main(demo=False):
     frame_id = sm["narrowRoadCameraState"].frameId
     v_ego = max(sm["carState"].vEgo, 0.)
     settings.refresh(sm, params, model)
+    big_lat_smooth = settings.big_lat_smooth(model)
     lat_delay = model.lat_delay + LAT_SMOOTH_SECONDS
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["extrinsicsCalibration"].rpyCalib, dtype=np.float32)
@@ -471,6 +474,7 @@ def main(demo=False):
         prev_action.desiredCurvature = sm['controlsState'].curvature
       action = action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego,
                                  settings.blendful_callback(model_output, v_ego, desire, DH.lane_change_state))
+      settings.smooth_curvature(action, prev_action, big_lat_smooth)
       prev_action = action
       fill_model_msg(modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
