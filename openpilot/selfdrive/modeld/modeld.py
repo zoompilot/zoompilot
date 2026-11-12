@@ -311,6 +311,8 @@ def main(demo=False):
   small_model = ModelState(cam_w, cam_h, False) if model is None or CHESTNUT else None
   if model is None:
     model = small_model
+  elif small_model is not None:
+    small_model.warmup()  # the chestnut's fallback: its first run is ~1.3 s
   model = jetlink_adapter.attach(model, small_model, vipc_client_main.width, vipc_client_main.height)
   assert model is not None
   params.put_bool("ChestnutLoading", False)
