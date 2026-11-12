@@ -130,6 +130,12 @@ class LongitudinalPlannerSP:
         v_target = 0.
       self.source = LongitudinalPlanSource.cruise
 
+    # The host seeds the MPC from a_target on openpilot long only (set_cur_state, and its starting
+    # speed integrates it), so there a limiter may lower it below the plan's last output (a_ego),
+    # never raise it. ICBM reads the per-source aTargets, untouched here.
+    if self.CP.openpilotLongitudinalControl and math.isfinite(a_ego):
+      a_target = min(a_target, a_ego)
+
     self.output_v_target, self.output_a_target = v_target, a_target
     # the host's cruise candidate inputs, before it overwrites a_cruise this frame
     self.a_cruise_prev, self.v_ego = self.a_cruise, CS.vEgo
