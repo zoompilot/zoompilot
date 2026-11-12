@@ -52,17 +52,16 @@ def _migrate_lane_center_on(params: Params) -> None:
 
 
 def _migrate_lane_center_ui(params: Params) -> None:
-  # The comma 4's "debug ui" lane center option (BlendfulReadout) became LaneCenterUI 2026-11-08:
-  # debug stays debug, anything else gets the gauge. BlendfulReadout is no longer a declared key,
-  # so its file is read directly and removed after; no file, nothing to migrate.
-  path = Path(params.get_param_path(OLD_LANE_CENTER_READOUT))
-  if not path.is_file():
-    return
+  # LaneCenterUI was an off/gauge/debug int 2026-11-08 and became the 3X gauge's bool 2026-11-11, when
+  # the debug overlay went: a stored debug (2), which a bool read takes as off, becomes on. The comma
+  # 4's older BlendfulReadout, no longer a declared key and now read by nothing, is only removed. No
+  # marker: a restored backup can still carry either.
   try:
-    debug = path.read_bytes().strip() == b"1"
-    params.put("LaneCenterUI", 2 if debug else 1, block=True)
-    path.unlink()
-    cloudlog.info(f"params_migration_zp: BlendfulReadout folded into LaneCenterUI ({'debug' if debug else 'gauge'})")
+    Path(params.get_param_path(OLD_LANE_CENTER_READOUT)).unlink(missing_ok=True)
+    path = Path(params.get_param_path("LaneCenterUI"))
+    if path.is_file() and path.read_bytes().strip() == b"2":
+      params.put_bool("LaneCenterUI", True, block=True)
+      cloudlog.info("params_migration_zp: LaneCenterUI debug folded into the gauge")
   except Exception:
     cloudlog.exception("params_migration_zp: LaneCenterUI migration failed, retrying next boot")
 

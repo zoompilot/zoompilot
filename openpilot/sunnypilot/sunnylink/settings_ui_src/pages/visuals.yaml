@@ -23,16 +23,11 @@ sections:
     visibility:
     - $ref: '#/macros/hide_on_mici'
   - key: LaneCenterUI
-    widget: option
-    title: Lane Center UI
-    description: Shows lane center assist's nudge as a gauge under the steering arc. Debug also shows the nudge in cm.
-    options:
-    - value: 0
-      label: 'Off'
-    - value: 1
-      label: Gauge
-    - value: 2
-      label: Debug
+    widget: toggle
+    title: Lane Center Gauge
+    description: Shows lane center assist's nudge as a gauge under the steering arc.
+    visibility:
+    - $ref: '#/macros/hide_on_mici'
     enablement:
     - type: param
       key: Blendful

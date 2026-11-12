@@ -55,32 +55,31 @@ class TestLaneCenterMigration(OpenpilotTestCase):
 
 
 class TestLaneCenterUIMigration(OpenpilotTestCase):
-  """BlendfulReadout, no longer a declared key, is left on disk as a file: debug becomes debug,
-  anything else the gauge, and the file goes so it runs once."""
+  """The old int's debug (2) becomes on; BlendfulReadout, no longer a declared key, is only removed."""
 
   @staticmethod
   def _old_readout(params: Params) -> Path:
     return Path(params.get_param_path(OLD_LANE_CENTER_READOUT))
 
-  def _check(self, old: bytes, expected: int):
+  def test_old_readout_is_removed(self):
     params = Params()
-    params.put("LaneCenterUI", 0, block=True)
-    self._old_readout(params).write_bytes(old)
+    params.put_bool("LaneCenterUI", False, block=True)
+    self._old_readout(params).write_bytes(b"1")
     run_migration_zp(params)
-    assert params.get("LaneCenterUI") == expected
+    assert not params.get_bool("LaneCenterUI")
     assert not self._old_readout(params).exists()
 
-  def test_debug_stays_debug(self):
-    self._check(b"1", 2)
-
-  def test_readout_off_gets_the_gauge(self):
-    self._check(b"0", 1)
-
-  def test_no_old_file_leaves_the_setting(self):
+  def test_old_debug_gets_the_gauge(self):
     params = Params()
-    params.put("LaneCenterUI", 0, block=True)  # the driver turned it off after migrating
+    Path(params.get_param_path("LaneCenterUI")).write_bytes(b"2")
     run_migration_zp(params)
-    assert params.get("LaneCenterUI") == 0
+    assert params.get_bool("LaneCenterUI")
+
+  def test_no_old_value_leaves_the_setting(self):
+    params = Params()
+    params.put_bool("LaneCenterUI", False, block=True)  # the driver turned it off
+    run_migration_zp(params)
+    assert not params.get_bool("LaneCenterUI")
 
   def test_old_key_is_gone(self):
     with pytest.raises(UnknownKeyName):

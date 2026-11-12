@@ -12,9 +12,6 @@ from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.dem
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
 
 
-# LaneCenterUI: what the onroad screen shows of lane center assist besides its line
-LANE_CENTER_UI_OFF, LANE_CENTER_UI_GAUGE, LANE_CENTER_UI_DEBUG = 0, 1, 2
-
 
 class UIStateZP:
   """zoompilot's additions to UIStateSP: jetlink's snapshot and the USB port it holds, the
@@ -40,9 +37,8 @@ class UIStateZP:
     self.home_model_name: str | None = None
     # lane center assist on (Blendful): its center line shows
     self.lane_center: bool = False
-    # LaneCenterUI while lane center is on, else off: the gauge under the steering arc, and with debug
-    # the push in cm (the comma 4's box, the 3X developer UI's item)
-    self.lane_center_ui: int = LANE_CENTER_UI_OFF
+    # the 3X's gauge under the steering arc (LaneCenterUI); it also needs lane center on
+    self.lane_center_gauge: bool = False
     # the 3X's confidence ball
     self.confidence_ball: bool = False
 
@@ -55,7 +51,7 @@ class UIStateZP:
   def update_params(self) -> None:
     self.speed_assist = self.params.get_bool("ExperimentalModeSetSpeed")
     self.lane_center = self.params.get_bool("Blendful")
-    self.lane_center_ui = (self.params.get("LaneCenterUI", return_default=True) or 0) if self.lane_center else LANE_CENTER_UI_OFF
+    self.lane_center_gauge = self.params.get_bool("LaneCenterUI")
     self.confidence_ball = self.params.get_bool("ConfidenceBall")
     self._steer_rail_schedule = get_steer_rail_schedule(self.CP) if self.CP is not None else None
     # on the 5 Hz params pass, not per frame in a layout; a fitted chestnut owns chestnut_state

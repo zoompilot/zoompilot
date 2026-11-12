@@ -310,7 +310,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // --- zoompilot params --- //
     {"CurveSpeedProfile", {PERSISTENT | BACKUP, INT, "1"}},  // curve planners' lateral ceiling: 0 Gentle, 1 Normal, 2 Sporty (curve_speed_profile.py)
     {"ExperimentalModeSetSpeed", {PERSISTENT | BACKUP, BOOL, "1"}},
-    {"LaneCenterUI", {PERSISTENT | BACKUP, INT, "1"}},  // lane center assist onroad: 0 off, 1 gauge, 2 debug
+    {"LaneCenterUI", {PERSISTENT | BACKUP, BOOL, "1"}},  // lane center assist's gauge on the 3X
     {"LaneChangeSmoothing", {PERSISTENT | BACKUP, INT, "0"}},
     {"LeadForecast", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"LeadForecastRadar", {PERSISTENT | BACKUP, BOOL, "1"}},
