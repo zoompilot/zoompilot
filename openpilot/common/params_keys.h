@@ -260,7 +260,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LaneTurnDesire", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"LaneTurnValue", {PERSISTENT | BACKUP, FLOAT, "19.0"}},
     {"Blendful", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"BlendfulReadout", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"SmallModelSteering", {PERSISTENT | BACKUP, FLOAT, "5.0"}},
     {"PlanplusControl", {PERSISTENT | BACKUP, FLOAT, "1.0"}},
 
@@ -311,6 +310,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // --- zoompilot params --- //
     {"CurveSpeedProfile", {PERSISTENT | BACKUP, INT, "1"}},  // curve planners' lateral ceiling: 0 Gentle, 1 Normal, 2 Sporty (curve_speed_profile.py)
     {"ExperimentalModeSetSpeed", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"LaneCenterUI", {PERSISTENT | BACKUP, BOOL, "1"}},  // lane center assist's gauge on the 3X
     {"LaneChangeSmoothing", {PERSISTENT | BACKUP, INT, "0"}},
     {"LeadForecast", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"LeadForecastRadar", {PERSISTENT | BACKUP, BOOL, "1"}},
@@ -340,7 +340,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     // one-time markers
     {"ExperimentalAssistsDefaultOn", {PERSISTENT | BACKUP, BOOL}},  // Speed/Lead Follow Assist turned on once when they became default (params_migration_zp.py)
-    {"LaneCenterAssistDefaultOn", {PERSISTENT | BACKUP, BOOL}},  // Lane Center Assist turned on once when it became default (params_migration_zp.py)
     {"DefaultModelApplied", {PERSISTENT | BACKUP, BOOL}},  // Firehose Model applied as the default once (models/default_bootstrap.py)
     {"IcbmDemandMigrated", {PERSISTENT | BACKUP, BOOL}},  // ICBM toggle to ICBM on demand (intelligent_cruise_button_management/migration.py)
     {"MazdaTorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},  // steer-to-zero Mazda torque defaults seeded once

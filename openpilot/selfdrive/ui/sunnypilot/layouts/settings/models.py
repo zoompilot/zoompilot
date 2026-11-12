@@ -12,7 +12,6 @@ from openpilot.cereal import custom
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_selected_bundle, resolve_bundle_by_ref
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.ui_state import device, ui_state
-from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import lane_center_mode, set_lane_center_mode
 from openpilot.selfdrive.ui.sunnypilot.accelerator_link import LINK_MODE_TITLES, big_model_note, link_mode, link_status, \
   link_toggle_meaningful, small_steering_meaningful, standin_model
 from openpilot.selfdrive.ui.sunnypilot.model_info import (big_model_state, bundles_for_source, carrying_model, default_model_name,
@@ -111,11 +110,10 @@ class ModelsLayout(Widget):
                                         switch=Switch("LagdToggle", True, tr("Live")))
 
     blendful_desc = tr("Adds a gentle nudge toward lane center on top of the model's own steering, stronger when lane lines are clear." +
-                             " Yields around obstacles. The blue line and the gauge under the torque bar show the strength and direction of" +
-                             " correction. The developer UI shows the exact adjustment in cm.")
+                       " Yields around obstacles. The center line turns blue as it nudges; Lane Center UI in Visuals adds a gauge.")
     self.blendful_toggle = multiple_button_item_sp(tr("Lane Center Assist (Alpha)"), blendful_desc,
                                                    buttons=[tr("Off"), tr("On")], button_width=300,
-                                                   callback=lambda i: set_lane_center_mode(ui_state.params, i), inline=False)
+                                                   callback=lambda i: ui_state.params.put_bool("Blendful", i == 1, block=True), inline=False)
 
     # stored in m/s, stepped by whole display units
     self.small_steering_control = option_item_sp(tr("Small Model Steering"), "SmallModelSteering", 0, 900,
@@ -388,8 +386,7 @@ class ModelsLayout(Widget):
     for control in (self.lane_turn_value_control, self.delay_control):
       control.action_item.refresh()
     live_delay: bool = self.delay_control.action_item.switched
-    # the comma 4's debug ui option reads as on: the 3X shows the push in its developer UI
-    self.blendful_toggle.action_item.set_selected_button(min(lane_center_mode(ui_state.params), 1))
+    self.blendful_toggle.action_item.set_selected_button(int(ui_state.params.get_bool("Blendful")))
 
     new_step = int(round(100 / CV.MPH_TO_KPH)) if ui_state.is_metric else 100
     if self.lane_turn_value_control.action_item is not None and self.lane_turn_value_control.action_item.value_change_step != new_step:

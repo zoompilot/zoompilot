@@ -10,9 +10,8 @@ from collections.abc import Callable
 
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.sunnypilot.accelerator_link import small_steering_meaningful
-from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP, BigParamOption, speed_unit
+from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP, BigParamOption, speed_unit
 from openpilot.system.ui.sunnypilot.lib.switch import Switch
-from openpilot.selfdrive.ui.sunnypilot.ui_state_zp import lane_center_mode, set_lane_center_mode
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr
 
@@ -43,26 +42,12 @@ def _option(title: str, param: str, fmt: Callable[[int], str], unit: str | Calla
                         picker_label_callback=fmt, picker_unit=unit, **kwargs)
 
 
-class LaneCenterToggle(BigMultiParamToggleSP):
-  """Off, on, or on with the onroad readout; see lane_center_mode."""
-
-  def __init__(self, **kwargs):
-    super().__init__(tr("lane center assist"), "Blendful", [tr("off"), tr("on"), tr("debug ui")],
-                     off_index=0, **kwargs)
-
-  def _get_param_index(self) -> int:
-    return lane_center_mode(self._params)
-
-  def _store(self, idx: int):
-    set_lane_center_mode(self._params, idx)
-
-
 class ModelOptions:
   def __init__(self):
-    self.lane_center = LaneCenterToggle(description=tr("Alpha. Nudges the car toward the middle of the lane.\n" +
-                                                       "Stronger when the lane lines are clear. Yields around obstacles.\n" +
-                                                       "The blue line shows the strength and direction of correction.\n" +
-                                                       "Debug UI shows the exact adjustment in cm."))
+    self.lane_center = BigParamControlSP(tr("lane center assist"), "Blendful",
+                                         description=tr("Alpha. Nudges the car toward the middle of the lane.\n" +
+                                                        "Stronger when the lane lines are clear. Yields around obstacles.\n" +
+                                                        "The center line turns blue as it nudges."))
 
     # LaneTurnDesire is the picker's off. A metric step of 0.62 mph lands on each whole km/h, as the tici panel steps it
     self.lane_turn = _option(tr("lane turn desires"), "LaneTurnValue", lambda v: str(round(v / 100 * _per_mph())), speed_unit,

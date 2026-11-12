@@ -1232,16 +1232,13 @@ class TestModelsPanelMici:
         monkeypatch.setattr(ui_state, "chestnut_present", chestnut)
         assert options.small_steering.enabled is (runner_tinygrad and not chestnut)
 
-  def test_lane_center_cycles_off_on_debug(self, params):
+  def test_lane_center_is_a_plain_toggle(self, params):
     params.put_bool("Blendful", False, block=True)
-    params.put_bool("BlendfulReadout", True, block=True)  # stale readout reads as off while Blendful is off
     lane_center = self._options().lane_center
-    assert lane_center.value == "off"
-    for _ in range(3):
-      lane_center._store((lane_center._get_param_index() + 1) % 3)
-      lane_center.refresh()
-      state = (params.get_bool("Blendful"), params.get_bool("BlendfulReadout"))
-      assert state == {"on": (True, False), "debug ui": (True, True), "off": (False, False)}[lane_center.value]
+    assert not lane_center._checked
+    params.put_bool("Blendful", True, block=True)
+    lane_center.refresh()
+    assert lane_center._checked
 
   def test_live_steer_delay_is_live_in_its_picker(self, params):
     params.put_bool("LagdToggle", True, block=True)
