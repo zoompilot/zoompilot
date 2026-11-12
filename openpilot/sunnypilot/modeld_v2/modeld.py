@@ -26,7 +26,6 @@ import time
 from setproctitle import setproctitle
 
 import openpilot.cereal.messaging as messaging
-from openpilot.selfdrive.modeld.constants import MIN_LAT_CONTROL_SPEED
 from openpilot.selfdrive.modeld.helpers import wait_for_chestnut
 from openpilot.cereal import log
 from opendbc.car.structs import car
@@ -108,7 +107,7 @@ class ModelState(ModelStateBase):
 
     self.LAT_SMOOTH_SECONDS = float(overrides.get('lat', ".0"))
     self.LONG_SMOOTH_SECONDS = float(overrides.get('long', ".0"))
-    self.MIN_LAT_CONTROL_SPEED = MIN_LAT_CONTROL_SPEED
+    self.MIN_LAT_CONTROL_SPEED = 0.3
     self.PLANPLUS_CONTROL: float = 1.0
     self.chestnut = chestnut
 
@@ -514,7 +513,7 @@ def main(demo=False):
         prev_action.desiredCurvature = sm['controlsState'].curvature
       action = model.get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego,
                                            settings.blendful_callback(model_output, v_ego, desire, DH.lane_change_state))
-      settings.smooth_curvature(action, prev_action, v_ego, big_lat_smooth)
+      settings.smooth_curvature(action, prev_action, big_lat_smooth)
       small_lateral.curvature(action, prev_action, v_ego)
       prev_action = action
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,

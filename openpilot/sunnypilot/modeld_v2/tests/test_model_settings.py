@@ -69,13 +69,18 @@ class TestModelSettings:
     from openpilot.selfdrive.controls.lib.drive_helpers import smooth_value
     prev = log.ModelDataV2.Action(desiredCurvature=0.0)
     action = log.ModelDataV2.Action(desiredCurvature=0.01)
-    ModelSettings.smooth_curvature(action, prev, 25.0, 0.1)
+    ModelSettings.smooth_curvature(action, prev, 0.1)
     assert action.desiredCurvature == pytest.approx(smooth_value(0.01, 0.0, 0.1))
     assert 0.0 < action.desiredCurvature < 0.01
 
-  def test_smooth_curvature_leaves_the_action_alone_when_off_or_stopped(self):
-    prev = log.ModelDataV2.Action(desiredCurvature=0.0)
-    for v_ego, seconds in ((25.0, 0.0), (0.1, 0.1)):
-      action = log.ModelDataV2.Action(desiredCurvature=0.01)
-      ModelSettings.smooth_curvature(action, prev, v_ego, seconds)
-      assert action.desiredCurvature == pytest.approx(0.01)
+  def test_smooth_curvature_leaves_the_action_alone_when_off(self):
+    action = log.ModelDataV2.Action(desiredCurvature=0.01)
+    ModelSettings.smooth_curvature(action, log.ModelDataV2.Action(desiredCurvature=0.0), 0.0)
+    assert action.desiredCurvature == pytest.approx(0.01)
+
+  def test_smooth_curvature_keeps_a_held_curvature(self):
+    """Below the lateral control speed the action holds the previous curvature; smoothing keeps it."""
+    prev = log.ModelDataV2.Action(desiredCurvature=0.004)
+    action = log.ModelDataV2.Action(desiredCurvature=0.004)
+    ModelSettings.smooth_curvature(action, prev, 0.1)
+    assert action.desiredCurvature == pytest.approx(0.004)

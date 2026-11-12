@@ -10,7 +10,6 @@ from functools import partial
 from openpilot.cereal import log
 from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.drive_helpers import smooth_value
-from openpilot.selfdrive.modeld.constants import MIN_LAT_CONTROL_SPEED
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.blendful import Blendful
 from openpilot.sunnypilot.modeld_v2.camera_offset_helper import CameraOffsetHelper
@@ -52,10 +51,10 @@ class ModelSettings:
     return BIG_MODEL_LAT_SMOOTH_SECONDS
 
   @staticmethod
-  def smooth_curvature(action, prev_action, v_ego: float, seconds: float) -> None:
-    """Smooth the action's curvature by `seconds`, as modeld_v2 smooths a bundle's: above the lateral control
-    speed only (below it the action already holds the previous curvature)."""
-    if seconds > 0.0 and v_ego > MIN_LAT_CONTROL_SPEED:
+  def smooth_curvature(action, prev_action, seconds: float) -> None:
+    """Smooth the action's curvature by `seconds`, as modeld_v2 smooths a bundle's. Below the lateral control
+    speed every action function already holds the previous curvature, which smoothing leaves as it is."""
+    if seconds > 0.0:
       action.desiredCurvature = float(smooth_value(action.desiredCurvature, prev_action.desiredCurvature, seconds))
 
   def blendful_callback(self, model_output, v_ego: float, desire, lane_change_state) -> Callable[[float], float]:
