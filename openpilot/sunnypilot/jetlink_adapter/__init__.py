@@ -115,7 +115,8 @@ def _adapter_class():
 
     def action_function(self):
       # modeld_v2 passes Blendful's correction as a callback on the raw curvature, as stock modeld now does
-      from openpilot.selfdrive.modeld.modeld import MIN_LAT_CONTROL_SPEED, get_action_from_model
+      from openpilot.selfdrive.modeld.constants import MIN_LAT_CONTROL_SPEED
+      from openpilot.selfdrive.modeld.modeld import get_action_from_model
       from openpilot.sunnypilot.modeld_v2.model_settings import with_blendful
       return with_blendful(get_action_from_model, MIN_LAT_CONTROL_SPEED)
 

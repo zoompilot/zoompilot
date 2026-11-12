@@ -26,6 +26,7 @@ import time
 from setproctitle import setproctitle
 
 import openpilot.cereal.messaging as messaging
+from openpilot.selfdrive.modeld.constants import MIN_LAT_CONTROL_SPEED
 from openpilot.selfdrive.modeld.helpers import wait_for_chestnut
 from openpilot.cereal import log
 from opendbc.car.structs import car
@@ -107,7 +108,7 @@ class ModelState(ModelStateBase):
 
     self.LAT_SMOOTH_SECONDS = float(overrides.get('lat', ".0"))
     self.LONG_SMOOTH_SECONDS = float(overrides.get('long', ".0"))
-    self.MIN_LAT_CONTROL_SPEED = 0.3
+    self.MIN_LAT_CONTROL_SPEED = MIN_LAT_CONTROL_SPEED
     self.PLANPLUS_CONTROL: float = 1.0
     self.chestnut = chestnut
 
