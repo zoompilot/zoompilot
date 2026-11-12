@@ -5,7 +5,6 @@ zoompilot vUNRELEASED
   * Tested with a chestnut and fixed what came up.
   * Fixed the comma not downloading the big model when a chestnut connects.
   * Home says when the chestnut model is downloading, or needs Wi-Fi.
-  * Small Model Steer removed for chestnut, fixing model lag and locationd errors below 12 mph.
 * jetlink
   * A jetlink cable is no longer mistaken for a chestnut.
   * Uses jetlink's own model index, so no jetlink update is needed when comma changes how it releases models.
@@ -18,6 +17,8 @@ zoompilot vUNRELEASED
 * Fixed Speed Limit Assist not turning on reliably on some cars.
 * Speed Limit source is now Auto, Car or Map; Auto follows the car's sign and fills in from the map.
 * Lane Center Assist is now on by default.
+* Small Model Steer removed: alongside a big model it could overrun the frame and lose the big model.
+* Models: Smooth Big Model option, for big models that wiggle slightly on straight roads.
 * sunnylink: Lane Center Assist can be turned on with the Default model.
 
 zoompilot v2026.11.02-18

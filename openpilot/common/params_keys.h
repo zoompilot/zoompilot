@@ -260,7 +260,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LaneTurnDesire", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"LaneTurnValue", {PERSISTENT | BACKUP, FLOAT, "19.0"}},
     {"Blendful", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"SmallModelSteering", {PERSISTENT | BACKUP, FLOAT, "5.0"}},
     {"BigModelSmoothing", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"PlanplusControl", {PERSISTENT | BACKUP, FLOAT, "1.0"}},
 

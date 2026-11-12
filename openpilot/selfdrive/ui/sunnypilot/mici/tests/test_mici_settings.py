@@ -1220,17 +1220,8 @@ class TestModelsPanelMici:
     items = [item for item in layout.main_items[1:] if item is not layout.cancel_download_btn]
     assert [item.text for item in items] == ["select model", "lane center assist",
                                              "lane turn desires", "steer delay",
-                                             "camera offset", "jetlink", "small model steer", "smooth big model", "refresh models", "clear cache"]
+                                             "camera offset", "jetlink", "smooth big model", "refresh models", "clear cache"]
     assert {item._get_label_font_size() for item in items} == {BigButton("t")._get_label_font_size()}, "a long title shrinks its font"
-
-  def test_the_default_model_and_a_chestnut_lock_small_model_steering(self, monkeypatch):
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    options = self._options()
-    for runner_tinygrad in (False, True):
-      for chestnut in (False, True):
-        monkeypatch.setattr(ui_state, "active_runner_tinygrad", runner_tinygrad)
-        monkeypatch.setattr(ui_state, "chestnut_present", chestnut)
-        assert options.small_steering.enabled is (runner_tinygrad and not chestnut)
 
   def test_lane_center_is_a_plain_toggle(self, params):
     params.put_bool("Blendful", False, block=True)
@@ -1275,19 +1266,6 @@ class TestModelsPanelMici:
     assert speed.value == label
     # 19 mph is off the whole-km/h grid: the picker opens on the nearest
     assert self._centered(speed.create_picker_screen()) == centered
-
-  @pytest.mark.parametrize(("metric", "speed", "label", "centered"), [(False, 5.0, "under 11 mph", "11"),
-                                                                      (True, 5.0, "under 18 km/h", "18"),
-                                                                      (False, 0.0, "off", "off")])
-  def test_small_model_steer_reads_ms_in_either_unit(self, params, monkeypatch, metric, speed, label, centered):
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    monkeypatch.setattr(ui_state, "is_metric", metric)
-    params.put("SmallModelSteering", speed, block=True)
-    steer = self._options().small_steering
-    assert steer.value == label
-    picker = steer.create_picker_screen()
-    assert self._centered(picker) == centered
-    assert picker._picker_items[-1].display_label == ("32" if metric else "20")
 
   def test_steer_delay_and_camera_offset_labels(self, params):
     params.put_bool("LagdToggle", False, block=True)

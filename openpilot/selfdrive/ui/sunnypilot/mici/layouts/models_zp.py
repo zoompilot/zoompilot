@@ -9,7 +9,6 @@ The tici models panel's driving options, for the comma 4 models panel.
 from collections.abc import Callable
 
 from openpilot.common.constants import CV
-from openpilot.selfdrive.ui.sunnypilot.accelerator_link import small_steering_meaningful
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP, BigParamOption, speed_unit
 from openpilot.system.ui.sunnypilot.lib.switch import Switch
 from openpilot.selfdrive.ui.ui_state import ui_state
@@ -23,16 +22,6 @@ def _per_mph() -> float:
 
 def _hundredths(v: int) -> str:
   return f"{v / 100:.2f}"
-
-
-def _per_ms() -> float:
-  """Display units per m/s."""
-  return CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
-
-
-def _speed(v: int) -> str:
-  """A speed stored in m/s, x100 in the picker, in the display unit; 0 is off."""
-  return str(round(v / 100 * _per_ms())) if v else tr("off")
 
 
 def _option(title: str, param: str, fmt: Callable[[int], str], unit: str | Callable[[], str], **kwargs) -> BigParamOption:
@@ -56,15 +45,6 @@ class ModelOptions:
                              description=tr("With the blinker on below this speed, plans the turn that way.\n" +
                                             "Stops the car picking the wrong turn at a red light."))
 
-    # off, then every whole display unit up to 20 mph (32 km/h)
-    self.small_steering = BigParamOption(tr("small model steer"), "SmallModelSteering", float_param=True, min_value=0, max_value=900,
-                                         value_change_step=lambda: round(100 / _per_ms()), picker_label_callback=_speed,
-                                         picker_unit=speed_unit,
-                                         label_callback=lambda v: tr("under {} {}").format(_speed(v), speed_unit()) if v else tr("off"),
-                                         description=tr("With a big model, the small model steers below this speed. It is steadier when slow.\n" +
-                                                        "Default is 11 mph (18 km/h). Not with the Default model or a chestnut."))
-    self.small_steering.set_enabled(small_steering_meaningful)
-
     self.big_smoothing = BigParamControlSP(tr("smooth big model"), "BigModelSmoothing",
                                            description=tr("Gives big models the small models' steering smoothing.\n" +
                                                           "Can calm small side-to-side wiggles on straight roads."))
@@ -79,10 +59,9 @@ class ModelOptions:
                                  description=tr("Shifts where the model thinks the camera sits.\n" +
                                                 "Positive moves the car left, negative right."))
 
-    # between the panel's lane center and jetlink rows; small_steering and big_smoothing sit after jetlink
+    # between the panel's lane center and jetlink rows; big_smoothing sits after jetlink
     self.items = [self.lane_turn, self.steer_delay, self.camera_offset]
-    self.big_model_items = [self.small_steering, self.big_smoothing]
 
   def refresh(self):
-    for item in (*self.items, *self.big_model_items):
+    for item in (*self.items, self.big_smoothing):
       item.refresh()
