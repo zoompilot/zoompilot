@@ -428,7 +428,7 @@ def main(demo=False):
     if settings.refresh(sm, params, model):
       model.PLANPLUS_CONTROL = params.get("PlanplusControl", return_default=True)
     big_lat_smooth = settings.big_lat_smooth(model)
-    lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS + big_lat_smooth
+    lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
     long_delay = CP.longitudinalActuatorDelay + model.LONG_SMOOTH_SECONDS
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["extrinsicsCalibration"].rpyCalib, dtype=np.float32)

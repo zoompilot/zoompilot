@@ -399,7 +399,7 @@ def main(demo=False):
     v_ego = max(sm["carState"].vEgo, 0.)
     settings.refresh(sm, params, model)
     big_lat_smooth = settings.big_lat_smooth(model)
-    lat_delay = model.lat_delay + LAT_SMOOTH_SECONDS + big_lat_smooth
+    lat_delay = model.lat_delay + LAT_SMOOTH_SECONDS
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["extrinsicsCalibration"].rpyCalib, dtype=np.float32)
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['narrowRoadCameraState'].sensor))]

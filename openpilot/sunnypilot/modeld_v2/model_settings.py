@@ -44,8 +44,9 @@ class ModelSettings:
   def big_lat_smooth(self, model) -> float:
     """Seconds of curvature smoothing this frame adds on top of the model's own: the small models' amount for a
     big model that smooths none itself, with the toggle on; 0 otherwise. Checked per frame, as jetlink can hand
-    the drive between models at any frame. modeld adds it to the delay the model plans for, as it does a
-    bundle's own, so the smoothing's lag is planned ahead rather than added."""
+    the drive between models at any frame. Unlike a bundle's own, it is not added to the delay the model plans
+    for: big models steer from their action head, so that shift would not lead the smoothing's lag, and telling
+    the model the car is slower than lagd measured feeds the ~1 Hz model<->car loop it is meant to damp."""
     if not (self.big_model_smoothing and model.chestnut) or getattr(model, 'LAT_SMOOTH_SECONDS', 0.0) > 0.0:
       return 0.0
     return BIG_MODEL_LAT_SMOOTH_SECONDS
