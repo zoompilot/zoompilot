@@ -75,6 +75,13 @@ class UIStateZP:
     return jetlink_adapter.chestnut_cable(self.usb_connected)
 
   @property
+  def long_engaged(self) -> bool:
+    """openpilot is driving longitudinal right now. Not under MADS lateral-only, and not on a car
+    whose stock radar is still in charge (Mazda alpha long before the takeover blocks engaging)."""
+    return (self.has_longitudinal_control and self.sm.recv_frame['selfdriveState'] >= self.started_frame and
+            self.sm['selfdriveState'].enabled)
+
+  @property
   def speed_assist_active(self) -> bool:
     return self.has_longitudinal_control and self.speed_assist
 

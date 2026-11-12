@@ -33,7 +33,7 @@ class LongIndicator(Widget):
 
   def _render(self, rect: rl.Rectangle) -> None:
     sm = ui_state.sm
-    if sm.recv_frame['selfdriveState'] < ui_state.started_frame or not sm['selfdriveState'].enabled or not ui_state.has_longitudinal_control:
+    if not ui_state.long_engaged:
       self._personality = None
       self._personality_changed_time = -HIGHLIGHT_TIME
       self._alpha_filter.x = 0.0

@@ -1331,19 +1331,19 @@ class TestSpeedAssistBadge:
       hud._draw_speed_assist(rl.Rectangle(0, 0, 536, 240))
     return drawn
 
-  @pytest.mark.parametrize(("status", "chestnut", "shown"), [
-    ("ENGAGED", "DISCONNECTED", True),
-    ("DISENGAGED", "DISCONNECTED", False),  # leaves with the wheel
-    ("ENGAGED", "LOADING", False),  # the model icon owns the corner
-    ("ENGAGED", "ACTIVE", False),  # within the model icon's persistence after engaging
+  @pytest.mark.parametrize(("long_engaged", "chestnut", "shown"), [
+    (True, "DISCONNECTED", True),
+    (False, "DISCONNECTED", False),  # disengaged or MADS lateral-only: leaves with the long indicator
+    (True, "LOADING", False),  # the model icon owns the corner
+    (True, "ACTIVE", False),  # within the model icon's persistence after engaging
   ])
-  def test_follows_the_wheel(self, params, monkeypatch, status, chestnut, shown):
+  def test_follows_long_engaged(self, params, monkeypatch, long_engaged, chestnut, shown):
     import raylib_nb as rl
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
 
-    monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "status", UIStatus[status])
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: long_engaged))
     monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState[chestnut])
     hud = HudRendererSP()
     hud._chestnut_fade_time = rl.get_time()
@@ -1356,11 +1356,11 @@ class TestSpeedAssistBadge:
   def test_swaps_in_after_the_model_icon(self, params, monkeypatch):
     from openpilot.selfdrive.ui.mici.onroad.hud_renderer import SET_SPEED_PERSISTENCE
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
     import raylib_nb as rl
 
-    monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: True))
     monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.ACTIVE)
     hud = HudRendererSP()
     hud._chestnut_fade_time = rl.get_time() - SET_SPEED_PERSISTENCE - 0.1
@@ -1371,10 +1371,10 @@ class TestSpeedAssistBadge:
   def test_brightens_with_the_lift(self, params, monkeypatch, fraction):
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, SPEED_ASSIST_ALPHA_LIFT, HudRendererSP
     expected = SPEED_ASSIST_ALPHA_IDLE + (SPEED_ASSIST_ALPHA_LIFT - SPEED_ASSIST_ALPHA_IDLE) * fraction
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
 
-    monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: True))
     monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.DISCONNECTED)
     monkeypatch.setattr(HudRendererSP, "_speed_assist_lift_fraction", staticmethod(lambda: fraction))
     drawn = self._settle(HudRendererSP(), monkeypatch)
