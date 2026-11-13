@@ -1,5 +1,9 @@
 zoompilot vUNRELEASED
 ========================
+* 2026-11-12
+  * Fixed a "TAKE CONTROL IMMEDIATELY: locationd Temporary Error" alert caused by a single dropped camera frame.
+  * Mazda: sun glare on the stock camera no longer shows "LKAS Fault: Restart the Car"; real power steering faults alert about 5 s sooner.
+  * Mazda: CX-5 diesels with SH56 engine and SH52 transmission firmware are now recognized.
 * 2026-11-11
   * New features
     * Curve Speed setting under Slow for Curves: Gentle, Normal or Sporty.
