@@ -12,16 +12,6 @@ from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.dem
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
 
 
-def lane_center_mode(params) -> int:
-  """Lane center assist: 0 off, 1 on, 2 debug ui. Blendful stays the bool modeld and sunnylink read;
-  BlendfulReadout only counts while it is on."""
-  return params.get_bool("BlendfulReadout") + 1 if params.get_bool("Blendful") else 0
-
-
-def set_lane_center_mode(params, mode: int) -> None:
-  params.put_bool("Blendful", mode > 0, block=True)
-  params.put_bool("BlendfulReadout", mode == 2, block=True)
-
 
 class UIStateZP:
   """zoompilot's additions to UIStateSP: jetlink's snapshot and the USB port it holds, the
@@ -45,10 +35,10 @@ class UIStateZP:
     self.speed_assist: bool = False
     # the carrying model's short name for the home screens; None with HomeShowActiveModel off
     self.home_model_name: str | None = None
-    # lane center assist's debug readout on the comma 4
-    self.blendful_readout: bool = False
-    # lane center assist on: the 3X developer UI shows its push
+    # lane center assist on (Blendful): its center line shows
     self.lane_center: bool = False
+    # the 3X's gauge under the steering arc (LaneCenterUI); it also needs lane center on
+    self.lane_center_gauge: bool = False
     # the 3X's confidence ball
     self.confidence_ball: bool = False
 
@@ -60,9 +50,8 @@ class UIStateZP:
 
   def update_params(self) -> None:
     self.speed_assist = self.params.get_bool("ExperimentalModeSetSpeed")
-    mode = lane_center_mode(self.params)
-    self.lane_center = mode > 0
-    self.blendful_readout = mode == 2
+    self.lane_center = self.params.get_bool("Blendful")
+    self.lane_center_gauge = self.params.get_bool("LaneCenterUI")
     self.confidence_ball = self.params.get_bool("ConfidenceBall")
     self._steer_rail_schedule = get_steer_rail_schedule(self.CP) if self.CP is not None else None
     # on the 5 Hz params pass, not per frame in a layout; a fitted chestnut owns chestnut_state
@@ -80,6 +69,13 @@ class UIStateZP:
     """Upstream takes a cable on the port at the onroad edge for a chestnut still
     enumerating; with Jetlink on it is the Jetson's or the phone's."""
     return jetlink_adapter.chestnut_cable(self.usb_connected)
+
+  @property
+  def long_engaged(self) -> bool:
+    """openpilot is driving longitudinal right now. Not under MADS lateral-only, and not on a car
+    whose stock radar is still in charge (Mazda alpha long before the takeover blocks engaging)."""
+    return (self.has_longitudinal_control and self.sm.recv_frame['selfdriveState'] >= self.started_frame and
+            self.sm['selfdriveState'].enabled)
 
   @property
   def speed_assist_active(self) -> bool:

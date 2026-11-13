@@ -168,32 +168,6 @@ def test_long_indicator_stacks_on_the_driver_monitor(params, monkeypatch, rhd, d
   assert monitor.y - (pos.y + last_bar.height) == pytest.approx(2 * 18.5, abs=1.5)
 
 
-class _SM(dict):
-  """SubMaster stand-in: the messages, all just updated."""
-  updated = {"modelDataV2SP": True}
-
-
-@pytest.mark.parametrize(("trust", "curvature", "side"), [
-  (0.0, 0.002, None),  # no lane center: no number
-  (1.0, 0.0, ""),
-  (1.0, -0.0005, "L "),
-  (1.0, 0.0005, "R "),
-])
-def test_developer_ui_shows_lane_center_push(trust, curvature, side):
-  from types import SimpleNamespace
-
-  from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import pull_at_lookahead
-  from openpilot.selfdrive.ui.sunnypilot.onroad.developer_ui.lane_center import LaneCenterElement
-
-  sm = _SM(modelDataV2SP=SimpleNamespace(blendfulTrust=trust, blendfulCurvature=curvature), carState=SimpleNamespace(vEgo=25.0))
-  element = LaneCenterElement()
-  for _ in range(200):  # past the readout's 0.5 s smoothing
-    shown = element.update(sm, False)
-  assert (shown.label, shown.unit) == ("LANE CTR", "" if side is None else "cm")
-  cm = round(abs(pull_at_lookahead(curvature, 25.0)) * 100)
-  assert shown.value == ("-" if side is None else f"{side}{cm}")
-
-
 @pytest.mark.parametrize("rhd", [False, True])
 def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monkeypatch, rhd):
   from types import SimpleNamespace
@@ -246,3 +220,83 @@ def test_multi_button_follows_its_param(params):
   params.put("SpeedLimitMode", int(Mode.information), block=True)
   buttons._update_state()
   assert buttons.selected_button == Mode.information
+
+
+@pytest.mark.parametrize("lane_center", [False, True])
+def test_lane_center_ui_sits_after_the_steering_arc(params, monkeypatch, lane_center):
+  """A toggle after the steering arc's; greyed out with lane center assist off."""
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.visuals import VisualsLayout
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "lane_center", lane_center)
+  params.put_bool("LaneCenterUI", True, block=True)
+  layout = VisualsLayout()
+  layout._update_state()
+  row = layout._lane_center_ui.item
+  items = layout._scroller._items
+  assert items.index(row) == items.index(layout._toggles["TorqueBar"]) + 1
+  assert row.action_item.get_state()
+  assert row.action_item.enabled == lane_center
+
+
+def test_lane_center_assist_is_off_on(params):
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.models import ModelsLayout
+
+  layout = ModelsLayout()
+  assert len(layout.blendful_toggle.action_item.buttons) == 2
+  for on in (True, False):
+    layout.blendful_toggle.action_item.callback(int(on))
+    assert params.get_bool("Blendful") is on
+
+
+class _SM(dict):
+  """SubMaster stand-in: nothing newly updated."""
+  updated = {"modelDataV2SP": False}
+
+
+@pytest.mark.parametrize(("lane_center", "gauge", "shown"), [(False, True, False), (True, False, False), (True, True, True)])
+def test_lane_center_gauge_needs_lane_center(monkeypatch, lane_center, gauge, shown):
+  """The 3X's gauge shows with LaneCenterUI and lane center assist both on."""
+  from types import SimpleNamespace
+
+  from openpilot.selfdrive.ui.sunnypilot.onroad import blendful_zp
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "sm", _SM(modelDataV2SP=SimpleNamespace(blendfulTrust=1.0)))
+  monkeypatch.setattr(ui_state, "lane_center", lane_center)
+  monkeypatch.setattr(blendful_zp.UIStateSP, "lateral_active", staticmethod(lambda _: True))
+  bar = blendful_zp.TorqueBarZP(show_bar=lambda: False, show_gauge=lambda: gauge)
+  bar._update_state()
+  assert bar._active == shown
+
+
+@pytest.mark.parametrize(("has_long", "vision", "map_", "enabled"), [
+  (True, True, False, True),
+  (True, False, True, True),
+  (True, False, False, False),  # nothing reads it with both curve features off
+  (False, True, True, False),
+])
+def test_curve_speed_follows_slow_for_curves(params, monkeypatch, has_long, vision, map_, enabled):
+  from opendbc.car.structs import car
+  from openpilot.cereal import custom
+  from openpilot.selfdrive.ui.sunnypilot.layouts.settings.cruise import CruiseLayout
+  from openpilot.selfdrive.ui.ui_state import ui_state
+
+  monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(openpilotLongitudinalControl=has_long))
+  monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
+  monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
+  monkeypatch.setattr(ui_state, "has_icbm", False)
+  params.put_bool("SmartCruiseControlVision", vision, block=True)
+  params.put_bool("SmartCruiseControlMap", map_, block=True)
+  params.put("CurveSpeedProfile", 2, block=True)
+  try:
+    cruise = CruiseLayout()
+    items = cruise._scroller._items
+    assert items.index(cruise.curve_speed.item) == items.index(cruise.scc_m_toggle) + 1 == items.index(cruise.scc_v_toggle) + 2
+    cruise.show_event()
+    cruise._update_state()
+    assert cruise.curve_speed.item.action_item.enabled == enabled
+    assert cruise.curve_speed.item.action_item.selected_button == 2
+  finally:
+    for key in ("SmartCruiseControlVision", "SmartCruiseControlMap", "CurveSpeedProfile"):
+      params.remove(key)

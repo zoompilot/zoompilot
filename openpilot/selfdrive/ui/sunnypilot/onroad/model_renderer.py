@@ -17,8 +17,7 @@ class ModelRendererSP:
   def __init__(self):
     self.rainbow_path = RainbowPath()
     self.chevron_metrics = ChevronMetrics()
-    # debug ui's box larger and under the speed; it keeps its own bar while the torque bar, beside the gauge, is off
-    self.blendful = BlendfulRendererZP(readout=False)  # the 3X shows the push in its developer UI
+    self.blendful = BlendfulRendererZP()
     self._width_filter = FirstOrderFilter(0.9, 0.1, 1 / gui_app.target_fps)
 
   @property

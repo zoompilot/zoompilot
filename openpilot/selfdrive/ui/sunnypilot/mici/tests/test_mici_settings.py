@@ -1220,28 +1220,16 @@ class TestModelsPanelMici:
     items = [item for item in layout.main_items[1:] if item is not layout.cancel_download_btn]
     assert [item.text for item in items] == ["select model", "lane center assist",
                                              "lane turn desires", "steer delay",
-                                             "camera offset", "jetlink", "small model steer", "refresh models", "clear cache"]
+                                             "camera offset", "jetlink", "smooth big model", "refresh models", "clear cache"]
     assert {item._get_label_font_size() for item in items} == {BigButton("t")._get_label_font_size()}, "a long title shrinks its font"
 
-  def test_the_default_model_and_a_chestnut_lock_small_model_steering(self, monkeypatch):
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    options = self._options()
-    for runner_tinygrad in (False, True):
-      for chestnut in (False, True):
-        monkeypatch.setattr(ui_state, "active_runner_tinygrad", runner_tinygrad)
-        monkeypatch.setattr(ui_state, "chestnut_present", chestnut)
-        assert options.small_steering.enabled is (runner_tinygrad and not chestnut)
-
-  def test_lane_center_cycles_off_on_debug(self, params):
+  def test_lane_center_is_a_plain_toggle(self, params):
     params.put_bool("Blendful", False, block=True)
-    params.put_bool("BlendfulReadout", True, block=True)  # stale readout reads as off while Blendful is off
     lane_center = self._options().lane_center
-    assert lane_center.value == "off"
-    for _ in range(3):
-      lane_center._store((lane_center._get_param_index() + 1) % 3)
-      lane_center.refresh()
-      state = (params.get_bool("Blendful"), params.get_bool("BlendfulReadout"))
-      assert state == {"on": (True, False), "debug ui": (True, True), "off": (False, False)}[lane_center.value]
+    assert not lane_center._checked
+    params.put_bool("Blendful", True, block=True)
+    lane_center.refresh()
+    assert lane_center._checked
 
   def test_live_steer_delay_is_live_in_its_picker(self, params):
     params.put_bool("LagdToggle", True, block=True)
@@ -1279,19 +1267,6 @@ class TestModelsPanelMici:
     # 19 mph is off the whole-km/h grid: the picker opens on the nearest
     assert self._centered(speed.create_picker_screen()) == centered
 
-  @pytest.mark.parametrize(("metric", "speed", "label", "centered"), [(False, 5.0, "under 11 mph", "11"),
-                                                                      (True, 5.0, "under 18 km/h", "18"),
-                                                                      (False, 0.0, "off", "off")])
-  def test_small_model_steer_reads_ms_in_either_unit(self, params, monkeypatch, metric, speed, label, centered):
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    monkeypatch.setattr(ui_state, "is_metric", metric)
-    params.put("SmallModelSteering", speed, block=True)
-    steer = self._options().small_steering
-    assert steer.value == label
-    picker = steer.create_picker_screen()
-    assert self._centered(picker) == centered
-    assert picker._picker_items[-1].display_label == ("32" if metric else "20")
-
   def test_steer_delay_and_camera_offset_labels(self, params):
     params.put_bool("LagdToggle", False, block=True)
     params.put("LagdToggleDelay", 0.2, block=True)
@@ -1313,19 +1288,19 @@ class TestSpeedAssistBadge:
       hud._draw_speed_assist(rl.Rectangle(0, 0, 536, 240))
     return drawn
 
-  @pytest.mark.parametrize(("status", "chestnut", "shown"), [
-    ("ENGAGED", "DISCONNECTED", True),
-    ("DISENGAGED", "DISCONNECTED", False),  # leaves with the wheel
-    ("ENGAGED", "LOADING", False),  # the model icon owns the corner
-    ("ENGAGED", "ACTIVE", False),  # within the model icon's persistence after engaging
+  @pytest.mark.parametrize(("long_engaged", "chestnut", "shown"), [
+    (True, "DISCONNECTED", True),
+    (False, "DISCONNECTED", False),  # disengaged or MADS lateral-only: leaves with the long indicator
+    (True, "LOADING", False),  # the model icon owns the corner
+    (True, "ACTIVE", False),  # within the model icon's persistence after engaging
   ])
-  def test_follows_the_wheel(self, params, monkeypatch, status, chestnut, shown):
+  def test_follows_long_engaged(self, params, monkeypatch, long_engaged, chestnut, shown):
     import raylib_nb as rl
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
 
-    monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "status", UIStatus[status])
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: long_engaged))
     monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState[chestnut])
     hud = HudRendererSP()
     hud._chestnut_fade_time = rl.get_time()
@@ -1338,25 +1313,75 @@ class TestSpeedAssistBadge:
   def test_swaps_in_after_the_model_icon(self, params, monkeypatch):
     from openpilot.selfdrive.ui.mici.onroad.hud_renderer import SET_SPEED_PERSISTENCE
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
     import raylib_nb as rl
 
-    monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: True))
     monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.ACTIVE)
     hud = HudRendererSP()
     hud._chestnut_fade_time = rl.get_time() - SET_SPEED_PERSISTENCE - 0.1
     drawn = self._settle(hud, monkeypatch)
     assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA_IDLE, abs=0.02)
 
-  @pytest.mark.parametrize(("fraction", "expected"), [(0.5, 0.55), (1.0, 0.7)])
-  def test_brightens_with_the_lift(self, params, monkeypatch, fraction, expected):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, UIStatus, ui_state
+  @pytest.mark.parametrize("fraction", [0.5, 1.0])
+  def test_brightens_with_the_lift(self, params, monkeypatch, fraction):
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, SPEED_ASSIST_ALPHA_LIFT, HudRendererSP
+    expected = SPEED_ASSIST_ALPHA_IDLE + (SPEED_ASSIST_ALPHA_LIFT - SPEED_ASSIST_ALPHA_IDLE) * fraction
+    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
 
-    monkeypatch.setattr(UIState, "speed_assist_active", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: True))
     monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.DISCONNECTED)
     monkeypatch.setattr(HudRendererSP, "_speed_assist_lift_fraction", staticmethod(lambda: fraction))
     drawn = self._settle(HudRendererSP(), monkeypatch)
     assert drawn and drawn[-1][3] == pytest.approx(expected, abs=0.02)
+
+
+class TestCurveSpeed:
+  """One multi toggle after the two Slow for Curves toggles; grey with both of them off."""
+
+  @pytest.mark.parametrize(("has_long", "vision", "map_", "superseded"), [
+    (True, True, False, False),
+    (True, False, True, False),
+    (True, False, False, True),
+    (False, True, True, True),
+  ])
+  def test_follows_slow_for_curves(self, params, monkeypatch, has_long, vision, map_, superseded):
+    from opendbc.car.structs import car
+    from openpilot.cereal import custom
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    monkeypatch.setattr(ui_state, "CP", car.CarParams.new_message(openpilotLongitudinalControl=has_long))
+    monkeypatch.setattr(ui_state, "CP_SP", custom.CarParamsSP.new_message())
+    monkeypatch.setattr(ui_state, "has_longitudinal_control", has_long)
+    monkeypatch.setattr(ui_state, "has_icbm", False)
+    params.put_bool("SmartCruiseControlVision", vision, block=True)
+    params.put_bool("SmartCruiseControlMap", map_, block=True)
+    params.put("CurveSpeedProfile", 0, block=True)
+    try:
+      cruise = CruiseLayoutMici()
+      items = cruise._scroller.items
+      assert items.index(cruise._curve_speed) == items.index(cruise._scc_m_toggle) + 1 == items.index(cruise._scc_v_toggle) + 2
+      render(cruise)
+      toggle = cruise._curve_speed
+      assert toggle.superseded == superseded
+      assert toggle.value == "gentle", "a grey pill keeps the stored value"
+      assert toggle._off_index is None  # every profile is on
+    finally:
+      for key in ("SmartCruiseControlVision", "SmartCruiseControlMap", "CurveSpeedProfile"):
+        params.remove(key)
+
+  def test_tap_stores_the_next_profile(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
+
+    params.put("CurveSpeedProfile", 1, block=True)
+    try:
+      toggle = CruiseLayoutMici()._curve_speed
+      assert toggle.value == "normal"
+      toggle._handle_mouse_release(None)
+      assert params.get("CurveSpeedProfile") == 2
+      assert toggle.value == "sporty"
+    finally:
+      params.remove("CurveSpeedProfile")

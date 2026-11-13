@@ -206,10 +206,11 @@ class TestFarFieldCurvatureBias(VisionCase):
       self.run_road(v, road, setpoint=v, scc=raw, attenuate=True)
     assert self.scc_v.v_dip_ahead < raw.v_dip_ahead - 1.
 
-  @flat_ceiling(1.8)
   def test_real_curve_commits_exactly_as_before_the_fade(self):
     # The fitted speed band retains the calibrated correction. Both paths bind at the 95.2 m
     # sample: 0.02 * 0.631 attenuation * 1.441 gain = 0.01819, allowed sqrt(1.71 / 0.01819) = 9.695
+    with flat_ceiling(1.8):
+      self.scc_v, stock = SmartCruiseControlVision(make_cp()), self.stock()
     v = 15.6
     road = curve_at(90., kappa=CURVE_KAPPA)
     self.run_road(v, road, setpoint=v, attenuate=True)
@@ -218,7 +219,6 @@ class TestFarFieldCurvatureBias(VisionCase):
     assert self.scc_v.a_required == pytest.approx(0.926, abs=2e-3)
     assert self.scc_v.output_v_target == pytest.approx(14.674, abs=2e-3)  # 15.6 - 0.926
 
-    stock = self.stock()
     self.run_road(v, road, setpoint=v, scc=stock, attenuate=True)
     assert stock.is_active
     # lead walks only the tracking gap: 15.6 * (1.0 + 8 mph / 4 mph/s) = 46.8 m, over 48.41 m

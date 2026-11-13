@@ -22,6 +22,16 @@ sections:
     description: Display steering arc on the driving screen when lateral control is enabled.
     visibility:
     - $ref: '#/macros/hide_on_mici'
+  - key: LaneCenterUI
+    widget: toggle
+    title: Lane Center Gauge
+    description: Shows lane center assist's nudge as a gauge under the steering arc.
+    visibility:
+    - $ref: '#/macros/hide_on_mici'
+    enablement:
+    - type: param
+      key: Blendful
+      equals: true
   - key: ConfidenceBall
     widget: toggle
     title: Confidence Ball

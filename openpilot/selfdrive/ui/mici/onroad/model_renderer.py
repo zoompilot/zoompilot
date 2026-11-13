@@ -68,8 +68,7 @@ class ModelRenderer(BaseModelRenderer, ModelRendererSP):
     extrinsics_calibration = sm['extrinsicsCalibration']
     self._path_offset_z = extrinsics_calibration.height[0] if extrinsics_calibration.height else HEIGHT_INIT[0]
 
-    if sm.updated['carParams']:
-      self._longitudinal_control = sm['carParams'].openpilotLongitudinalControl
+    self._longitudinal_control = ui_state.long_engaged
 
     model = sm['modelV2']
     radar_state = sm['radarState'] if sm.valid['radarState'] else None

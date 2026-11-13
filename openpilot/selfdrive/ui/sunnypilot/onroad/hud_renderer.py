@@ -43,7 +43,8 @@ class HudRendererSP(HudRenderer):
     self.turn_signal_controller = TurnSignalController()
     self.circular_alerts_renderer = CircularAlertsRenderer()
     self.speed_renderer = SpeedRenderer()
-    self._torque_bar = TorqueBarZP(scale=3.0, always=True, show_bar=lambda: ui_state.torque_bar)
+    self._torque_bar = TorqueBarZP(scale=3.0, always=True, show_bar=lambda: ui_state.torque_bar,
+                                   show_gauge=lambda: ui_state.lane_center_gauge)
     self._speed_assist_button = SpeedAssistButton(EXP_BUTTON_SIZE)
     self._long_indicator = LongIndicatorTizi()
     self._confidence_ball = ConfidenceBallTizi()

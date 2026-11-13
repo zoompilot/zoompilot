@@ -4,7 +4,8 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Only measured brands run zoompilot's curve planners; every other brand gets sunnypilot's own.
+Only measured brands run zoompilot's curve planners; every other brand gets sunnypilot's own,
+wrapped only for the Curve Speed profile.
 """
 import pytest
 
@@ -12,6 +13,7 @@ from opendbc.car import structs
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import map_controller as sp_map
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import vision_controller as sp_vision
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import TUNED_BRANDS, make_smart_cruise_control
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import curve_speed_profile as zp_profile
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import map_controller as zp_map
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import vision_controller as zp_vision
 
@@ -24,8 +26,10 @@ def test_brand_selects_the_planner(brand, op_long):
     assert type(scc.vision) is zp_vision.SmartCruiseControlVision
     assert type(scc.map) is zp_map.SmartCruiseControlMap
   else:
-    assert type(scc.vision) is sp_vision.SmartCruiseControlVision
-    assert type(scc.map) is sp_map.SmartCruiseControlMap
+    assert type(scc.vision) is zp_profile.SmartCruiseControlVision
+    assert type(scc.map) is zp_profile.SmartCruiseControlMap
+    assert zp_profile.SmartCruiseControlVision.__bases__[-1] is sp_vision.SmartCruiseControlVision
+    assert zp_profile.SmartCruiseControlMap.__bases__[-1] is sp_map.SmartCruiseControlMap
     assert not hasattr(scc.vision, 'v_ahead_min')  # the planner publishes 0: no lookahead
 
 

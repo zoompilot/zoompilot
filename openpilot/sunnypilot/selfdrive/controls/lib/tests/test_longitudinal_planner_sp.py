@@ -22,22 +22,28 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits imp
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
 
+def make_planner(op_long=True):
+  """A planner whose sources are mocked (they are exercised in their own tests; here only their
+  published pair matters), and the messages update_targets reads."""
+  cp = structs.CarParams(brand="mazda", openpilotLongitudinalControl=op_long, longitudinalActuatorDelay=0.36)
+  planner = LongitudinalPlannerSP(cp, structs.CarParamsSP(), MagicMock())
+  planner.scc.update = MagicMock()
+  planner.resolver.update = MagicMock()
+  planner.resolver.distance = 0.
+  planner.sla.update = MagicMock()
+  sm = {'carState': messaging.new_message('carState').carState,
+        'carControl': messaging.new_message('carControl').carControl,
+        'carStateSP': messaging.new_message('carStateSP').carStateSP}
+  return planner, sm
+
+
 class TestSeedGuard(OpenpilotTestCase):
 
   def setup_method(self):
     self.make()
 
   def make(self):
-    cp = structs.CarParams(brand="mazda", openpilotLongitudinalControl=True, longitudinalActuatorDelay=0.36)
-    self.planner = LongitudinalPlannerSP(cp, structs.CarParamsSP(), MagicMock())
-    # the sources are exercised in their own tests; here only their published pair matters
-    self.planner.scc.update = MagicMock()
-    self.planner.resolver.update = MagicMock()
-    self.planner.resolver.distance = 0.
-    self.planner.sla.update = MagicMock()
-    self.sm = {'carState': messaging.new_message('carState').carState,
-               'carControl': messaging.new_message('carControl').carControl,
-               'carStateSP': messaging.new_message('carStateSP').carStateSP}
+    self.planner, self.sm = make_planner()
 
   def test_finite_targets_pass_through(self):
     self.planner.scc.vision.output_v_target = 15.
@@ -69,6 +75,33 @@ class TestSeedGuard(OpenpilotTestCase):
     self.planner.scc.vision.output_v_target = float('nan')
     v, a = self.planner.update_targets(self.sm, float('nan'), float('nan'), float('nan'))
     assert math.isfinite(v) and math.isfinite(a)
+
+
+class TestSeedNeverAboveThePlan(OpenpilotTestCase):
+  """On openpilot long a limiter may lower the seed below the plan's last output (a_ego), never
+  raise it above."""
+
+  def targets(self, op_long: bool, a_limiter: float, a_ego: float) -> float:
+    planner, sm = make_planner(op_long)
+    planner.scc.vision.output_v_target = 15.
+    planner.scc.vision.output_a_target = a_limiter
+    _, a = planner.update_targets(sm, 20., a_ego, 25.)
+    assert planner.source == LongitudinalPlanSource.sccVision
+    return a
+
+  def test_limiter_asking_less_decel_than_the_plan_has(self):
+    # braking at -2 behind a lead while a curve asks -0.3
+    assert self.targets(True, -0.3, -2.) == -2.
+
+  def test_limiter_asking_to_accelerate(self):
+    assert self.targets(True, 2., -1.5) == -1.5
+
+  def test_limiter_decel_below_the_plan_is_kept(self):
+    assert self.targets(True, -0.8, 0.) == -0.8
+
+  def test_stock_acc_wire_is_untouched(self):
+    # nothing is seeded from it there
+    assert self.targets(False, -0.3, -2.) == -0.3
 
 
 class TestSccNeedsLongOrIcbm:

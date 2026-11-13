@@ -18,6 +18,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits imp
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.map_controller import (
   ACTIVE_STATES, ENABLED_STATES, R, TO_RADIANS, MapState, SmartCruiseControlMap as UpstreamMap, distance_to_point, velocities_from_param)
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import lead_distance, required_decel
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.curve_speed_profile import MapProfile
 
 __all__ = ['ACTIVE_STATES', 'ENABLED_STATES', 'MapState', 'R', 'SmartCruiseControlMap', 'target_binds']
 
@@ -49,7 +50,7 @@ def target_binds(v_ego: float, tv, d, lim: PlanningLimits) -> np.ndarray:
   return (tv <= v_ego) & (a_req >= COMMIT_FRAC * lim.a_budget)
 
 
-class SmartCruiseControlMap(UpstreamMap):
+class SmartCruiseControlMap(MapProfile, UpstreamMap):
   def __init__(self, CP):
     super().__init__()
     self.limits = get_planning_limits(CP)

@@ -37,7 +37,9 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 e2e   = a_model + lift
 lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall max(2.4 m/s^3, (1 - gain) * lift per frame)
 floor = min(a_mpc, a_cruise, approach_accel(v_ego, v_target, personality))
-gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * fade-in over 5-8 m/s
+gain  = min(interp(a_model, GAIN_BP, [0, 1]), planFade) * fade-in over 5-8 m/s,  GAIN_BP = [-0.3, -0.1] m/s^2
+planFade = interp(-slowdown / 10 s, GAIN_BP, [0, 1])
+slowdown = max(v_ego - min(plan v over 10 s), closing speed * interp(time to contact, [15, 25] s, [1, 0]))
 fade  = interp(max(steer lat accel, v_ego^2 * max path curvature over 10 s), [0.6, 1.0] m/s^2, [1, 0])
 ```
 
@@ -62,11 +64,36 @@ for any 2 m/s shortfall, and on the CX-5 the lift toward it drove 23 of 24 kickd
 0.000, p99 +0.05), 1.9% of frames gentler by over 0.05 where the model eases off or a bend fades the
 lift, and slightly less time above the 0.42 kickdown point at 14-24 m/s (7.1% against 7.4%).
 
-The approach table is Standard. Relaxed and Aggressive move it 0.15 m/s^2 either way, the step
-between personalities in sunnypilot's accel boost (#2089, 0.1 / 0.25 / 0.4), added before the gap
-fraction so the step shrinks near the target; behind a lead the personality acts through the MPC
-candidate's gap. On the CX-5, 1 m/s under the set speed, Aggressive is over the 0.42 kickdown point
-below about 21.5 m/s (Standard below 17).
+Since 2026-11-08 the pace is a jerk-limited arrival, capped at the speed's ceiling:
+
+```
+approach = min(ceiling(v_ego), sqrt(2 * 0.065 * max(gap, 0)))
+```
+
+the acceleration that, eased off at 0.065 m/s^3, reaches the target with none left. Near the
+target upstream's cruise candidate, which the planner takes the minimum with, is the gentler of the
+two; it heads for the same target, since the planner lowers v_cruise to the SLA or SCC target
+before building it. Until 2026-11-09 a line at the cruise gain (1 /s) ran under 0.065 m/s, joined
+with the same slope; dropping it moves the pace by at most 0.017 m/s^2 after the minimum (45% of
+frames, 9b-a7), and the closed loop below is unchanged (from 5 m/s under 10.1 s against 10.2,
+overshoot 0.010 against 0.008; holding, flips over +-0.05 / +-0.02 0.0 / 5.5 a minute either way).
+On those drives the target is not v_cruise on 20% of frames (SLA or SCC); were the cruise
+candidate to head for v_cruise instead, a hold at a lower target flips as often under both laws
+(+-0.05: 3.0 a minute). It replaced a table of
+0.38-1 of the ceiling over 0-10 m/s under, which stepped from 0.38 to 0 at the target (a pumping
+risk at the set speed); a 1 m/s taper to 0 (f554787d8, one day) cost 21% of the open-road lift.
+The jerk matches the table's push on the drives' frames 2 m/s or more under the target (routes
+9b-a7, 93f8b8d5ea; x1.02). Replayed on those drives with planFade: 8-11% of open-road lift and 15%
+of all lift gone against the table (planFade alone 0% and 8%), none where the plan drops 3 m/s,
+highway frames over the 0.42 kickdown point 8.5% against 8.2%, stop coast onsets as with the table.
+At +-30% jerk: 21% / 2% of open-road lift gone, push x0.85 / x1.14. Closed loop with logged model
+wander at the set speed: median 0.00 m/s under, worst 0.06, no more throttle-brake changes than the
+table; from 5 m/s under, within 0.2 m/s in 10.2 s (table 11.7, taper 13.1), overshoot 0.01 m/s.
+
+The ceiling is Standard. Relaxed and Aggressive move it 0.15 m/s^2 either way, the step between
+personalities in sunnypilot's accel boost (#2089, 0.1 / 0.25 / 0.4), so they differ only well under
+the target, where the ceiling binds; behind a lead the personality acts through the MPC candidate's
+gap. 1 m/s under the set speed every personality asks 0.35, under the CX-5's 0.42 kickdown point.
 
 sunnypilot's boost itself is merged but unwired: replayed on the 10-27..10-30 drives it was on in
 86% of cruise frames, and stacked on this lift put highway e2e over 0.35 28% of the time against 4.7%.
@@ -86,6 +113,16 @@ Why each input:
   0.10). The model's throttle probability (gasPressProbs[1]) is not used: in engaged cruise it is
   p50 0.93, the lift was 0.45 m/s^2 with it against 0.47 without, and where it is low the
   acceleration band has already closed the lift 92% of the time (2026-11-04, routes 4a-62).
+- `planFade` is the same decision over the plan: the model's acceleration alone filled a gentle
+  coast (-0.05..-0.25) toward a light, a stop or a closing lead up to the floor, turning it into a
+  hold (0000004a t+521, 00000062 t+685). The slowdown the plan sets (its lowest speed in 10 s, or
+  a closing radarState lead as it nears contact) is read as a mean deceleration through the gain's
+  own band, so 1-3 m/s of drop fades it, above the ~1 m/s the far plan flickers on a straight
+  road. It enters through the gain, so a planned slowdown lets go as fast as the model's own
+  braking does, and like the gain it only ever lets go. The lead term is there because the lead
+  MPC floor stays positive while closing at a distance (p50 +0.34 m/s^2 at 75 m, -3.8 m/s on
+  routes 4a-62) and the plan shows only 30% of those slowdowns. On those drives: lift on
+  in 0% of plan-drop >= 3 m/s frames (was 6%), 4.1% of open-road lift removed.
 - `fade` reads the road's geometry, not the plan's speeds. On a straight road the plan's speed
   10 s out swings p90 2.5 mph per 0.5 s; curvature at the current speed flags 86-100% of real bend
   approaches and is over 1.0 m/s^2 on hindsight-straight road for 0.1-3% of frames. The model's
@@ -127,10 +164,11 @@ add under DEC.
 |---|---|---|
 | `MIN_SPEED`, `FULL_SPEED` | 5, 8 m/s | floor 1.2-1.6 against a creeping model |
 | `GAIN_BP` | -0.3, -0.1 | above |
+| `HORIZON`, `LEAD_TTC_BP` | 10 s; 15-25 s to contact | the plan's horizon; a lead past 25 s out is the MPC's |
 | `FADE_LAT_BP`, `LAT_HORIZON` | 0.6-1.0 m/s^2, 10 s | the envelope's 1.0 bend ceiling, as a ramp |
 | rise | 1.6/1.2/0.8/0.6 m/s^3 at 0/10/25/40 m/s | upstream's cruise jerk (`op_long_cruise_jerk`): the lift stands in for cruise, on any car. Mazda's AccelShaper still caps the build at stock MRCC's 0.8 |
 | `APPROACH_V` over `APPROACH_BP` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s^2 at 0, 4, 9, 14, 18, 25 m/s | the CX-5's stock MRCC accelerating command p99 by speed, no lead (its wire ceiling eases 14 m/s to 0.95 for a 4>3 kickdown; that stays in the Mazda port) |
-| `APPROACH_GAP_FRACTION` over `APPROACH_GAP_BP` | 0.38, 0.47, 0.57, 0.72, 1 at 0, 1, 3, 5, 10 m/s under the target | between stock's p50 and p90 by shortfall: 0.31/0.37 at 0.5-1.5 m/s, 0.41/0.44 at 1.5-3, 0.51/0.55 at 3-5, 0.64/0.76 at 5-10 (20-24 m/s) |
+| `APPROACH_JERK` | 0.065 m/s^3 | matches the table it replaced on frames 2 m/s or more under the target; that table sat between stock's p50 and p90 by shortfall (0.31/0.37 at 0.5-1.5 m/s, 0.41/0.44 at 1.5-3, 0.51/0.55 at 3-5, 0.64/0.76 at 5-10, 20-24 m/s). Kept when the line near the target went: the root moves under 1% at 2 m/s and more under |
 | `LIFT_FALL` | 2.4 m/s^3 | the slowest fall, for lane changes, bends and a lower floor. Chosen when it was the only fall: at 0.5 the lift was still over 0.2 for 1.8% of frames with the model braking past -0.5; at 2.4, none. The model's braking now also drops the lift through the gain |
 
 ## Expected behaviour
