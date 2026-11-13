@@ -33,6 +33,8 @@ class Scenario(Enum):
   ACCEL_CONSISTENT_SPIKES = 'accel_consistent_spikes'
   SENSOR_TIMING_SPIKE_MIDWAY = 'timing_spikes'
   SENSOR_TIMING_CONSISTENT_SPIKES = 'timing_consistent_spikes'
+  CAMODO_DROP_MIDWAY = 'camodo_drop_midway'
+  CAMODO_CONSISTENT_DROPS = 'camodo_consistent_drops'
 
 
 def get_select_fields_data(logs):
@@ -101,6 +103,12 @@ def run_scenarios(scenario):
       msg.accelerometer.timestamp -= int(0.150 * 1e9)
     count = 1 if scenario == Scenario.SENSOR_TIMING_SPIKE_MIDWAY else CONSISTENT_SPIKES_COUNT
     logs = modify_logs_midway(logs, 'accelerometer', count, timing_spike)
+
+  elif scenario == Scenario.CAMODO_DROP_MIDWAY or scenario == Scenario.CAMODO_CONSISTENT_DROPS:
+    def camodo_drop(msg):
+      msg.valid = False  # what modeld publishes for a frame it had to skip to
+    count = 1 if scenario == Scenario.CAMODO_DROP_MIDWAY else CONSISTENT_SPIKES_COUNT
+    logs = modify_logs_midway(logs, 'cameraOdometry', count, camodo_drop)
 
   replayed_logs = replay_process_with_name(name='locationd', lr=logs)
   return get_select_fields_data(logs), get_select_fields_data(replayed_logs)
@@ -201,3 +209,26 @@ class TestLocationdScenarios(OpenpilotTestCase):
     orig_data, replayed_data = run_scenarios(Scenario.SENSOR_TIMING_CONSISTENT_SPIKES)
     assert np.diff(replayed_data['inputs_flag'])[501] == -1.0
     assert np.diff(replayed_data['inputs_flag'])[707] == 1.0
+
+  def test_camodo_drop(self):
+    """
+    Test: one invalid cameraOdometry message (a dropped camera frame) in the middle of the segment
+    Expected Result:
+      - yaw_rate: unchanged
+      - roll: unchanged
+      - inputsOK: unchanged
+    """
+    orig_data, replayed_data = run_scenarios(Scenario.CAMODO_DROP_MIDWAY)
+    assert np.allclose(orig_data['yaw_rate'], replayed_data['yaw_rate'], atol=np.radians(0.35))
+    assert np.allclose(orig_data['roll'], replayed_data['roll'], atol=np.radians(0.35))
+    assert np.all(replayed_data['inputs_flag'] == orig_data['inputs_flag'])
+
+  def test_camodo_consistent_drops(self):
+    """
+    Test: consistent invalid cameraOdometry messages in the middle of the segment
+    Expected Result:
+      - inputsOK: False from the second drop, True again ~10 secs after the last one
+    """
+    _, replayed_data = run_scenarios(Scenario.CAMODO_CONSISTENT_DROPS)
+    assert np.diff(replayed_data['inputs_flag'])[500] == -1.0
+    assert np.diff(replayed_data['inputs_flag'])[709] == 1.0
