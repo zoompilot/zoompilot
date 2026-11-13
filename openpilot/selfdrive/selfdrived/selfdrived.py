@@ -135,6 +135,8 @@ class SelfdriveD:
     self.active = False
     self.mismatch_counter = 0
     self.cruise_mismatch_counter = 0
+    self.locationd_inputs_bad_counter = 0
+    self.posenet_bad_counter = 0
     self.last_steering_pressed_frame = 0
     self.distance_traveled = 0
     self.last_functional_fan_frame = 0
@@ -469,9 +471,15 @@ class SelfdriveD:
 
     if not self.CP.notCar and not big_model_settling:  # localization has nothing to work with during the load
       # the defaults of a message that was never received are not a localizer failure
-      if self.sm.seen['deviceMotion'] and not self.sm['deviceMotion'].posenetOK:
+      # a single dropped camera frame flips inputsOK/posenetOK for ~50ms; don't alert on transients
+      posenet_bad = self.sm.seen['deviceMotion'] and not self.sm['deviceMotion'].posenetOK
+      self.posenet_bad_counter = self.posenet_bad_counter + 1 if posenet_bad else 0
+      if self.posenet_bad_counter > int(0.5 / DT_CTRL):
         self.events.add(EventName.posenetInvalid)
-      if self.sm.seen['deviceMotion'] and not self.sm['deviceMotion'].inputsOK:
+
+      locationd_inputs_bad = self.sm.seen['deviceMotion'] and not self.sm['deviceMotion'].inputsOK
+      self.locationd_inputs_bad_counter = self.locationd_inputs_bad_counter + 1 if locationd_inputs_bad else 0
+      if self.locationd_inputs_bad_counter > int(0.5 / DT_CTRL):
         self.events.add(EventName.locationdTemporaryError)
       if (self.sm.seen['vehicleParameters'] and not self.sm['vehicleParameters'].valid and cal_status == log.ExtrinsicsCalibration.Status.calibrated and
           not TESTING_CLOSET and (not SIMULATION or REPLAY)):
