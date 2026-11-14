@@ -15,7 +15,7 @@ from openpilot.system.ui.widgets import Widget
 
 STATUS_ICON_HEIGHT = 40  # upstream's footer icons (network, chestnut, usb) are 40 px of ink
 STATUS_ICON_ALPHA = 0.9  # settings and network draw at 90%
-HOME_CHEVRON_SCALE = 1.0  # the onroad size: beside the car and bars it reads as the same mark
+HOME_CHEVRON_SCALE = 1.7  # 31 px tall, centred: the weight of the footer's 40-48 px icons beside the car and bars
 
 
 class SpeedAssistIcon(Widget):
