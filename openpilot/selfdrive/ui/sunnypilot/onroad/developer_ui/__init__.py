@@ -25,11 +25,15 @@ RIGHT_UNIT_SIZE = 28
 RIGHT_UNITS = ("m", "km/h", "mph", "m/s^2")
 
 
-def load_text_texture(font: rl.Font, text: str, font_size: int, x: int, y: int) -> rl.Texture:
+def load_text_texture(font: rl.Font, text: str, font_size: int, x: int, y: int, clip: rl.Rectangle) -> rl.Texture | None:
   """White text as a texture, so it can be drawn rotated with draw_texture_pro. raylib draws on the CPU,
   straight into the screen, with no render textures: draw the text at (x, y), copy it out and put the pixels
-  back. Call it during a frame, with (x, y) inside any scissor."""
+  back. Call it during a frame, with `clip` the scissor in force. None if the text would not land whole inside
+  it and the screen, since a clipped copy would be cached blank; try again where it does."""
   size = measure_text_cached(font, text, font_size)
+  if not (max(clip.x, 0) <= x and x + size.x <= min(clip.x + clip.width, gui_app.width) and
+          max(clip.y, 0) <= y and y + size.y <= min(clip.y + clip.height, gui_app.height)):
+    return None
   screen = rl.cpu.screen()  # rows bottom-up, at the window's scale
   px = screen.shape[1] / gui_app.width
   left, right = math.floor(x * px), math.ceil((x + size.x) * px)
@@ -133,9 +137,9 @@ class DeveloperUiRenderer(Widget):
 
     current_y = y
     for element in elements:
-      current_y += self._draw_right_dev_ui_element(x, current_y, element)
+      current_y += self._draw_right_dev_ui_element(x, current_y, element, rect)
 
-  def _draw_right_dev_ui_element(self, x: int, y: int, element: UiElement) -> int:
+  def _draw_right_dev_ui_element(self, x: int, y: int, element: UiElement, clip: rl.Rectangle) -> int:
     x += 0
     y += 230
     container_width = 184
@@ -150,10 +154,11 @@ class DeveloperUiRenderer(Widget):
     centered_value_x = x + (container_width - value_width) / 2
     rl.draw_text_ex(self._font_bold, element.value, rl.Vector2(centered_value_x, y), value_size, 0, element.color)
 
-    if element.unit:
-      if element.unit not in self._unit_textures:
-        self._unit_textures[element.unit] = load_text_texture(self._font_bold, element.unit, RIGHT_UNIT_SIZE, x, y)
-      unit_texture = self._unit_textures[element.unit]
+    if element.unit and element.unit not in self._unit_textures:
+      unit_texture = load_text_texture(self._font_bold, element.unit, RIGHT_UNIT_SIZE, x, y, clip)
+      if unit_texture is not None:
+        self._unit_textures[element.unit] = unit_texture
+    if unit_texture := self._unit_textures.get(element.unit):
       units_x = x + container_width
       units_y = y + (value_size / 2) + (unit_texture.width / 2)
       src = rl.Rectangle(0, 0, unit_texture.width, unit_texture.height)
