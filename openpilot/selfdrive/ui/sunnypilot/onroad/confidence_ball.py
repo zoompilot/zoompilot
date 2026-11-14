@@ -8,7 +8,7 @@ mici's confidence ball on tizi, behind the ConfidenceBall toggle. mici's Confide
 confidence filter, its status and lat/long-only handling) and its colors are mici's; it rides a track on
 the driver's side at twice mici's size, from under the MAX box down to the car and bars, in a column
 with them and the driver monitor, inside a frame styled like the MAX box, standing in for mici's side panel.
-mici hides it below that panel while disengaged; here it sinks to the frame's bottom and fades out.
+mici rests it at the bottom while disengaged; here it sinks to the frame's bottom and fades out.
 """
 import math
 
@@ -20,7 +20,7 @@ from openpilot.selfdrive.ui.onroad.hud_renderer import COLORS, UI_CONFIG
 from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
 from openpilot.selfdrive.ui.sunnypilot.onroad.long_indicator import SCALE, STACK_GAP, long_indicator_top
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
-from openpilot.system.ui.lib.shader_polygon import Gradient, draw_polygon
+from openpilot.system.ui.lib.polygon import Gradient, draw_polygon
 
 RADIUS = 24 * SCALE  # mici's status_dot_radius
 FRAME_PAD = 8  # px of black around the ball
@@ -68,9 +68,9 @@ class ConfidenceBallTizi(ConfidenceBall):
     frame = rl.Rectangle(cx - half, top, 2 * half, bottom - top)
     rl.draw_rectangle_rounded(frame, 1.0, 24, COLORS.BLACK_TRANSLUCENT)
     rl.draw_rectangle_rounded_lines_ex(frame, 1.0, 24, 6, COLORS.BORDER_TRANSLUCENT)
-    # mici's filter runs -0.5 (disengaged) to 1 (sure): above 0 it rides the track, below it fades out at the bottom
+    # mici's filter rests at 0 while disengaged: the ball sinks to the bottom of the track and fades out there
     confidence = self._confidence_filter.x
-    alpha = min(1.0, max(0.0, 2 * confidence + 1))
+    alpha = self._alpha_filter.update(0.0 if ui_state.status == UIStatus.DISENGAGED else 1.0)
     if alpha < 0.01:
       return
     cy = top + half + (1 - max(confidence, 0.0)) * (bottom - top - 2 * half)

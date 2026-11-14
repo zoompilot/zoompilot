@@ -198,7 +198,10 @@ def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monke
 
   assert render_at(1.0) == [(monitor.x + monitor.width / 2, UI_CONFIG.header_height + half)]  # sure: top, in the monitor's column
   assert render_at(0.0)[0][1] == pytest.approx(long_indicator_top(rect, rhd) - STACK_GAP - half)  # down to the car and bars
-  assert render_at(-0.5) == []  # disengaged: faded out
+  monkeypatch.setattr(ui_state, "status", UIStatus.DISENGAGED)
+  for _ in range(60):  # disengaged: fades out at the bottom
+    render_at(0.0)
+  assert render_at(0.0) == []
 
 
 def test_confidence_ball_is_a_visuals_toggle(params):

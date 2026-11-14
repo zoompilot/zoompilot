@@ -7,15 +7,17 @@ See the LICENSE.md file in the root directory for more details.
 import raylib_nb as rl
 
 from openpilot.common.filter_simple import FirstOrderFilter
-from openpilot.selfdrive.ui.mici.onroad.hud_renderer import SET_SPEED_PERSISTENCE, HudRenderer
+from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.blind_spot_indicators import BlindSpotIndicators
-from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge_centered
-from openpilot.selfdrive.ui.ui_state import ChestnutState, ui_state
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import GAUGE_ASPECT, draw_gauge_centered
+from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_ceiling
 from openpilot.system.ui.lib.application import gui_app
 
-# zoompilot's Set Speed Assist gauge mirrors the steering wheel in the bottom-right corner
-SPEED_ASSIST_HEIGHT = 44  # the wheel is 50, and round; the gauge's swoosh carries it to the same weight
+# zoompilot's Set Speed Assist gauge sits in the camera's bottom-right corner, inside the confidence ball's track
+SPEED_ASSIST_HEIGHT = 44
+SPEED_ASSIST_MARGIN_BOTTOM = 10  # the model icon's, in the opposite corner
+CONFIDENCE_BALL_TRACK = 52  # px the ball takes on the camera's right edge: its 32 with 10 either side
 # the HUD's idle and lit levels: armed draws like an unlit distance bar, and brightens to the
 # wheel's 0.9 as the lift nears the most the personality's approach pace asks for at this speed
 SPEED_ASSIST_ALPHA_IDLE = 0.35
@@ -27,7 +29,6 @@ class HudRendererSP(HudRenderer):
     super().__init__()
     self.blind_spot_indicators = BlindSpotIndicators()
     self._sp_engaged: bool = False
-    # the wheel's filters, so the two corners come and go together
     self._speed_assist_shown_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps)
     self._speed_assist_y_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
     # the lift lets go fast; ease the glow so it doesn't blink
@@ -47,29 +48,17 @@ class HudRendererSP(HudRenderer):
     self.blind_spot_indicators.render(rect)
     self._draw_speed_assist(rect)
 
-  def _chestnut_showing(self) -> bool:
-    """The model icon wants the corner: while loading, and for its persistence after engaging or a
-    state change (HudRenderer._draw_model_source)."""
-    state = ui_state.chestnut_state
-    if state == ChestnutState.LOADING:
-      return True
-    if state not in (ChestnutState.UNCOMPILED, ChestnutState.FAILED, ChestnutState.ACTIVE):
-      return False
-    return rl.get_time() - self._chestnut_fade_time < SET_SPEED_PERSISTENCE
-
   def _draw_speed_assist(self, rect: rl.Rectangle) -> None:
-    # comes and goes with the long indicator (not under MADS lateral-only), and swaps in once the
-    # model icon is done with the shared corner
-    wheel = self._txt_wheel
-    shown = (ui_state.speed_assist and ui_state.long_engaged and
-             not self.blind_spot_indicators.right_detected and not self._chestnut_showing())
+    # lit with the long indicator (not under MADS lateral-only)
+    shown = ui_state.speed_assist and ui_state.long_engaged and not self.blind_spot_indicators.right_detected
     lift = self._speed_assist_lift_filter.update(self._speed_assist_lift_fraction() if shown else 0.0)
     alpha = self._speed_assist_shown_filter.update(float(shown)) * \
       (SPEED_ASSIST_ALPHA_IDLE + (SPEED_ASSIST_ALPHA_LIFT - SPEED_ASSIST_ALPHA_IDLE) * lift)
-    y_offset = self._speed_assist_y_filter.update(0.0 if shown else wheel.height / 2)
+    y_offset = self._speed_assist_y_filter.update(0.0 if shown else SPEED_ASSIST_HEIGHT / 2)
     if alpha < 1e-2:
       return
-    draw_gauge_centered(rect.x + rect.width - 21 - wheel.width / 2, rect.y + rect.height - 14 - wheel.height / 2 + y_offset,
+    draw_gauge_centered(rect.x + rect.width - CONFIDENCE_BALL_TRACK - SPEED_ASSIST_HEIGHT * GAUGE_ASPECT / 2,
+                        rect.y + rect.height - SPEED_ASSIST_MARGIN_BOTTOM - SPEED_ASSIST_HEIGHT / 2 + y_offset,
                         SPEED_ASSIST_HEIGHT, alpha)
 
   @staticmethod
@@ -84,7 +73,3 @@ class HudRendererSP(HudRenderer):
 
   def left_blind_spot_detected(self) -> bool:
     return self.blind_spot_indicators.left_detected
-
-  def _has_blind_spot_detected(self) -> bool:
-
-    return self.blind_spot_indicators.detected

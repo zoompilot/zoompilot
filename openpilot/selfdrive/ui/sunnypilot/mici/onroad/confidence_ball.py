@@ -19,6 +19,11 @@ class ConfidenceBallSP:
     return ui_state.sm['modelV2'].meta.disengagePredictions.brakeDisengageProbs
 
   @staticmethod
+  def get_lat_long_dot_colors():
+    """The MADS lateral-only and longitudinal-only dot colors, for the status fade."""
+    return BORDER_COLORS[UIStatus.LAT_ONLY], BORDER_COLORS[UIStatus.LONG_ONLY]
+
+  @staticmethod
   def get_lat_long_dot_color():
     if ui_state.status == UIStatus.LAT_ONLY:
       return BORDER_COLORS[UIStatus.LAT_ONLY]

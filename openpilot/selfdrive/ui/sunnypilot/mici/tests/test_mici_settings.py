@@ -1047,14 +1047,14 @@ class TestAlphaLongitudinalPanelMici:
   def test_settings_opens_the_sp_panels(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.settings import SettingsLayoutSP
-    from openpilot.selfdrive.ui.mici.layouts.settings.toggles import TogglesLayoutMici
+    from openpilot.selfdrive.ui.mici.layouts.settings.driving import DrivingLayoutMici
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import SoftwareLayoutSP
     from openpilot.system.ui.lib.application import gui_app
 
     buttons = {btn.text: btn for btn in SettingsLayoutSP()._scroller.items if hasattr(btn, "text")}
     pushed = []
     monkeypatch.setattr(gui_app, "push_widget", lambda w: pushed.append(w))
-    for label, cls in (("toggles", TogglesLayoutMici), ("developer", DeveloperLayoutMiciSP), ("software", SoftwareLayoutSP)):
+    for label, cls in (("driving", DrivingLayoutMici), ("developer", DeveloperLayoutMiciSP), ("software", SoftwareLayoutSP)):
       buttons[label]._click_callback()
       assert type(pushed[-1]) is cls
 
@@ -1277,7 +1277,7 @@ class TestModelsPanelMici:
 
 
 class TestSpeedAssistBadge:
-  """The Set Speed Assist badge comes and goes with the wheel and waits for the model icon."""
+  """The Set Speed Assist badge comes and goes with the long indicator."""
 
   def _settle(self, hud, monkeypatch, frames=200):
     import raylib_nb as rl
@@ -1291,8 +1291,8 @@ class TestSpeedAssistBadge:
   @pytest.mark.parametrize(("long_engaged", "chestnut", "shown"), [
     (True, "DISCONNECTED", True),
     (False, "DISCONNECTED", False),  # disengaged or MADS lateral-only: leaves with the long indicator
-    (True, "LOADING", False),  # the model icon owns the corner
-    (True, "ACTIVE", False),  # within the model icon's persistence after engaging
+    (True, "LOADING", True),  # the model icon has its own corner, bottom left
+    (True, "ACTIVE", True),
   ])
   def test_follows_long_engaged(self, params, monkeypatch, long_engaged, chestnut, shown):
     import raylib_nb as rl
@@ -1309,20 +1309,6 @@ class TestSpeedAssistBadge:
       assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA_IDLE, abs=0.02)
     else:
       assert not drawn
-
-  def test_swaps_in_after_the_model_icon(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.mici.onroad.hud_renderer import SET_SPEED_PERSISTENCE
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
-    import raylib_nb as rl
-
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.ACTIVE)
-    hud = HudRendererSP()
-    hud._chestnut_fade_time = rl.get_time() - SET_SPEED_PERSISTENCE - 0.1
-    drawn = self._settle(hud, monkeypatch)
-    assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA_IDLE, abs=0.02)
 
   @pytest.mark.parametrize("fraction", [0.5, 1.0])
   def test_brightens_with_the_lift(self, params, monkeypatch, fraction):
