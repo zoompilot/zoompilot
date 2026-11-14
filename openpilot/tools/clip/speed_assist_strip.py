@@ -6,7 +6,8 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
 Put Set Speed Assist's lift under a clip, outside the UI: the lift the planner published as a share
-of the personality's approach ceiling, the gauge's target alpha, and the last 10 s of it as a trace.
+of the personality's approach ceiling (how far the dial's fill reaches toward its needle), and the last 10 s
+of it as a trace.
 Run with the route and range given to run.py, so the frames line up:
 
   openpilot/tools/clip/run.py ROUTE -d DIR --qcam -s 435 -e 540 --no-metadata --no-time-overlay -o clip.mp4
@@ -20,7 +21,6 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from openpilot.common.basedir import BASEDIR
-from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, SPEED_ASSIST_ALPHA_LIFT
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_ceiling
 from openpilot.tools.clip.run import FRAMERATE, load_logs_parallel
 from openpilot.tools.lib.route import Route
@@ -53,12 +53,11 @@ def lift_series(route: Route, start: int, end: int) -> list[tuple[float, float, 
 def draw_strip(width: int, scale: int, series, idx: int, font: ImageFont.FreeTypeFont) -> np.ndarray:
   lift, ceiling, personality = series[idx]
   share = min(lift / ceiling, 1.)
-  alpha = SPEED_ASSIST_ALPHA_IDLE + (SPEED_ASSIST_ALPHA_LIFT - SPEED_ASSIST_ALPHA_IDLE) * share
   h, pad = STRIP_H * scale, 8 * scale
   img = Image.new("RGB", (width, h), (16, 16, 16))
   d = ImageDraw.Draw(img)
   d.text((pad, pad), f"Set Speed Assist lift {lift:.2f} m/s²", fill=(235, 235, 235), font=font)
-  d.text((pad, h // 2 + scale), f"{share * 100:3.0f}% of {PERSONALITY[personality]} {ceiling:.2f}  ·  gauge {alpha:.2f}",
+  d.text((pad, h // 2 + scale), f"{share * 100:3.0f}% of {PERSONALITY[personality]} {ceiling:.2f}",
          fill=(150, 150, 150), font=font)
 
   # the last HISTORY frames of the share, 0..100%, newest at the right edge
