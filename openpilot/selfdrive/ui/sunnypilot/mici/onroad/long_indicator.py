@@ -9,6 +9,8 @@ dial joins the top of the stack at the bars' own pitch, and the group sits betwe
 bottom at 62) and the wheel (ink top at 178), a pixel above centre: the wheel's glow and the monitor's
 rounded base make equal gaps look closer at the bottom.
 """
+import math
+
 import raylib_nb as rl
 
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -35,7 +37,10 @@ class LongIndicatorSP(LongIndicator):
 
   def _render(self, rect: rl.Rectangle) -> None:
     shown = self._speed_assist_filter.update(float(ui_state.speed_assist))
-    shift = STACK_SHIFT * shown
+    # whole pixels for the car's top: the textures blur across two rows at a fraction, and upstream's rest
+    # position (86.5) is one, so off sits half a pixel lower
+    top = rect.y + STACK_TOP
+    shift = math.floor(top + STACK_SHIFT * shown + 0.5) - top
     super()._render(rl.Rectangle(rect.x, rect.y + shift, rect.width, rect.height))
     # the dial rides down with the stack and fades in as the stack makes room, at the stack's own alpha
     # (super() zeroes it when there is no openpilot longitudinal)

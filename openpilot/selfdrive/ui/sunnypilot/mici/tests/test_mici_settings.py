@@ -1340,7 +1340,25 @@ class TestSpeedAssistDial:
       assert stacks[-1].y == pytest.approx(li.STACK_SHIFT, abs=0.05)
       assert dials[-1][0] == pytest.approx(li.DIAL_TOP, abs=0.05) and dials[-1][1]["alpha"] == pytest.approx(1.0, abs=0.01)
     else:
-      assert stacks[-1].y == pytest.approx(0.0) and dials[-1][1]["alpha"] == pytest.approx(0.0)
+      # upstream's half-pixel rest position, half a pixel lower onto whole pixels
+      assert stacks[-1].y == pytest.approx(0.5) and dials[-1][1]["alpha"] == pytest.approx(0.0)
+
+  def test_stack_slides_on_whole_pixels(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    stacks, dials = self._settle(monkeypatch, frames=120)
+    import math
+    from openpilot.system.ui.lib.application import gui_app
+
+    tops = [li.STACK_TOP + s.y for s in stacks]
+    assert all(t == int(t) for t in tops) and all(top == int(top) for top, _ in dials)
+    steps = [b - a for a, b in zip([87.0] + tops[:-1], tops, strict=True)]
+    dt = 1 / gui_app.target_fps
+    # one way, never more than the filter's own travel per frame rounded up
+    assert min(steps) >= 0 and max(steps) <= math.ceil(li.STACK_SHIFT * dt / (li.SLIDE_RC + dt))
+    assert tops[-1] == li.STACK_TOP + li.STACK_SHIFT
 
   def test_lift_fills_the_dial(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
