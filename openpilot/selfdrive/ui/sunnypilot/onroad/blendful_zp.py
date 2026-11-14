@@ -21,7 +21,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.sunnypilot.onroad.blendful import BLENDFUL_COLOR, FULL_BAR, BlendfulRenderer
 from openpilot.selfdrive.ui.sunnypilot.ui_state import UIStateSP
 from openpilot.sunnypilot.modeld_v2.blendful import LOOKAHEAD_TIME, MIN_LOOKAHEAD
-from openpilot.system.ui.lib.shader_polygon import draw_polygon
+from openpilot.system.ui.lib.polygon import draw_polygon
 
 BLUE = rl.Color(*BLENDFUL_COLOR, 255)
 IDLE = rl.Color(150, 160, 168, 255)  # the line with no nudge: grey, so a nudge stands out

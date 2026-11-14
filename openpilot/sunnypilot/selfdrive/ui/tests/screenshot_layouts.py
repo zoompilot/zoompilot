@@ -18,7 +18,6 @@ import os
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
 
-import numpy as np
 import raylib_nb as rl
 
 from pathlib import Path
@@ -117,29 +116,25 @@ def setup_ui_state():
 def capture(widget, filename, frames=SETTLE_FRAMES):
   from openpilot.system.ui.lib.application import gui_app
 
-  rt = rl.load_render_texture(gui_app.width, gui_app.height)
-
   if hasattr(widget, '_trigger_animate_in'):
     widget._trigger_animate_in = False
   if hasattr(widget, '_pos_filter'):
     widget._pos_filter.x = 0.0
 
+  # raylib draws on the CPU, straight into the screen: render there, as gui_app.render does, and copy it out
   rect = rl.Rectangle(0, 0, gui_app.width, gui_app.height)
+  pixels = None
   for _ in range(frames):
-    rl.begin_texture_mode(rt)
-    rl.clear_background(rl.BLACK)
-    widget.render(rect)
-    rl.end_texture_mode()
     rl.begin_drawing()
+    rl.clear_background(rl.BLACK)
+    rl.rl_push_matrix()
+    rl.rl_scalef(gui_app._scale, gui_app._scale, 1.0)
+    widget.render(rect)
+    rl.rl_pop_matrix()
+    pixels = rl.cpu.screen().copy()
     rl.end_drawing()
 
-  image = rl.load_image_from_texture(rt.texture)
-  w, h = image.width, image.height
-  pixels = np.frombuffer(image.to_bytes(w * h * 4), dtype=np.uint8).reshape(h, w, 4)
-  rl.unload_image(image)
-  rl.unload_render_texture(rt)
-
-  # render textures are stored bottom-up; drop alpha, which blending leaves below 1 under translucent ink
+  # the screen's rows are bottom-up
   OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
   Image.fromarray(pixels[::-1, :, :3]).save(OUTPUT_DIR / filename)
   print(f"  {filename}")
