@@ -6,22 +6,9 @@ See the LICENSE.md file in the root directory for more details.
 """
 import raylib_nb as rl
 
-from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.sunnypilot.onroad.blind_spot_indicators import BlindSpotIndicators
-from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import GAUGE_ASPECT, draw_gauge_centered
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_ceiling
-from openpilot.system.ui.lib.application import gui_app
-
-# zoompilot's Set Speed Assist gauge sits in the camera's bottom-right corner, inside the confidence ball's track
-SPEED_ASSIST_HEIGHT = 44
-SPEED_ASSIST_MARGIN_BOTTOM = 10  # the model icon's, in the opposite corner
-CONFIDENCE_BALL_TRACK = 52  # px the ball takes on the camera's right edge: its 32 with 10 either side
-# the HUD's idle and lit levels: armed draws like an unlit distance bar, and brightens to the
-# wheel's 0.9 as the lift nears the most the personality's approach pace asks for at this speed
-SPEED_ASSIST_ALPHA_IDLE = 0.35
-SPEED_ASSIST_ALPHA_LIFT = 0.9
 
 
 class HudRendererSP(HudRenderer):
@@ -29,10 +16,6 @@ class HudRendererSP(HudRenderer):
     super().__init__()
     self.blind_spot_indicators = BlindSpotIndicators()
     self._sp_engaged: bool = False
-    self._speed_assist_shown_filter = FirstOrderFilter(0.0, 0.05, 1 / gui_app.target_fps)
-    self._speed_assist_y_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
-    # the lift lets go fast; ease the glow so it doesn't blink
-    self._speed_assist_lift_filter = FirstOrderFilter(0.0, 0.3, 1 / gui_app.target_fps)
 
   def _update_state(self) -> None:
     super()._update_state()
@@ -46,30 +29,6 @@ class HudRendererSP(HudRenderer):
   def _render(self, rect: rl.Rectangle) -> None:
     super()._render(rect)
     self.blind_spot_indicators.render(rect)
-    self._draw_speed_assist(rect)
-
-  def _draw_speed_assist(self, rect: rl.Rectangle) -> None:
-    # lit with the long indicator (not under MADS lateral-only)
-    shown = ui_state.speed_assist and ui_state.long_engaged and not self.blind_spot_indicators.right_detected
-    lift = self._speed_assist_lift_filter.update(self._speed_assist_lift_fraction() if shown else 0.0)
-    alpha = self._speed_assist_shown_filter.update(float(shown)) * \
-      (SPEED_ASSIST_ALPHA_IDLE + (SPEED_ASSIST_ALPHA_LIFT - SPEED_ASSIST_ALPHA_IDLE) * lift)
-    y_offset = self._speed_assist_y_filter.update(0.0 if shown else SPEED_ASSIST_HEIGHT / 2)
-    if alpha < 1e-2:
-      return
-    draw_gauge_centered(rect.x + rect.width - CONFIDENCE_BALL_TRACK - SPEED_ASSIST_HEIGHT * GAUGE_ASPECT / 2,
-                        rect.y + rect.height - SPEED_ASSIST_MARGIN_BOTTOM - SPEED_ASSIST_HEIGHT / 2 + y_offset,
-                        SPEED_ASSIST_HEIGHT, alpha)
-
-  @staticmethod
-  def _speed_assist_lift_fraction() -> float:
-    """The lift on the model's acceleration over the personality's approach ceiling, 0..1."""
-    sm = ui_state.sm
-    if not sm.valid['longitudinalPlanSP']:
-      return 0.0
-    boost = sm['longitudinalPlanSP'].zoompilot.e2eSetSpeed.boost
-    # the lift never goes negative, and the ceiling's floor is 0.5 m/s^2
-    return min(boost / approach_ceiling(sm['carState'].vEgo, sm['selfdriveState'].personality.raw), 1.0)
 
   def left_blind_spot_detected(self) -> bool:
     return self.blind_spot_indicators.left_detected
