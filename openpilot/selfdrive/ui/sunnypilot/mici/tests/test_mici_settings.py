@@ -1397,6 +1397,30 @@ class TestModelPathMode:
     assert len(drawn) == 1
     assert drawn[0] is {"lat_only": model_renderer.LAT_ONLY_PATH_GRADIENT, "stock": model_renderer.STOCK_PATH_GRADIENT, "accel": accel}[expected]
 
+  @pytest.mark.parametrize(("status", "dimmed"), [("ENGAGED", False), ("LAT_ONLY", False), ("OVERRIDE", False),
+                                                  ("LONG_ONLY", True), ("DISENGAGED", True)])
+  def test_wheel_dims_unless_steering(self, monkeypatch, status, dimmed):
+    # cruise on with lateral off (MADS longitudinal-only) dims like disengaged; override stays bright
+    from types import SimpleNamespace
+
+    import raylib_nb as rl
+    from openpilot.selfdrive.ui.mici.onroad import DIMMED_ICON_ALPHA, hud_renderer
+    from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
+
+    monkeypatch.setattr(ui_state, "status", UIStatus[status])
+    monkeypatch.setattr(ui_state, "started", True)
+    msgs = {'carState': SimpleNamespace(steeringAngleDeg=0.)}
+    monkeypatch.setattr(ui_state, "sm", type("SM", (), {"frame": 0, "__getitem__": lambda self, k: msgs[k]})())
+    drawn = []
+    monkeypatch.setattr(hud_renderer.rl, "draw_texture_pro", lambda tex, src, dst, origin, rot, color: drawn.append(color))
+    hud = hud_renderer.HudRenderer()
+    for frame in range(1, 200):
+      ui_state.sm.frame = frame
+      drawn.clear()
+      hud._draw_steering_wheel(rl.Rectangle(0, 0, 100, 240))
+    wheel = drawn[1]
+    assert wheel.a == pytest.approx(255 * (DIMMED_ICON_ALPHA if dimmed else 1.0), abs=2)
+
   @pytest.mark.parametrize(("status", "drawn_as"), [("LAT_ONLY", "ENGAGED"), ("LONG_ONLY", "DISENGAGED")])
   def test_status_fade_draws_mads_by_steering(self, monkeypatch, status, drawn_as):
     # lane lines, wheel and torque bar are green only while openpilot steers; the confidence ball keeps its own colors

@@ -207,7 +207,8 @@ class HudRenderer(Widget):
     glow = engaged + (1 - engaged) * critical
     wheel_txt = self._txt_wheel
 
-    if self._show_wheel_critical or ui_state.status != UIStatus.DISENGAGED:
+    # zoompilot: MADS longitudinal-only isn't steering, so it dims like disengaged
+    if self._show_wheel_critical or ui_state.status not in (UIStatus.DISENGAGED, UIStatus.LONG_ONLY):
       self._wheel_alpha_filter.update(255)
     else:
       self._wheel_alpha_filter.update(255 * DIMMED_ICON_ALPHA)
