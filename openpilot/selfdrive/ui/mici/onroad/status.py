@@ -13,8 +13,9 @@ from openpilot.system.ui.lib.application import gui_app
 STATUS_FADE_RC = 0.25
 OVERRIDE_HOLD = 0.3
 STATUSES = tuple(UIStatus)
-# sunnypilot: MADS lateral-only steers, so it draws as engaged; longitudinal-only doesn't, so as disengaged
-MADS_FOLD = {UIStatus.LAT_ONLY: UIStatus.ENGAGED, UIStatus.LONG_ONLY: UIStatus.DISENGAGED}
+# sunnypilot: MADS lateral-only steers, so it draws as engaged. Longitudinal-only draws as disengaged
+# wherever a caller doesn't name it
+MADS_FOLD = {UIStatus.LAT_ONLY: UIStatus.ENGAGED}
 
 
 def lerp_color(a: rl.Color, b: rl.Color, t: float) -> rl.Color:
@@ -51,7 +52,7 @@ class StatusFade:
     return float(self._update()[STATUSES.index(status)])
 
   def color(self, colors: dict[UIStatus, rl.Color]) -> rl.Color:
-    # sunnypilot: the folded MADS statuses carry no weight, so callers needn't name them
+    # sunnypilot: a MADS status the caller doesn't name draws as disengaged
     fallback = colors[UIStatus.DISENGAGED]
     rgba = sum(w * np.array([c.r, c.g, c.b, c.a], dtype=float) for w, c in zip(self._update(), (colors.get(s, fallback) for s in STATUSES), strict=True))
     return rl.Color(*np.round(rgba).astype(int).tolist())

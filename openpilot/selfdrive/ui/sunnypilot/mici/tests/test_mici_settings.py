@@ -1398,8 +1398,9 @@ class TestModelPathMode:
     assert drawn[0] is {"lat_only": model_renderer.LAT_ONLY_PATH_GRADIENT, "stock": model_renderer.STOCK_PATH_GRADIENT, "accel": accel}[expected]
 
   @pytest.mark.parametrize(("status", "drawn_as"), [("LAT_ONLY", "ENGAGED"), ("LONG_ONLY", "DISENGAGED")])
-  def test_status_fade_folds_mads_by_steering(self, monkeypatch, status, drawn_as):
+  def test_status_fade_draws_mads_by_steering(self, monkeypatch, status, drawn_as):
     # lane lines, wheel and torque bar are green only while openpilot steers; the confidence ball keeps its own colors
+    import raylib_nb as rl
     from openpilot.selfdrive.ui.mici.onroad.status import StatusFade
     from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
 
@@ -1408,7 +1409,10 @@ class TestModelPathMode:
     for frame in range(1, 200):
       ui_state.sm.frame = frame
       folded.weight(UIStatus.ENGAGED), raw.weight(UIStatus.ENGAGED)
-    assert folded.weight(UIStatus[drawn_as]) == pytest.approx(1.0, abs=0.01)
+    colors = {UIStatus.ENGAGED: rl.Color(0, 255, 64, 255), UIStatus.OVERRIDE: rl.Color(255, 255, 255, 255),
+              UIStatus.DISENGAGED: rl.Color(200, 200, 200, 255)}
+    drawn = folded.color(colors)
+    assert (drawn.r, drawn.g, drawn.b) == pytest.approx(tuple(getattr(colors[UIStatus[drawn_as]], c) for c in "rgb"), abs=2)
     assert raw.weight(UIStatus[status]) == pytest.approx(1.0, abs=0.01)
 
 
