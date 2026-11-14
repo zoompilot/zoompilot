@@ -45,7 +45,8 @@ fade  = interp(max(steer lat accel, v_ego^2 * max path curvature over 10 s), [0.
 
 The floor is chill mode's answer: the lower of the planner's own lead MPC candidate (this frame's
 solution, as the host takes it) and its cruise candidate, upstream's chill cruise law
-(`clip(v_target - v_ego, -0.5, ACCEL_MAX)` at upstream's cruise jerk) toward the target after SCC
+(`clip(v_target - v_ego, -0.5, ACCEL_MAX)` at upstream's cruise jerk, the gap smoothed over 1 s since
+openpilot #39266, 2026-11-14) toward the target after SCC
 vision, SCC map and SLA, and SCC's rebuild of it in a bend. The planner already takes the minimum
 over both, so the lift can never put the e2e candidate above them: with nothing to slow for,
 experimental mode drives and follows as chill does, on any car. Behind a lead that means the
@@ -67,16 +68,22 @@ lift, and slightly less time above the 0.42 kickdown point at 14-24 m/s (7.1% ag
 Since 2026-11-08 the pace is a jerk-limited arrival, capped at the speed's ceiling:
 
 ```
-approach = min(ceiling(v_ego), sqrt(2 * 0.065 * max(gap, 0)))
+approach = min(ceiling(v_ego), sqrt(2 * 0.065 * max(gap, 0)), gap)
 ```
 
-the acceleration that, eased off at 0.065 m/s^3, reaches the target with none left. Near the
-target upstream's cruise candidate, which the planner takes the minimum with, is the gentler of the
-two; it heads for the same target, since the planner lowers v_cruise to the SLA or SCC target
-before building it. Until 2026-11-09 a line at the cruise gain (1 /s) ran under 0.065 m/s, joined
-with the same slope; dropping it moves the pace by at most 0.017 m/s^2 after the minimum (45% of
-frames, 9b-a7), and the closed loop below is unchanged (from 5 m/s under 10.1 s against 10.2,
-overshoot 0.010 against 0.008; holding, flips over +-0.05 / +-0.02 0.0 / 5.5 a minute either way).
+the acceleration that, eased off at 0.065 m/s^3, reaches the target with none left, and within
+0.13 m/s of it the gap itself at 1 /s, a line through the target that goes negative over it. From
+2026-11-09 to 11-14 the gap line was left to upstream's cruise candidate, which the planner takes
+the minimum with and which then was that line; dropping it moved the pace by at most 0.017 m/s^2
+after the minimum (45% of frames, 9b-a7). openpilot #39266 (2026-11-14) smooths that candidate over
+1 s, so on a closing approach it lags the shrinking gap and no longer binds near the target. The
+line is back in the pace so the floor settles on the target by itself. In closed loop against the
+real planner and MPC (0.2 s dead time, 0.4 s lag): arrival overshoot 0.017 m/s with it against
+0.041 without, lift held on above the set speed on a +-0.3 m/s^2 grade swing 0.15 s per 120 s
+against 4.45, and plan jerk within 0.3 m/s of the target 0.13 m/s^3 (0.21 before #39266); launch,
+lead pull-away, engage under the target and bumps of 5 km/h or more are unchanged.
+Upstream's own regulation under the floor is softer since #39266: a 5 mph set-speed or SLA drop
+undershoots the new target by about 0.35 m/s (0.05 before), which the lift cannot change.
 On those drives the target is not v_cruise on 20% of frames (SLA or SCC); were the cruise
 candidate to head for v_cruise instead, a hold at a lower target flips as often under both laws
 (+-0.05: 3.0 a minute). It replaced a table of

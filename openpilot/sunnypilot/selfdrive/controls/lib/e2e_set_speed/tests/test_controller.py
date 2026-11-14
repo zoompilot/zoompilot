@@ -232,20 +232,29 @@ def test_approach_closes_small_gaps_gently():
 
 @pytest.mark.parametrize("v", [5., 15., 25.])
 def test_approach_is_continuous_at_the_target(v):
-  # no step where the car reaches the target: the pace falls smoothly to 0 and stays there
+  # no step where the car reaches the target: the pace falls smoothly through 0
   step = 1e-3
   gaps = np.linspace(-1., 10., 11001)
   paces = np.array([approach.approach_accel(v - g, v, STANDARD) for g in gaps])
   assert all(np.diff(paces) >= 0.)
   assert max(np.diff(paces)) <= np.sqrt(2 * approach.APPROACH_JERK * step) + 1e-9  # the root's steepest step, off the target
-  assert paces[gaps <= 0.].max() == 0.
+  assert approach.approach_accel(v, v, STANDARD) == 0.
+
+
+@pytest.mark.parametrize("gap", [0.01, 0.1])
+def test_approach_settles_on_the_gap_near_the_target(gap):
+  # inside 2 * jerk the pace is the gap at 1 /s, under the root, so the floor eases in by itself
+  for v in approach.APPROACH_BP:
+    assert approach.approach_accel(v - gap, v, STANDARD) == pytest.approx(gap)
+  assert approach.approach_accel(V_EGO - 0.2, V_EGO, STANDARD) == pytest.approx(np.sqrt(2 * approach.APPROACH_JERK * 0.2))
 
 
 @pytest.mark.parametrize("over", [0., 0.5, 5.])
-def test_approach_asks_nothing_at_or_over_the_target(over):
+def test_approach_pulls_back_over_the_target(over):
+  # over the target the pace is the gap, pulling back toward it however the cruise candidate lags
   for personality in (log.LongitudinalPersonality.relaxed, STANDARD, log.LongitudinalPersonality.aggressive):
     for v in approach.APPROACH_BP:
-      assert approach.approach_accel(v + over, v, personality) == 0.
+      assert approach.approach_accel(v + over, v, personality) == pytest.approx(-over)
 
 
 def test_approach_follows_the_personality():

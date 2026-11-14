@@ -59,18 +59,6 @@ def simulate(enabled, seconds=60., tau=50., brake_at=None, coast_at=None, plan_d
   return np.asarray(log)
 
 
-def chill_peak(seconds=60.):
-  """Top speed of the cruise candidate alone, from the model's pace."""
-  v, a_act, a_cruise = V_PREF, 0., 0.
-  peak = v
-  for _ in range(int(seconds / DT)):
-    a_cruise = get_cruise_accel(V_CRUISE, v, a_cruise, a_cruise, DT)
-    a_act += DT / ACTUATOR_TAU * (a_cruise - a_act)
-    v += a_act * DT
-    peak = max(peak, v)
-  return peak
-
-
 def deficit_mph(log, after):
   return (V_CRUISE - log[log[:, 0] >= after, 1]).max() * CV.MS_TO_MPH
 
@@ -84,8 +72,9 @@ def test_reaches_set_speed(tau, deficit):
   log = simulate(True, tau=tau)
   assert deficit_mph(log, after=40.) < deficit
   assert deficit_mph(log, after=40.) < 0.6 * deficit_mph(simulate(False, tau=tau), after=40.)
-  # no further past the set speed than chill mode's own cruise goes through the same lag
-  assert log[:, 1].max() <= chill_peak() + 1e-3
+  # arrives without passing the set speed: the approach pace runs to the gap's 1 s line, not the
+  # cruise candidate, which overshoots 0.9 m/s through the same lag since upstream's 1 s filter
+  assert log[:, 1].max() - V_CRUISE < 0.02  # 0.033 without the gap line
 
 
 def test_added_jerk_bounded():
@@ -142,5 +131,5 @@ def test_closes_a_shortfall_without_overshoot():
   log = simulate(True, seconds=40., v0=V_CRUISE - 5.)
   within = log[np.abs(V_CRUISE - log[:, 1]) < 0.2, 0]
   assert within[0] < 13.
-  assert log[:, 1].max() - V_CRUISE < 0.05
+  assert log[:, 1].max() - V_CRUISE < 0.02  # 0.033 without the gap line
   assert log[:, 4].max() <= approach_ceiling(V_CRUISE - 5., STANDARD) + 1e-6
