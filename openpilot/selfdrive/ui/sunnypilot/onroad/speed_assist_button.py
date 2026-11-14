@@ -11,7 +11,7 @@ selfdrived announces each switch.
 """
 import raylib_nb as rl
 
-from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import DIAL_HEIGHT, GREEN, IDLE, NEEDLE, SpeedAssistLift, draw_dial
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import DIAL_HEIGHT, SpeedAssistLift, draw_dial
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
 
@@ -50,12 +50,10 @@ class SpeedAssistButton(Widget):
 
     radius = self._rect.width / 2
     rl.draw_circle(center_x, center_y, radius, self._black_bg)
+    top = center_y - DIAL_HEIGHT * DIAL_SCALE / 2
+    lift = self._lift.update()  # 0 with the assist off
     if ui_state.speed_assist:
       rl.draw_ring(rl.Vector2(center_x, center_y), radius - RING_WIDTH, radius, 0, 360, 96, rl.fade(RING_COLOR, alpha))
-    lift = self._lift.update()
-    top = center_y - DIAL_HEIGHT * DIAL_SCALE / 2
-    if ui_state.speed_assist:
-      draw_dial(center_x, top, DIAL_SCALE, lift=lift, alpha=alpha, track=IDLE, needle=NEEDLE, lit=GREEN)
+      draw_dial(center_x, top, DIAL_SCALE, lift=lift, alpha=alpha)
     else:
-      dim = rl.Color(255, 255, 255, 255)
-      draw_dial(center_x, top, DIAL_SCALE, alpha=OFF_ALPHA * alpha, track=dim, needle=dim)
+      draw_dial(center_x, top, DIAL_SCALE, alpha=OFF_ALPHA * alpha, track=rl.WHITE, needle=rl.WHITE)

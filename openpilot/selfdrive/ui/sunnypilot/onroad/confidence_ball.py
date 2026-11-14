@@ -17,6 +17,7 @@ import raylib_nb as rl
 
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
 from openpilot.selfdrive.ui.onroad.hud_renderer import COLORS, UI_CONFIG
+from openpilot.selfdrive.ui.sunnypilot.onroad.augmented_road_view import BORDER_COLORS_SP
 from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
 from openpilot.selfdrive.ui.sunnypilot.onroad.long_indicator import SCALE, STACK_GAP, long_indicator_top
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
@@ -41,7 +42,7 @@ def _ball_colors(confidence: float) -> tuple[rl.Color, rl.Color]:
       return rl.Color(255, 200, 0, 255), rl.Color(255, 115, 0, 255)
     return rl.Color(255, 0, 21, 255), rl.Color(255, 0, 89, 255)
   if ui_state.status in (UIStatus.LAT_ONLY, UIStatus.LONG_ONLY):
-    color = ConfidenceBall.get_lat_long_dot_color()
+    color = BORDER_COLORS_SP[ui_state.status]
     return color, color
   if ui_state.status == UIStatus.OVERRIDE:
     return rl.Color(255, 255, 255, 255), rl.Color(82, 82, 82, 255)

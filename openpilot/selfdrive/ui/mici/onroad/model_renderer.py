@@ -11,7 +11,7 @@ from openpilot.selfdrive.ui.onroad.model_renderer import ModelRenderer as BaseMo
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.polygon import Gradient, draw_polygon
 
-from openpilot.selfdrive.ui.sunnypilot.mici.onroad.model_renderer import LANE_LINE_COLORS_SP, ModelRendererSP
+from openpilot.selfdrive.ui.sunnypilot.mici.onroad.model_renderer import ModelRendererSP
 
 LEAD_BAR_LENGTH = 12.0  # px
 LEAD_BAR_WIDTH = 1.8  # m
@@ -20,7 +20,6 @@ LANE_LINE_COLORS = {
   UIStatus.DISENGAGED: rl.Color(200, 200, 200, 255),
   UIStatus.OVERRIDE: rl.Color(255, 255, 255, 255),
   UIStatus.ENGAGED: rl.Color(0, 255, 64, 255),
-  **LANE_LINE_COLORS_SP,
 }
 
 
@@ -79,12 +78,13 @@ class ModelRenderer(BaseModelRenderer, ModelRendererSP):
     extrinsics_calibration = sm['extrinsicsCalibration']
     self._path_offset_z = extrinsics_calibration.height[0] if extrinsics_calibration.height else HEIGHT_INIT[0]
 
-    self._longitudinal_control = ui_state.long_engaged
+    if sm.updated['carParams']:
+      self._longitudinal_control = sm['carParams'].openpilotLongitudinalControl
 
     model = sm['modelV2']
     radar_state = sm['radarState'] if sm.valid['radarState'] else None
     lead_one = radar_state.leadOne if radar_state else None
-    render_lead_indicator = self._longitudinal_control and radar_state is not None
+    render_lead_indicator = self._longitudinal_control and ui_state.cruise_engaged and radar_state is not None  # not under MADS lateral-only
 
     # Update model data when needed
     model_updated = sm.updated['modelV2']

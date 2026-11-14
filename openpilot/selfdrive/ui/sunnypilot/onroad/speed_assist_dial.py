@@ -18,6 +18,8 @@ import numpy as np
 import raylib_nb as rl
 
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.selfdrive.ui.mici.onroad.hud_renderer import WHEEL_GREEN
+from openpilot.selfdrive.ui.mici.onroad.status import lerp_color
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_ceiling
 from openpilot.system.ui.lib.application import gui_app
@@ -36,28 +38,28 @@ NEEDLE_LENGTH = RADIUS - STROKE / 2 - NEEDLE_CLEARANCE  # centre to the tip's en
 DIAL_HEIGHT = RADIUS + STROKE / 2 + HUB_RADIUS  # ink: the arc's top to the hub's bottom
 ARRIVAL = (0.85, 1.0)                   # the lift over which the needle turns green
 SEGMENTS_PER_DEG = 1 / 5
+FILL_STEP = 0.5                         # degrees: the fill's end snaps to this so its outlines cache (0.14 px at scale 1)
 
-GREEN = rl.Color(0, 255, 64, 255)       # the wheel's
+GREEN = WHEEL_GREEN
 IDLE = rl.Color(255, 255, 255, round(255 * 0.35))  # an unlit distance bar
 NEEDLE = rl.Color(255, 255, 255, round(255 * 0.9))  # a lit one
 LIFT_RC = 0.3  # the lift lets go fast; ease it so the fill doesn't flicker
 
 
-def _half_disc(cx: float, cy: float, r: float, facing: float) -> list[tuple[float, float]]:
-  """the half circle bulging toward `facing` (radians), for round caps"""
-  return [(cx + r * math.cos(facing + q), cy + r * math.sin(facing + q)) for q in np.linspace(-math.pi / 2, math.pi / 2, 9)]
+def _ring(r: float, angles: np.ndarray) -> np.ndarray:
+  return np.column_stack((r * np.cos(angles), r * np.sin(angles)))
 
 
-@lru_cache(maxsize=32)
-def arc_outline(scale: float, a0: float, a1: float) -> np.ndarray:
-  """the arc's stroke from a0 to a1 degrees about the dial's centre, round caps at both ends"""
+# a fill sweep is about 270 snapped ends per scale, and only one device UI's scale runs at a time
+@lru_cache(maxsize=320)
+def arc_outline(scale: float, a1: float) -> np.ndarray:
+  """the arc's stroke from its start to a1 degrees about the dial's centre, round caps at both ends"""
   r, h = RADIUS * scale, STROKE * scale / 2
-  angles = np.radians(np.linspace(a0, a1, max(2, math.ceil((a1 - a0) * SEGMENTS_PER_DEG) + 1)))
-  outer = [((r + h) * math.cos(a), (r + h) * math.sin(a)) for a in angles]
-  inner = [((r - h) * math.cos(a), (r - h) * math.sin(a)) for a in angles[::-1]]
+  angles = np.radians(np.linspace(ARC_FROM, a1, max(2, math.ceil((a1 - ARC_FROM) * SEGMENTS_PER_DEG) + 1)))
+  cap = np.linspace(0, math.pi, 9)
   end, start = angles[-1], angles[0]
-  return np.array(outer + _half_disc(r * math.cos(end), r * math.sin(end), h, end + math.pi / 2) +
-                  inner + _half_disc(r * math.cos(start), r * math.sin(start), h, start - math.pi / 2), dtype=np.float32)
+  return np.vstack((_ring(r + h, angles), _ring(h, end + cap) + _ring(r, np.array([end])),
+                    _ring(r - h, angles[::-1]), _ring(h, start + math.pi + cap) + _ring(r, np.array([start])))).astype(np.float32)
 
 
 @lru_cache(maxsize=8)
@@ -78,10 +80,6 @@ def _faded(color: rl.Color, alpha: float) -> rl.Color:
   return rl.Color(color.r, color.g, color.b, round(color.a * alpha))
 
 
-def blend(a: rl.Color, b: rl.Color, t: float) -> rl.Color:
-  return rl.Color(*(round(x + (y - x) * t) for x, y in zip((a.r, a.g, a.b, a.a), (b.r, b.g, b.b, b.a), strict=True)))
-
-
 def fill_to(lift: float) -> float:
   """where the green ends, in degrees: from the arc's start to the needle"""
   return ARC_FROM + (NEEDLE_DEG - ARC_FROM) * float(np.clip(lift, 0.0, 1.0))
@@ -99,11 +97,10 @@ def draw_dial(cx: float, top: float, scale: float = 1.0, lift: float = 0.0, alph
   screen = rl.Rectangle(0, 0, gui_app.width, gui_app.height)
   centre = np.array([cx, top + (RADIUS + STROKE / 2) * scale], dtype=np.float32)
   key = round(scale, 3)
-  draw_polygon(screen, arc_outline(key, ARC_FROM, ARC_TO) + centre, color=_faded(track, alpha))
+  draw_polygon(screen, arc_outline(key, ARC_TO) + centre, color=_faded(track, alpha))
   if lift > 0.01:
-    # rounded to a tenth of a degree so the outline cache holds while the eased lift settles
-    draw_polygon(screen, arc_outline(key, ARC_FROM, round(fill_to(lift), 1)) + centre, color=_faded(lit, alpha))
-  draw_polygon(screen, needle_outline(key) + centre, color=_faded(blend(needle, lit, needle_level(lift)), alpha))
+    draw_polygon(screen, arc_outline(key, round(fill_to(lift) / FILL_STEP) * FILL_STEP) + centre, color=_faded(lit, alpha))
+  draw_polygon(screen, needle_outline(key) + centre, color=_faded(lerp_color(needle, lit, needle_level(lift)), alpha))
 
 
 def lift_fraction() -> float:
@@ -124,7 +121,3 @@ class SpeedAssistLift:
 
   def update(self) -> float:
     return self._filter.update(lift_fraction() if ui_state.speed_assist else 0.0)
-
-  @property
-  def x(self) -> float:
-    return self._filter.x

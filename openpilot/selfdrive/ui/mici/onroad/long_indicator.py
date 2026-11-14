@@ -6,15 +6,12 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import Widget
 
-from openpilot.selfdrive.ui.sunnypilot.mici.onroad.long_indicator import LongIndicatorSP
-
 HIGHLIGHT_TIME = 2.5  # seconds
 
 
-class LongIndicator(Widget, LongIndicatorSP):
+class LongIndicator(Widget):
   def __init__(self):
-    Widget.__init__(self)
-    LongIndicatorSP.__init__(self)
+    super().__init__()
     self._txt_lead_car = (self._texture('car', 35, 27), self._texture('car_green', 50, 42))
     self._txt_distance = [(self._texture('distance_1', 32, 7), self._texture('distance_1_green', 60, 35)),
                           (self._texture('distance_2', 40, 9), self._texture('distance_2_green', 68, 37)),
@@ -50,8 +47,6 @@ class LongIndicator(Widget, LongIndicatorSP):
     visible = self._should_draw
     dim = self._dim_filter.update(1.0 if ui_state.long_engaged else DIMMED_ICON_ALPHA / 0.9)
     alpha = self._alpha_filter.update(visible) * dim
-    if gui_app.sunnypilot_ui():
-      rect = self.render_speed_assist(rect, alpha)
     self._draw_lead_car(rect, alpha)
     self._draw_distance_bars(rect, alpha, visible)
 

@@ -12,6 +12,7 @@ rounded base make equal gaps look closer at the bottom.
 import raylib_nb as rl
 
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import DIAL_HEIGHT, SpeedAssistLift, draw_dial
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
@@ -26,16 +27,17 @@ STACK_SHIFT = DIAL_TOP + DIAL_HEIGHT + DIAL_GAP - STACK_TOP
 SLIDE_RC = 0.25  # the status fade's
 
 
-class LongIndicatorSP:
+class LongIndicatorSP(LongIndicator):
   def __init__(self):
+    super().__init__()
     self._speed_assist_filter = FirstOrderFilter(0.0, SLIDE_RC, 1 / gui_app.target_fps)
     self._speed_assist_lift = SpeedAssistLift()
 
-  def render_speed_assist(self, rect: rl.Rectangle, alpha: float) -> rl.Rectangle:
-    """Draw the dial and return the rect the car and bars draw in, shifted to make room."""
+  def _render(self, rect: rl.Rectangle) -> None:
     shown = self._speed_assist_filter.update(float(ui_state.speed_assist))
-    lift = self._speed_assist_lift.update()
     shift = STACK_SHIFT * shown
-    # it rides down with the stack and fades in as the stack makes room
-    draw_dial(rect.x + rect.width / 2, rect.y + DIAL_TOP + shift - STACK_SHIFT, lift=lift, alpha=alpha * shown)
-    return rl.Rectangle(rect.x, rect.y + shift, rect.width, rect.height)
+    super()._render(rl.Rectangle(rect.x, rect.y + shift, rect.width, rect.height))
+    # the dial rides down with the stack and fades in as the stack makes room, at the stack's own alpha
+    # (super() zeroes it when there is no openpilot longitudinal)
+    draw_dial(rect.x + rect.width / 2, rect.y + DIAL_TOP + shift - STACK_SHIFT, lift=self._speed_assist_lift.update(),
+              alpha=self._alpha_filter.x * self._dim_filter.x * shown)

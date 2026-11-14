@@ -4,18 +4,10 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-import raylib_nb as rl
-from openpilot.selfdrive.ui.ui_state import UIStatus
 from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import BlendfulRendererZP
 from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
 
 # green lane lines mean openpilot is steering: not with only longitudinal engaged
-LANE_LINE_COLORS_SP = {
-  UIStatus.LAT_ONLY: rl.Color(0, 255, 64, 255),
-  UIStatus.LONG_ONLY: rl.Color(200, 200, 200, 255),
-}
-
-
 class ModelRendererSP:
   def __init__(self):
     self.rainbow_path = RainbowPath()

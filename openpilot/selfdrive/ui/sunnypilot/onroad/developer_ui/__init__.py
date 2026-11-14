@@ -25,12 +25,12 @@ RIGHT_UNIT_SIZE = 28
 RIGHT_UNITS = ("m", "km/h", "mph", "m/s^2")
 
 
-def rasterize_text(font: rl.Font, text: str, font_size: int, x: int, y: int) -> np.ndarray:
-  """White text's coverage, at the window's scale. raylib draws on the CPU, straight into the screen, and has
-  no render textures: draw the text on the screen at (x, y), copy it out and put the pixels back. Call it
-  during a frame (the window's scale is set there), with (x, y) inside any scissor."""
+def load_text_texture(font: rl.Font, text: str, font_size: int, x: int, y: int) -> rl.Texture:
+  """White text as a texture, so it can be drawn rotated with draw_texture_pro. raylib draws on the CPU,
+  straight into the screen, with no render textures: draw the text at (x, y), copy it out and put the pixels
+  back. Call it during a frame, with (x, y) inside any scissor."""
   size = measure_text_cached(font, text, font_size)
-  screen = rl.cpu.screen()  # rows bottom-up
+  screen = rl.cpu.screen()  # rows bottom-up, at the window's scale
   px = screen.shape[1] / gui_app.width
   left, right = math.floor(x * px), math.ceil((x + size.x) * px)
   top, bottom = math.floor(y * px), math.ceil((y + size.y) * px)
@@ -38,23 +38,14 @@ def rasterize_text(font: rl.Font, text: str, font_size: int, x: int, y: int) -> 
   saved = area.copy()
   area[:] = 0
   rl.draw_text_ex(font, text, rl.Vector2(x, y), font_size, 0, rl.WHITE)
-  coverage = area[::-1, :, 0].copy()
+  rgba = np.full((*area.shape[:2], 4), 255, dtype=np.uint8)
+  rgba[..., 3] = area[::-1, :, 0]
   area[:] = saved
-  return coverage
 
-
-def load_text_texture(font: rl.Font, text: str, font_size: int, x: int, y: int) -> rl.Texture:
-  """Rasterize white text into a texture, so it can be drawn rotated with draw_texture_pro."""
-  coverage = rasterize_text(font, text, font_size, x, y)
-  height, width = coverage.shape
-  rgba = np.full((height, width, 4), 255, dtype=np.uint8)
-  rgba[..., 3] = coverage
-  texture = rl.load_texture_from_image(rl.Image(rgba, width, height, 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8))
+  texture = rl.load_texture_from_image(rl.Image(rgba, rgba.shape[1], rgba.shape[0], 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8))
   rl.set_texture_filter(texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
   rl.set_texture_wrap(texture, rl.TextureWrap.TEXTURE_WRAP_CLAMP)
-  # drawn at the text's size, whatever the window's scale
-  size = measure_text_cached(font, text, font_size)
-  texture.width, texture.height = math.ceil(size.x), math.ceil(size.y)
+  texture.width, texture.height = math.ceil(size.x), math.ceil(size.y)  # drawn at the text's size, whatever the window's scale
   return texture
 
 

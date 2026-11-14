@@ -21,15 +21,14 @@ HOME_DIAL_SCALE = 1.25  # 44 px wide and 26 tall, centred like the gear and netw
 
 class SpeedAssistIcon(Widget):
   """The dial, white, centred in a footer icon's 40 px."""
-  def __init__(self, height: int = STATUS_ICON_HEIGHT):
+  def __init__(self):
     super().__init__()
-    self.set_rect(rl.Rectangle(0, 0, round(DIAL_WIDTH * HOME_DIAL_SCALE), float(height)))
+    self.set_rect(rl.Rectangle(0, 0, round(DIAL_WIDTH * HOME_DIAL_SCALE), STATUS_ICON_HEIGHT))
     self.set_enabled(False)
 
   def _render(self, _) -> None:
-    white = rl.Color(255, 255, 255, round(255 * STATUS_ICON_ALPHA))
     top = self._rect.y + (self._rect.height - DIAL_HEIGHT * HOME_DIAL_SCALE) / 2
-    draw_dial(self._rect.x + self._rect.width / 2, top, HOME_DIAL_SCALE, track=white, needle=white)
+    draw_dial(self._rect.x + self._rect.width / 2, top, HOME_DIAL_SCALE, alpha=STATUS_ICON_ALPHA, track=rl.WHITE, needle=rl.WHITE)
 
 
 # alpha longitudinal: upstream's onroad car over three bars (car 35 wide, bars 32/40/48), on whole

@@ -13,6 +13,8 @@ from openpilot.system.ui.lib.application import gui_app
 STATUS_FADE_RC = 0.25
 OVERRIDE_HOLD = 0.3
 STATUSES = tuple(UIStatus)
+# sunnypilot: MADS lateral-only steers, so it draws as engaged; longitudinal-only doesn't, so as disengaged
+MADS_FOLD = {UIStatus.LAT_ONLY: UIStatus.ENGAGED, UIStatus.LONG_ONLY: UIStatus.DISENGAGED}
 
 
 def lerp_color(a: rl.Color, b: rl.Color, t: float) -> rl.Color:
@@ -21,7 +23,8 @@ def lerp_color(a: rl.Color, b: rl.Color, t: float) -> rl.Color:
 
 class StatusFade:
   """ui_state.status as weights, stepped once per frame"""
-  def __init__(self):
+  def __init__(self, fold: bool = True):
+    self._fold = fold
     self._weights: FirstOrderFilter | None = None
     self._frame = -1
     self._override_time = float('-inf')
@@ -30,10 +33,11 @@ class StatusFade:
     if self._weights is None or ui_state.sm.frame != self._frame:
       self._frame = ui_state.sm.frame
       now = rl.get_time()
-      if ui_state.status == UIStatus.OVERRIDE:
+      current = MADS_FOLD.get(ui_state.status, ui_state.status) if self._fold else ui_state.status
+      if current == UIStatus.OVERRIDE:
         self._override_time = now
-      held = ui_state.status == UIStatus.ENGAGED and now - self._override_time < OVERRIDE_HOLD
-      status = UIStatus.OVERRIDE if held else ui_state.status
+      held = current == UIStatus.ENGAGED and now - self._override_time < OVERRIDE_HOLD
+      status = UIStatus.OVERRIDE if held else current
       target = np.array([status == s for s in STATUSES], dtype=float)
       if self._weights is None:
         self._weights = FirstOrderFilter(target, STATUS_FADE_RC, 1 / gui_app.target_fps)
@@ -47,10 +51,11 @@ class StatusFade:
     return float(self._update()[STATUSES.index(status)])
 
   def color(self, colors: dict[UIStatus, rl.Color]) -> rl.Color:
-    # sunnypilot: a status the caller doesn't name (MADS lateral-only, longitudinal-only) draws as disengaged
+    # sunnypilot: the folded MADS statuses carry no weight, so callers needn't name them
     fallback = colors[UIStatus.DISENGAGED]
     rgba = sum(w * np.array([c.r, c.g, c.b, c.a], dtype=float) for w, c in zip(self._update(), (colors.get(s, fallback) for s in STATUSES), strict=True))
     return rl.Color(*np.round(rgba).astype(int).tolist())
 
 
 status_fade = StatusFade()
+status_fade_mads = StatusFade(fold=False)  # sunnypilot: the confidence ball's own lateral-only and longitudinal-only colors
