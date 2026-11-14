@@ -1276,52 +1276,75 @@ class TestModelsPanelMici:
     assert options.camera_offset.value == "-0.05 m"
 
 
-class TestSpeedAssistBadge:
-  """The Set Speed Assist badge comes and goes with the long indicator."""
+class TestSpeedAssistChevrons:
+  """Set Speed Assist's chevrons over mici's long indicator: shown with the assist on, the stack shifted to
+  make room, and each chevron greening in turn with the lift."""
 
-  def _settle(self, hud, monkeypatch, frames=200):
+  def test_levels_fade_the_lower_then_the_upper(self):
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import chevron_levels
+    assert chevron_levels(0.0) == (0.0, 0.0)
+    assert chevron_levels(0.25) == (0.5, 0.0)
+    assert chevron_levels(0.5) == (1.0, 0.0)
+    assert chevron_levels(0.75) == (1.0, 0.5)
+    assert chevron_levels(1.0) == (1.0, 1.0)
+
+  def test_outline_is_one_closed_shape_inside_its_box(self):
+    import numpy as np
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import chevron_outline
+    pts = chevron_outline(26.0, 10.0, 4.5)
+    assert np.allclose([pts[:, 0].min(), pts[:, 0].max(), pts[:, 1].min(), pts[:, 1].max()], [-13, 13, 0, 10], atol=0.05)
+
+  def test_even_gaps_between_the_dm_chevrons_stack_and_wheel(self):
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import PAIR_HEIGHT
+    stack_top = li.STACK_TOP + li.STACK_SHIFT
+    gaps = (li.CHEVRONS_TOP - li.DM_BOTTOM, stack_top - (li.CHEVRONS_TOP + PAIR_HEIGHT), li.WHEEL_TOP - (stack_top + li.STACK_HEIGHT))
+    assert max(gaps) - min(gaps) < 1e-6 and gaps[0] > 6
+
+  @pytest.mark.parametrize("speed_assist", [True, False])
+  def test_stack_shifts_only_with_the_assist(self, params, monkeypatch, speed_assist):
     import raylib_nb as rl
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import hud_renderer
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    monkeypatch.setattr(ui_state, "speed_assist", speed_assist)
     drawn = []
-    monkeypatch.setattr(hud_renderer, "draw_gauge_centered", lambda *a: drawn.append(a))
-    for _ in range(frames):
-      hud._draw_speed_assist(rl.Rectangle(0, 0, 536, 240))
-    return drawn
-
-  @pytest.mark.parametrize(("long_engaged", "chestnut", "shown"), [
-    (True, "DISCONNECTED", True),
-    (False, "DISCONNECTED", False),  # disengaged or MADS lateral-only: leaves with the long indicator
-    (True, "LOADING", True),  # the model icon has its own corner, bottom left
-    (True, "ACTIVE", True),
-  ])
-  def test_follows_long_engaged(self, params, monkeypatch, long_engaged, chestnut, shown):
-    import raylib_nb as rl
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
-
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: long_engaged))
-    monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState[chestnut])
-    hud = HudRendererSP()
-    hud._chestnut_fade_time = rl.get_time()
-    drawn = self._settle(hud, monkeypatch)
-    if shown:
-      assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA_IDLE, abs=0.02)
+    monkeypatch.setattr(li, "draw_chevrons", lambda cx, top, **kw: drawn.append((top, kw)))
+    sp = li.LongIndicatorSP()
+    rect = rl.Rectangle(0, 0, 72, 240)
+    for _ in range(200):
+      shifted = sp.render_speed_assist(rect, 1.0)
+    if speed_assist:
+      assert shifted.y == pytest.approx(li.STACK_SHIFT, abs=0.05)
+      assert drawn[-1][0] == pytest.approx(li.CHEVRONS_TOP, abs=0.05)
     else:
-      assert not drawn
+      assert shifted.y == pytest.approx(0.0) and not drawn
 
-  @pytest.mark.parametrize("fraction", [0.5, 1.0])
-  def test_brightens_with_the_lift(self, params, monkeypatch, fraction):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, SPEED_ASSIST_ALPHA_LIFT, HudRendererSP
-    expected = SPEED_ASSIST_ALPHA_IDLE + (SPEED_ASSIST_ALPHA_LIFT - SPEED_ASSIST_ALPHA_IDLE) * fraction
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
+  def test_lift_greens_the_chevrons(self, params, monkeypatch):
+    import raylib_nb as rl
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_chevrons as sac
+    from openpilot.selfdrive.ui.ui_state import ui_state
 
     monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.DISCONNECTED)
-    monkeypatch.setattr(HudRendererSP, "_speed_assist_lift_fraction", staticmethod(lambda: fraction))
-    drawn = self._settle(HudRendererSP(), monkeypatch)
-    assert drawn and drawn[-1][3] == pytest.approx(expected, abs=0.02)
+    monkeypatch.setattr(sac, "lift_fraction", lambda: 0.75)
+    drawn = []
+    monkeypatch.setattr(li, "draw_chevrons", lambda cx, top, **kw: drawn.append(kw))
+    sp = li.LongIndicatorSP()
+    for _ in range(300):
+      sp.render_speed_assist(rl.Rectangle(0, 0, 72, 240), 1.0)
+    assert drawn[-1]["lift"] == pytest.approx(0.75, abs=0.01)
+
+  def test_lift_is_zero_without_openpilot_longitudinal(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_chevrons as sac
+    from openpilot.selfdrive.ui.ui_state import UIState
+    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: False))
+    assert sac.lift_fraction() == 0.0
+
+  def test_chevrons_draw(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import draw_chevrons
+    for lift in (0.0, 0.4, 1.0):
+      draw_chevrons(36, 71, lift=lift)
 
 
 class TestModelPathMode:
@@ -1366,9 +1389,9 @@ class TestModelPathMode:
     from openpilot.selfdrive.ui.mici.onroad.model_renderer import LANE_LINE_COLORS
     from openpilot.selfdrive.ui.ui_state import UIStatus
 
-    green = LANE_LINE_COLORS[UIStatus.ENGAGED]
-    assert LANE_LINE_COLORS[UIStatus.LAT_ONLY] == green
-    assert LANE_LINE_COLORS[UIStatus.LONG_ONLY] != green
+    rgb = {status: (c.r, c.g, c.b) for status, c in LANE_LINE_COLORS.items()}
+    assert rgb[UIStatus.LAT_ONLY] == rgb[UIStatus.ENGAGED]
+    assert rgb[UIStatus.LONG_ONLY] != rgb[UIStatus.ENGAGED]
 
 
 class TestCurveSpeed:
