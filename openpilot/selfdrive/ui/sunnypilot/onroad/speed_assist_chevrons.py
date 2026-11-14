@@ -4,7 +4,7 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Set Speed Assist's mark: two chevrons, the upper one narrower like the distance bars under them. On mici
+Set Speed Assist's mark: two steep chevrons, the upper one narrower like the distance bars under them. On mici
 they sit over the lead car in the side panel, grey while armed; the lift on the model's acceleration
 fades the lower one green over the first half of the personality's approach ceiling and the upper one
 over the second. Each chevron is one outline (round ends, a round outer tip), so a translucent colour
@@ -22,11 +22,12 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import a
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.polygon import draw_polygon
 
-# at scale 1: the pair is 18 px of ink, sized to the side panel's lead car (35 wide)
-LOWER_WIDTH, UPPER_WIDTH = 26.0, 21.0
-CHEVRON_HEIGHT = 10.0
-STROKE = 4.5
-PITCH = 8.0  # top to top
+# at scale 1: the pair is 21.5 px of ink, sized to the side panel's lead car (35 wide). Steep enough to
+# read as up rather than a brow at that size, the stroke near the car's outline
+LOWER_WIDTH, UPPER_WIDTH = 24.0, 20.0
+CHEVRON_HEIGHT = 12.0
+STROKE = 4.0
+PITCH = 9.5  # top to top
 PAIR_HEIGHT = CHEVRON_HEIGHT + PITCH
 CAP_SEGMENTS = 8
 
