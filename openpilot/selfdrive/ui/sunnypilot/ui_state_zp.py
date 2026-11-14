@@ -71,11 +71,16 @@ class UIStateZP:
     return jetlink_adapter.chestnut_cable(self.usb_connected)
 
   @property
+  def cruise_engaged(self) -> bool:
+    """Cruise is engaged: openpilot's longitudinal, or the car's own ACC with openpilot steering.
+    False under MADS lateral-only."""
+    return self.sm.recv_frame['selfdriveState'] >= self.started_frame and self.sm['selfdriveState'].enabled
+
+  @property
   def long_engaged(self) -> bool:
     """openpilot is driving longitudinal right now. Not under MADS lateral-only, and not on a car
     whose stock radar is still in charge (Mazda alpha long before the takeover blocks engaging)."""
-    return (self.has_longitudinal_control and self.sm.recv_frame['selfdriveState'] >= self.started_frame and
-            self.sm['selfdriveState'].enabled)
+    return self.has_longitudinal_control and self.cruise_engaged
 
   @property
   def speed_assist_active(self) -> bool:

@@ -1324,6 +1324,53 @@ class TestSpeedAssistBadge:
     assert drawn and drawn[-1][3] == pytest.approx(expected, abs=0.02)
 
 
+class TestModelPathMode:
+  """The path's color is the longitudinal state: grey under MADS lateral-only, green with the car's own
+  ACC engaged, the acceleration colors with openpilot longitudinal."""
+
+  @pytest.mark.parametrize(("status", "cruise", "op_long", "expected"), [
+    ("DISENGAGED", False, False, "black"),
+    ("LAT_ONLY", False, False, "lat_only"),
+    ("LAT_ONLY", False, True, "lat_only"),  # alpha long fitted, cruise not engaged
+    ("OVERRIDE", False, True, "lat_only"),  # steering override under MADS lateral-only
+    ("ENGAGED", True, False, "stock"),
+    ("ENGAGED", True, True, "accel"),
+    ("LONG_ONLY", True, True, "accel"),
+  ])
+  def test_path_follows_longitudinal(self, params, monkeypatch, status, cruise, op_long, expected):
+    import numpy as np
+    import raylib_nb as rl
+    from openpilot.selfdrive.ui.mici.onroad import model_renderer
+    from openpilot.selfdrive.ui.ui_state import UIState, UIStatus, ui_state
+    from openpilot.system.ui.lib.polygon import Gradient
+
+    monkeypatch.setattr(ui_state, "status", UIStatus[status])
+    monkeypatch.setattr(ui_state, "rainbow_path", False)
+    monkeypatch.setattr(UIState, "cruise_engaged", property(lambda _: cruise))
+    drawn = []
+    monkeypatch.setattr(model_renderer, "draw_polygon", lambda rect, pts, color=None, gradient=None: drawn.append(color or gradient))
+    renderer = model_renderer.ModelRenderer()
+    renderer._rect = rl.Rectangle(0, 0, 464, 240)
+    renderer._path.projected_points = np.zeros((4, 2), dtype=np.float32)
+    renderer._longitudinal_control = cruise and op_long
+    accel = Gradient(start=(0.0, 1.0), end=(0.0, 0.0), colors=[rl.WHITE, rl.WHITE], stops=[0.0, 1.0])
+    renderer._path_gradient = accel
+    renderer._draw_path()
+    assert len(drawn) == 1
+    if expected == "black":
+      assert (drawn[0].r, drawn[0].g, drawn[0].b) == (0, 0, 0)
+    else:
+      assert drawn[0] is {"lat_only": model_renderer.LAT_ONLY_PATH_GRADIENT, "stock": model_renderer.STOCK_PATH_GRADIENT, "accel": accel}[expected]
+
+  def test_lane_lines_are_green_only_while_steering(self):
+    from openpilot.selfdrive.ui.mici.onroad.model_renderer import LANE_LINE_COLORS
+    from openpilot.selfdrive.ui.ui_state import UIStatus
+
+    green = LANE_LINE_COLORS[UIStatus.ENGAGED]
+    assert LANE_LINE_COLORS[UIStatus.LAT_ONLY] == green
+    assert LANE_LINE_COLORS[UIStatus.LONG_ONLY] != green
+
+
 class TestCurveSpeed:
   """One multi toggle after the two Slow for Curves toggles; grey with both of them off."""
 

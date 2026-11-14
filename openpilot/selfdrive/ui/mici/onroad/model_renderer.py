@@ -9,7 +9,7 @@ from openpilot.selfdrive.ui.mici.onroad import blend_colors
 from openpilot.selfdrive.ui.mici.onroad.status import status_fade
 from openpilot.selfdrive.ui.onroad.model_renderer import ModelRenderer as BaseModelRenderer, CLIP_MARGIN, MAX_DRAW_DISTANCE, STOCK_PATH_GRADIENT
 from openpilot.system.ui.lib.application import gui_app
-from openpilot.system.ui.lib.polygon import draw_polygon
+from openpilot.system.ui.lib.polygon import Gradient, draw_polygon
 
 from openpilot.selfdrive.ui.sunnypilot.mici.onroad.model_renderer import LANE_LINE_COLORS_SP, ModelRendererSP
 
@@ -22,6 +22,16 @@ LANE_LINE_COLORS = {
   UIStatus.ENGAGED: rl.Color(0, 255, 64, 255),
   **LANE_LINE_COLORS_SP,
 }
+
+
+# zoompilot: the path under MADS lateral-only, STOCK_PATH_GRADIENT's shape without its green.
+# The path's color is the longitudinal state; the lane lines, wheel and torque bar are the lateral one
+LAT_ONLY_PATH_GRADIENT = Gradient(
+  start=(0.0, 1.0),
+  end=(0.0, 0.0),
+  colors=[rl.Color(255, 255, 255, 102), rl.Color(255, 255, 255, 89), rl.Color(255, 255, 255, 0)],
+  stops=[0.0, 0.5, 1.0],
+)
 
 
 class LeadVehicle:
@@ -195,6 +205,9 @@ class ModelRenderer(BaseModelRenderer, ModelRendererSP):
 
     if ui_state.status == UIStatus.DISENGAGED:
       draw_polygon(self._rect, path_pts, rl.Color(0, 0, 0, 90))
+    elif not ui_state.cruise_engaged:
+      # MADS lateral-only: nobody is driving the speed, so no green and no acceleration colors
+      draw_polygon(self._rect, path_pts, gradient=LAT_ONLY_PATH_GRADIENT)
     elif not self._longitudinal_control:
       draw_polygon(self._rect, path_pts, gradient=STOCK_PATH_GRADIENT)
     elif len(self._path_gradient.colors) > 1:

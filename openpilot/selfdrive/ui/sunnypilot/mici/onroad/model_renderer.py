@@ -9,9 +9,10 @@ from openpilot.selfdrive.ui.ui_state import UIStatus
 from openpilot.selfdrive.ui.sunnypilot.onroad.blendful_zp import BlendfulRendererZP
 from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
 
+# green lane lines mean openpilot is steering: not with only longitudinal engaged
 LANE_LINE_COLORS_SP = {
   UIStatus.LAT_ONLY: rl.Color(0, 255, 64, 255),
-  UIStatus.LONG_ONLY: rl.Color(0, 255, 64, 255),
+  UIStatus.LONG_ONLY: rl.Color(200, 200, 200, 255),
 }
 
 
