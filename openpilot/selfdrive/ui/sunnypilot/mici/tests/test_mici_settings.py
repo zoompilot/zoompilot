@@ -1276,30 +1276,43 @@ class TestModelsPanelMici:
     assert options.camera_offset.value == "-0.05 m"
 
 
-class TestSpeedAssistChevrons:
-  """Set Speed Assist's chevrons over mici's long indicator: shown with the assist on, the stack shifted to
-  make room, and each chevron greening in turn with the lift."""
+class TestSpeedAssistDial:
+  """Set Speed Assist's dial over mici's long indicator: shown with the assist on, the stack shifted to make
+  room, and the arc filling toward the parked needle with the lift."""
 
-  def test_levels_fade_the_lower_then_the_upper(self):
-    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import chevron_levels
-    assert chevron_levels(0.0) == (0.0, 0.0)
-    assert chevron_levels(0.25) == (0.5, 0.0)
-    assert chevron_levels(0.5) == (1.0, 0.0)
-    assert chevron_levels(0.75) == (1.0, 0.5)
-    assert chevron_levels(1.0) == (1.0, 1.0)
+  def test_fill_runs_from_the_arc_start_to_the_needle(self):
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
+    assert d.fill_to(0.0) == d.ARC_FROM
+    assert d.fill_to(1.0) == d.NEEDLE_DEG
+    assert d.fill_to(0.5) == (d.ARC_FROM + d.NEEDLE_DEG) / 2
+    assert d.fill_to(2.0) == d.NEEDLE_DEG
 
-  def test_outline_is_one_closed_shape_inside_its_box(self):
+  def test_needle_turns_green_only_on_arrival(self):
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import needle_level
+    assert needle_level(0.0) == needle_level(0.8) == 0.0
+    assert 0.0 < needle_level(0.92) < 1.0
+    assert needle_level(1.0) == 1.0
+
+  def test_dial_matches_the_car(self):
     import numpy as np
-    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import chevron_outline
-    pts = chevron_outline(26.0, 10.0, 4.5)
-    assert np.allclose([pts[:, 0].min(), pts[:, 0].max(), pts[:, 1].min(), pts[:, 1].max()], [-13, 13, 0, 10], atol=0.05)
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
+    arc = d.arc_outline(1.0, d.ARC_FROM, d.ARC_TO)
+    assert np.isclose(arc[:, 0].max() - arc[:, 0].min(), 35.0, atol=0.05)  # the lead car's width
+    needle = d.needle_outline(1.0)
+    top = -(d.RADIUS + d.STROKE / 2)
+    assert np.isclose(min(arc[:, 1].min(), needle[:, 1].min()), top, atol=0.05)
+    assert np.isclose(max(arc[:, 1].max(), needle[:, 1].max()) - top, d.DIAL_HEIGHT, atol=0.05)
+    # the needle stops short of the arc's inner edge
+    assert np.hypot(needle[:, 0], needle[:, 1]).max() <= d.RADIUS - d.STROKE / 2 - d.NEEDLE_CLEARANCE + 0.05
 
-  def test_even_gaps_between_the_dm_chevrons_stack_and_wheel(self):
+  def test_group_sits_centred_with_the_bars_pitch_inside(self):
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import PAIR_HEIGHT
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import DIAL_HEIGHT
     stack_top = li.STACK_TOP + li.STACK_SHIFT
-    gaps = (li.CHEVRONS_TOP - li.DM_BOTTOM, stack_top - (li.CHEVRONS_TOP + PAIR_HEIGHT), li.WHEEL_TOP - (stack_top + li.STACK_HEIGHT))
-    assert max(gaps) - min(gaps) < 1e-6 and gaps[0] > 6
+    assert stack_top - (li.DIAL_TOP + DIAL_HEIGHT) == li.DIAL_GAP
+    top, bottom = li.DIAL_TOP - li.DM_BOTTOM, li.WHEEL_TOP - (stack_top + li.STACK_HEIGHT)
+    assert bottom - top == 2 * li.OPTICAL_LIFT and top >= li.DIAL_GAP
+    assert stack_top == int(stack_top)  # the shifted car lands on whole pixels
 
   @pytest.mark.parametrize("speed_assist", [True, False])
   def test_stack_shifts_only_with_the_assist(self, params, monkeypatch, speed_assist):
@@ -1309,42 +1322,41 @@ class TestSpeedAssistChevrons:
 
     monkeypatch.setattr(ui_state, "speed_assist", speed_assist)
     drawn = []
-    monkeypatch.setattr(li, "draw_chevrons", lambda cx, top, **kw: drawn.append((top, kw)))
+    monkeypatch.setattr(li, "draw_dial", lambda cx, top, **kw: drawn.append((top, kw)))
     sp = li.LongIndicatorSP()
-    rect = rl.Rectangle(0, 0, 72, 240)
     for _ in range(200):
-      shifted = sp.render_speed_assist(rect, 1.0)
+      shifted = sp.render_speed_assist(rl.Rectangle(0, 0, 72, 240), 1.0)
     if speed_assist:
       assert shifted.y == pytest.approx(li.STACK_SHIFT, abs=0.05)
-      assert drawn[-1][0] == pytest.approx(li.CHEVRONS_TOP, abs=0.05)
+      assert drawn[-1][0] == pytest.approx(li.DIAL_TOP, abs=0.05) and drawn[-1][1]["alpha"] == pytest.approx(1.0, abs=0.01)
     else:
-      assert shifted.y == pytest.approx(0.0) and not drawn
+      assert shifted.y == pytest.approx(0.0) and drawn[-1][1]["alpha"] == pytest.approx(0.0)
 
-  def test_lift_greens_the_chevrons(self, params, monkeypatch):
+  def test_lift_fills_the_dial(self, params, monkeypatch):
     import raylib_nb as rl
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_chevrons as sac
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
     from openpilot.selfdrive.ui.ui_state import ui_state
 
     monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(sac, "lift_fraction", lambda: 0.75)
+    monkeypatch.setattr(d, "lift_fraction", lambda: 0.75)
     drawn = []
-    monkeypatch.setattr(li, "draw_chevrons", lambda cx, top, **kw: drawn.append(kw))
+    monkeypatch.setattr(li, "draw_dial", lambda cx, top, **kw: drawn.append(kw))
     sp = li.LongIndicatorSP()
     for _ in range(300):
       sp.render_speed_assist(rl.Rectangle(0, 0, 72, 240), 1.0)
     assert drawn[-1]["lift"] == pytest.approx(0.75, abs=0.01)
 
   def test_lift_is_zero_without_openpilot_longitudinal(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_chevrons as sac
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
     from openpilot.selfdrive.ui.ui_state import UIState
     monkeypatch.setattr(UIState, "long_engaged", property(lambda _: False))
-    assert sac.lift_fraction() == 0.0
+    assert d.lift_fraction() == 0.0
 
-  def test_chevrons_draw(self, params):
-    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import draw_chevrons
-    for lift in (0.0, 0.4, 1.0):
-      draw_chevrons(36, 71, lift=lift)
+  def test_dial_draws(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import draw_dial
+    for lift in (0.0, 0.005, 0.4, 1.0):
+      draw_dial(36, 71, lift=lift)
 
 
 class TestModelPathMode:

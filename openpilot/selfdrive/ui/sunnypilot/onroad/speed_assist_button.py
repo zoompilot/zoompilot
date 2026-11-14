@@ -5,17 +5,17 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
 The tizi onroad Set Speed Assist button, in the corner and shape of comma's ExpButton, which
-upstream retired with chill mode: mici's chevrons, dimmed with the assist off, white in a green ring
-with it on and greening with the lift, so the button names what it switches either way. No
-confirmation gate; selfdrived announces each switch.
+upstream retired with chill mode: mici's dial, dimmed with the assist off, in a green ring with it on
+and filling with the lift, so the button names what it switches either way. No confirmation gate;
+selfdrived announces each switch.
 """
 import raylib_nb as rl
 
-from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_chevrons import PAIR_HEIGHT, SpeedAssistLift, draw_chevrons
+from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import DIAL_HEIGHT, GREEN, IDLE, NEEDLE, SpeedAssistLift, draw_dial
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
 
-CHEVRON_SCALE = 3.0  # 78 px wide, inside the ring
+DIAL_SCALE = 3.0  # 105 px wide, inside the ring
 OFF_ALPHA = 0.35
 RING_WIDTH = 8
 RING_COLOR = rl.Color(0x16, 0x7F, 0x40, 0xFF)  # the engaged border's green (augmented_road_view)
@@ -53,6 +53,9 @@ class SpeedAssistButton(Widget):
     if ui_state.speed_assist:
       rl.draw_ring(rl.Vector2(center_x, center_y), radius - RING_WIDTH, radius, 0, 360, 96, rl.fade(RING_COLOR, alpha))
     lift = self._lift.update()
-    white = rl.Color(255, 255, 255, round(255 * (alpha if ui_state.speed_assist else OFF_ALPHA * alpha)))
-    draw_chevrons(center_x, center_y - PAIR_HEIGHT * CHEVRON_SCALE / 2, CHEVRON_SCALE, lift=lift, idle=white,
-                  lit=rl.Color(0, 255, 64, round(255 * alpha)))
+    top = center_y - DIAL_HEIGHT * DIAL_SCALE / 2
+    if ui_state.speed_assist:
+      draw_dial(center_x, top, DIAL_SCALE, lift=lift, alpha=alpha, track=IDLE, needle=NEEDLE, lit=GREEN)
+    else:
+      dim = rl.Color(255, 255, 255, 255)
+      draw_dial(center_x, top, DIAL_SCALE, alpha=OFF_ALPHA * alpha, track=dim, needle=dim)
