@@ -1276,123 +1276,19 @@ class TestModelsPanelMici:
     assert options.camera_offset.value == "-0.05 m"
 
 
-class TestSpeedAssistSetSpeed:
-  """Set Speed Assist over mici's long indicator: the set speed above the car with the assist on, the stack
-  shifted to make room, green while the assist lifts."""
-
-  def test_layout_lands_on_whole_pixels(self):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    stack_top = li.STACK_TOP + li.STACK_SHIFT
-    assert li.NUMBER_TOP == int(li.NUMBER_TOP) and stack_top == int(stack_top)
-    # centred between the driver monitor and the wheel, the optical lift aside
-    top_gap, bottom_gap = li.NUMBER_TOP - li.DM_BOTTOM, li.WHEEL_TOP - (stack_top + li.STACK_HEIGHT)
-    assert bottom_gap - top_gap == 2 * li.OPTICAL_LIFT
-
-  def test_three_figures_fit_the_panel(self, params):
-    from openpilot.selfdrive.ui.mici.onroad import SIDE_PANEL_WIDTH
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    from openpilot.system.ui.lib.application import FontWeight, gui_app
-    from openpilot.system.ui.lib.text_measure import measure_text_cached
-    font = gui_app.font(FontWeight.DISPLAY)
-    for text in ("100", "130", "160"):
-      assert measure_text_cached(font, text, li.NUMBER_SIZE_3).x <= SIDE_PANEL_WIDTH - 2 * li.MARGIN
-
-  @pytest.mark.parametrize(("speed", "metric", "stale", "text"), [
-    (80.4672, False, False, "50"),  # km/h on the wire, mph on screen
-    (110.0, True, False, "110"),
-    (255.0, False, False, "–"),  # SET_SPEED_NA
-    (0.0, False, False, "–"),
-    (80.4672, False, True, "–"),  # carState from before this drive started
-  ])
-  def test_number_is_the_set_speed(self, params, monkeypatch, speed, metric, stale, text):
-    from types import SimpleNamespace
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.long_indicator import set_speed_text
-    from openpilot.selfdrive.ui.ui_state import ui_state
-
-    class SM(dict):
-      recv_frame = {'carState': 5}
-    monkeypatch.setattr(ui_state, "sm", SM(carState=SimpleNamespace(vCruiseCluster=speed)))
-    monkeypatch.setattr(ui_state, "started_frame", 10 if stale else 0)
-    monkeypatch.setattr(ui_state, "is_metric", metric)
-    assert set_speed_text() == text
-
-  def test_green_only_for_a_lift_worth_feeling(self):
-    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_lift import GREEN_LIFT, green_level
-    assert green_level(0.0) == green_level(GREEN_LIFT[0]) == 0.0
-    assert 0.0 < green_level(sum(GREEN_LIFT) / 2) < 1.0
-    assert green_level(GREEN_LIFT[1]) == green_level(1.0) == 1.0
-
-  @staticmethod
-  def _settle(monkeypatch, frames=200):
-    """LongIndicatorSP over a stub of upstream's _render that records the rect it is given and leaves the
-    stack fully shown; returns (stack rects, number draws as (top, green, alpha))."""
+class TestLongIndicatorWholePixels:
+  def test_stack_sits_on_whole_pixels(self, params, monkeypatch):
     import raylib_nb as rl
     from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
 
-    stacks, numbers = [], []
-    def upstream_render(self, rect):
-      stacks.append(rect)
-      self._alpha_filter.x = self._dim_filter.x = 1.0
-    monkeypatch.setattr(LongIndicator, "_render", upstream_render)
-    monkeypatch.setattr(li, "set_speed_text", lambda: "50")
-    monkeypatch.setattr(li, "draw_set_speed", lambda cx, top, text, green, alpha: numbers.append((top, green, alpha)))
+    rects = []
+    monkeypatch.setattr(LongIndicator, "_render", lambda self, rect: rects.append(rect))
     sp = li.LongIndicatorSP()
-    for _ in range(frames):
-      sp._render(rl.Rectangle(0, 0, 72, 240))
-    return stacks, numbers
-
-  @pytest.mark.parametrize("speed_assist", [True, False])
-  def test_stack_shifts_only_with_the_assist(self, params, monkeypatch, speed_assist):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    from openpilot.selfdrive.ui.ui_state import ui_state
-
-    monkeypatch.setattr(ui_state, "speed_assist", speed_assist)
-    stacks, numbers = self._settle(monkeypatch)
-    if speed_assist:
-      assert stacks[-1].y == pytest.approx(li.STACK_SHIFT, abs=0.05)
-      assert numbers[-1][0] == pytest.approx(li.NUMBER_TOP, abs=0.05) and numbers[-1][2] == pytest.approx(1.0, abs=0.01)
-    else:
-      # upstream's half-pixel rest position, half a pixel lower onto whole pixels
-      assert stacks[-1].y == pytest.approx(0.5) and numbers[-1][2] == pytest.approx(0.0)
-
-  def test_stack_slides_on_whole_pixels(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    from openpilot.selfdrive.ui.ui_state import ui_state
-
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    stacks, numbers = self._settle(monkeypatch, frames=120)
-    import math
-    from openpilot.system.ui.lib.application import gui_app
-
-    tops = [li.STACK_TOP + s.y for s in stacks]
-    assert all(t == int(t) for t in tops) and all(top == int(top) for top, _, _ in numbers)
-    steps = [b - a for a, b in zip([87.0] + tops[:-1], tops, strict=True)]
-    dt = 1 / gui_app.target_fps
-    # one way, never more than the filter's own travel per frame rounded up
-    assert min(steps) >= 0 and max(steps) <= math.ceil(li.STACK_SHIFT * dt / (li.SLIDE_RC + dt))
-    assert tops[-1] == li.STACK_TOP + li.STACK_SHIFT
-
-  @pytest.mark.parametrize(("lift", "green"), [(0.0, 0.0), (0.75, 1.0)])
-  def test_lift_turns_the_number_green(self, params, monkeypatch, lift, green):
-    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_lift
-    from openpilot.selfdrive.ui.ui_state import ui_state
-
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(speed_assist_lift, "lift_fraction", lambda: lift)
-    _, numbers = self._settle(monkeypatch, frames=300)
-    assert numbers[-1][1] == pytest.approx(green, abs=0.01)
-
-  def test_lift_is_zero_without_openpilot_longitudinal(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_lift import lift_fraction
-    from openpilot.selfdrive.ui.ui_state import UIState
-    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: False))
-    assert lift_fraction() == 0.0
-
-  def test_number_draws(self, params):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.long_indicator import NUMBER_TOP, draw_set_speed
-    for text, green in (("50", 0.0), ("110", 0.5), ("–", 1.0)):
-      draw_set_speed(36, NUMBER_TOP, text, green, 1.0)
+    for y in (0.0, 0.25, 10.5):
+      sp._render(rl.Rectangle(0, y, 72, 240))
+      top = rects[-1].y + li.STACK_TOP
+      assert top == int(top) and 0 <= top - (y + li.STACK_TOP) < 1
 
 
 class TestSpeedAssistGauge:
@@ -1413,10 +1309,9 @@ class TestSpeedAssistGauge:
     assert math.degrees(math.atan2(tip[1], tip[0])) % 360 == pytest.approx(b.NEEDLE_DEG % 360, abs=1e-3)
 
   def test_gauge_draws(self, params):
-    import raylib_nb as rl
     from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge, draw_gauge_on_dial
     draw_gauge(10, 10, 40, 0.9)
-    draw_gauge_on_dial(96, 96, 96, 1.0, rl.Color(0, 255, 64, 255))
+    draw_gauge_on_dial(96, 96, 96, 1.0)
 
 
 class TestModelPathMode:

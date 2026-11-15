@@ -6,8 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 
 The longitudinal marks. Set Speed Assist is a set-speed gauge with a swoosh over it, its arrow ending on
 the needle's line: speed raised to the set speed. It marks the assist in the home footer and on the tizi
-button; mici's onroad view shows the set speed itself. Alpha longitudinal is upstream's onroad car over
-three bars, tightened to the home footer's 40 px.
+button. Alpha longitudinal is upstream's onroad car over three bars, tightened to the home footer's 40 px.
 
 Both are sized by their ink, not a padded box, so a status bar's spacing is the gap you see. The gauge is
 three outlines filled by draw_polygon, antialiased at any size, and adds no LFS asset.
@@ -81,22 +80,22 @@ def gauge_outlines(height: float) -> list[np.ndarray]:
   return [((unit - (_LEFT, _TOP)) * s).astype(np.float32) for unit in _UNIT]
 
 
-def draw_gauge(x: float, y: float, height: float, alpha: float = 1.0, color: rl.Color = rl.WHITE) -> None:
+def draw_gauge(x: float, y: float, height: float, alpha: float = 1.0) -> None:
   """The Set Speed Assist gauge with its ink's top-left at (x, y), `height` tall."""
   if alpha < 1e-2:
     return
   screen = rl.Rectangle(0, 0, gui_app.width, gui_app.height)
-  fill = rl.Color(color.r, color.g, color.b, round(color.a * alpha))
+  fill = rl.fade(rl.WHITE, alpha)
   origin = np.array([x, y], dtype=np.float32)
   for outline in gauge_outlines(round(height, 3)):
     draw_polygon(screen, outline + origin, color=fill)
 
 
-def draw_gauge_on_dial(cx: float, cy: float, height: float, alpha: float = 1.0, color: rl.Color = rl.WHITE) -> None:
+def draw_gauge_on_dial(cx: float, cy: float, height: float, alpha: float = 1.0) -> None:
   """For a round button: the dial's centre on (cx, cy), dropped a touch to look centred, so dial, swoosh
   and button ring read as one; centring the ink box sets the dial low and right instead."""
   s = height / (_BOTTOM - _TOP)
-  draw_gauge(cx + _LEFT * s, cy + (_TOP + DIAL_DROP * (_BOTTOM - _TOP)) * s, height, alpha, color)
+  draw_gauge(cx + _LEFT * s, cy + (_TOP + DIAL_DROP * (_BOTTOM - _TOP)) * s, height, alpha)
 
 
 class SpeedAssistIcon(Widget):

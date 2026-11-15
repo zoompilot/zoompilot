@@ -6,15 +6,12 @@ See the LICENSE.md file in the root directory for more details.
 
 The tizi onroad Set Speed Assist button, in the corner and shape of comma's ExpButton, which
 upstream retired with chill mode: its gauge dimmed with the assist off, bright in a green ring with
-it on and green while it lifts, so the button names what it switches either way. No confirmation
-gate; selfdrived announces each switch.
+it on, so the button names what it switches either way. No confirmation gate; selfdrived announces
+each switch.
 """
 import raylib_nb as rl
 
-from openpilot.selfdrive.ui.mici.onroad.hud_renderer import WHEEL_GREEN
-from openpilot.selfdrive.ui.mici.onroad.status import lerp_color
 from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge_on_dial
-from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_lift import SpeedAssistLift, green_level
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
 
@@ -33,7 +30,6 @@ class SpeedAssistButton(Widget):
     # The road view handles taps after this button and ignores them while it is pressed. This delay
     # keeps a quick tap (press and release in one frame) from also toggling the sidebar.
     self._click_delay = 0.075
-    self._lift = SpeedAssistLift()
 
   def set_rect(self, rect: rl.Rectangle) -> None:
     self._rect.x, self._rect.y = rect.x, rect.y
@@ -53,7 +49,6 @@ class SpeedAssistButton(Widget):
 
     radius = self._rect.width / 2
     rl.draw_circle(center_x, center_y, radius, self._black_bg)
-    color = lerp_color(rl.WHITE, WHEEL_GREEN, green_level(self._lift.update()))  # white with the assist off
     if ui_state.speed_assist:
       rl.draw_ring(rl.Vector2(center_x, center_y), radius - RING_WIDTH, radius, 0, 360, 96, rl.fade(RING_COLOR, alpha))
-    draw_gauge_on_dial(center_x, center_y, GAUGE_HEIGHT, alpha if ui_state.speed_assist else OFF_ALPHA * alpha, color)
+    draw_gauge_on_dial(center_x, center_y, GAUGE_HEIGHT, alpha if ui_state.speed_assist else OFF_ALPHA * alpha)
