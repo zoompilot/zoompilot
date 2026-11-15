@@ -1342,6 +1342,7 @@ class TestModelPathMode:
     renderer._rect = rl.Rectangle(0, 0, 464, 240)
     renderer._path.projected_points = np.zeros((4, 2), dtype=np.float32)
     renderer._longitudinal_control = cruise and op_long
+    renderer._visible = 1.0  # faded in, as _render sets it while not disengaged
     accel = Gradient(start=(0.0, 1.0), end=(0.0, 0.0), colors=[rl.WHITE, rl.WHITE], stops=[0.0, 1.0])
     renderer._path_gradient = accel
     renderer._draw_path()

@@ -48,8 +48,10 @@ class StatusFade:
         self._weights.update(target)
     return self._weights.x
 
-  def weight(self, status: UIStatus) -> float:
-    return float(self._update()[STATUSES.index(status)])
+  def weight(self, *statuses: UIStatus) -> float:
+    # sunnypilot: several statuses sum, e.g. disengaged and longitudinal-only both don't steer
+    weights = self._update()
+    return float(sum(weights[STATUSES.index(s)] for s in statuses))
 
   def color(self, colors: dict[UIStatus, rl.Color]) -> rl.Color:
     # sunnypilot: a MADS status the caller doesn't name draws as disengaged

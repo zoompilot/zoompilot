@@ -177,11 +177,20 @@ def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monke
   from openpilot.selfdrive.ui.sunnypilot.onroad import confidence_ball
   from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
   from openpilot.selfdrive.ui.sunnypilot.onroad.long_indicator import STACK_GAP, long_indicator_top
+  from openpilot.selfdrive.ui.mici.onroad.status import status_fade
   from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
   from openpilot.system.ui.lib.application import gui_app
 
-  monkeypatch.setattr(ui_state, "sm", {"driverMonitoringState": SimpleNamespace(isRHD=rhd)})
+  class SM(dict):
+    frame = 0
+
+  predictions = SimpleNamespace(brakeDisengageProbs=[0.0], steerOverrideProbs=[0.0])
+  sm = SM(driverMonitoringState=SimpleNamespace(isRHD=rhd), modelV2=SimpleNamespace(meta=SimpleNamespace(disengagePredictions=predictions)))
+  monkeypatch.setattr(ui_state, "sm", sm)
   monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
+  for _ in range(5 * gui_app.target_fps):  # status_fade settles on engaged
+    sm.frame += 1
+    status_fade.weight(UIStatus.ENGAGED)
   for name in ("draw_rectangle_rounded", "draw_rectangle_rounded_lines_ex"):
     monkeypatch.setattr(confidence_ball.rl, name, lambda *a: None)
   drawn = []
@@ -197,17 +206,18 @@ def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monke
     ball._render(rect)
     return drawn
 
-  assert render_at(1.0) == [(monitor.x + monitor.width / 2, UI_CONFIG.header_height + half)]  # sure: top, in the monitor's column
+  assert render_at(1.0) == [pytest.approx((monitor.x + monitor.width / 2, UI_CONFIG.header_height + half))]  # sure: top, in the monitor's column
   assert render_at(0.0)[0][1] == pytest.approx(long_indicator_top(rect, rhd) - STACK_GAP - half)  # down to the car and bars
   monkeypatch.setattr(ui_state, "status", UIStatus.DISENGAGED)
   ball._confidence_filter.x = 1.0
-  ball._update_state()
-  ball._render(rect)  # disengaged: fades as it sinks, not before
-  assert ball._alpha_filter.x == pytest.approx(ball._confidence_filter.x)
+  heights = []
   for _ in range(5 * gui_app.target_fps):
+    sm.frame += 1
     ball._update_state()
     drawn.clear()
     ball._render(rect)
+    heights += [y for _, y in drawn]
+  assert len(heights) > 1 and heights == sorted(heights)  # disengaged: sinks, fading as it goes
   assert drawn == []
 
 
