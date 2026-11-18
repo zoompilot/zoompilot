@@ -1,5 +1,23 @@
 zoompilot vUNRELEASED
 ========================
+* 2026-11-17
+  * Synced with openpilot of 2026-11-15 and sunnypilot of 2026-11-14; updating installs AGNOS 20.6.
+  * openpilot changes
+    * Smoother cruise acceleration.
+    * Safety code runs twice to catch memory faults.
+    * comma 4: side panel on the left, green wheel when engaged, steadier status colors.
+    * comma 4: stop bar for planned stops with no car ahead.
+    * comma 4: night mode; Onroad Brightness still applies.
+    * comma 4: alerts popup, new offroad alerts, cleaner driver camera preview.
+  * sunnypilot changes
+    * New cars: Hyundai Kona 2024-25, Sonata (Hybrid) 2024-26, Tucson Hybrid 2025-26; Kia Carnival Hybrid 2025-26, Niro Plus EV 2024.
+    * Hyundai CAN FD ccNC/ccIC with camera SCC: alpha longitudinal.
+  * Set Speed Assist: smoother, less overshoot.
+  * Set Speed Assist: no onroad indicator; home and the switch alert show its state.
+  * Lead Forecast: pulls away sooner when the car ahead leaves a stop.
+  * comma 4: steering-only shows the green wheel and torque bar; cruise-only dims the wheel.
+  * VW ID.4 and Born: Enforce Torque and NNLC removed; they broke steering.
+  * Hyundai CAN FD ccNC: fixed cruise buttons on alternate-button cars.
 * 2026-11-12
   * Fixed a "TAKE CONTROL IMMEDIATELY: locationd Temporary Error" alert caused by a single dropped camera frame.
   * Mazda: sun glare on the stock camera no longer shows "LKAS Fault: Restart the Car"; real power steering faults alert about 5 s sooner.
@@ -16,7 +34,6 @@ zoompilot vUNRELEASED
 * 2026-11-06
   * Synced with sunnypilot and openpilot of 2026-11-05, on AGNOS 20.3.
   * Set Speed Assist follows the driving personality: gentler on Relaxed, quicker on Aggressive.
-  * Set Speed Assist's onroad icon brightens while it adds acceleration.
   * Speed Limit source is now Auto, Car or Map; Auto follows the car's sign and fills in from the map.
   * Radar cars: the lead forecast now also covers radar leads, braking earlier behind slowing traffic.
   * Toyota: Speed Limit Assist works at any cruise set speed and never exceeds it; tap gas to keep your current speed.
