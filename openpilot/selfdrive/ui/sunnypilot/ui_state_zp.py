@@ -74,7 +74,7 @@ class UIStateZP:
   def cruise_engaged(self) -> bool:
     """Cruise is engaged: openpilot's longitudinal, or the car's own ACC with openpilot steering.
     False under MADS lateral-only."""
-    return self.sm.recv_frame['selfdriveState'] >= self.started_frame and self.sm['selfdriveState'].enabled
+    return self.received_since_started('selfdriveState') and self.sm['selfdriveState'].enabled
 
   @property
   def long_engaged(self) -> bool:
@@ -137,7 +137,7 @@ class UIStateZP:
   def _jetlink_state(self, view):
     """ChestnutState for the link: progress and the records offroad, modelV2 and acceleratorState onroad"""
     from openpilot.selfdrive.ui.ui_state import ChestnutState  # defined by the class that mixes this in
-    model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
+    model_seen = self.received_since_started("modelV2")
     running_big = self.sm.alive["modelV2"] and self.sm["modelV2"].big
     return ChestnutState(view.icon(self.started, model_seen, running_big, self._accelerator_state_name))
 

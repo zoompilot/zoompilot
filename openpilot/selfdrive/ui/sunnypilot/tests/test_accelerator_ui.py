@@ -70,15 +70,15 @@ class TestUIStateJetlinkView(UITest):
   @staticmethod
   def _with(sm, started=False):
     from openpilot.selfdrive.ui.ui_state import ui_state
-    saved = ui_state.sm, ui_state.started, ui_state.started_frame, ui_state.jetlink, ui_state.chestnut_present
-    ui_state.sm, ui_state.started, ui_state.started_frame = sm, started, 0
+    saved = ui_state.sm, ui_state.started, ui_state._started_frame, ui_state.jetlink, ui_state.chestnut_present
+    ui_state.sm, ui_state.started, ui_state._started_frame = sm, started, 0
     ui_state.chestnut_present = sm.board
     return saved
 
   @staticmethod
   def _restore(saved):
     from openpilot.selfdrive.ui.ui_state import ui_state
-    ui_state.sm, ui_state.started, ui_state.started_frame, ui_state.jetlink, ui_state.chestnut_present = saved
+    ui_state.sm, ui_state.started, ui_state._started_frame, ui_state.jetlink, ui_state.chestnut_present = saved
 
   def test_a_fitted_chestnut_never_asks_jetlink(self):
     """A board present is upstream's path byte for byte: no view, and nothing in the
@@ -189,14 +189,14 @@ class TestUIStateJetlinkView(UITest):
   def _state(view, state='none', sm=None, started=False):
     """chestnut_state for jetlink's snapshot `view` and modeld's acceleratorState by name."""
     from openpilot.selfdrive.ui.ui_state import ui_state
-    saved = ui_state.sm, ui_state.started, ui_state.started_frame, ui_state.jetlink, ui_state._accelerator_state_name
-    ui_state.sm, ui_state.started, ui_state.started_frame = sm or FakeSM(), started, 0
+    saved = ui_state.sm, ui_state.started, ui_state._started_frame, ui_state.jetlink, ui_state._accelerator_state_name
+    ui_state.sm, ui_state.started, ui_state._started_frame = sm or FakeSM(), started, 0
     ui_state.jetlink, ui_state._accelerator_state_name = view, state
     try:
       ui_state._update_chestnut_state()
       return ui_state.chestnut_state
     finally:
-      ui_state.sm, ui_state.started, ui_state.started_frame, ui_state.jetlink, ui_state._accelerator_state_name = saved
+      ui_state.sm, ui_state.started, ui_state._started_frame, ui_state.jetlink, ui_state._accelerator_state_name = saved
 
   @staticmethod
   def _view(present=True, ready=False, progress=None):

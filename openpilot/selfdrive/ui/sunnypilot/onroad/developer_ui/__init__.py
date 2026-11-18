@@ -98,7 +98,7 @@ class DeveloperUiRenderer(Widget):
       return
 
     sm = ui_state.sm
-    if sm.recv_frame["carState"] < ui_state.started_frame:
+    if not ui_state.received_since_started("carState"):
       return
 
     if self.dev_ui_mode == DeveloperUiState.BOTTOM:

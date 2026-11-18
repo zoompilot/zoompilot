@@ -21,7 +21,7 @@ class RoadNameRenderer(Widget):
 
   def update(self):
     sm = ui_state.sm
-    if sm.recv_frame["carState"] < ui_state.started_frame:
+    if not ui_state.received_since_started("carState"):
       return
 
     self.is_metric = ui_state.is_metric
