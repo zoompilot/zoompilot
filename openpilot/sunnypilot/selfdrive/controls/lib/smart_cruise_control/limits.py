@@ -31,6 +31,11 @@ OP_LONG_A_BUDGET = 1.2
 OP_LONG_COAST_A = 0.5
 _OP_LONG_J_BP = [0., 10., 25., 40.]
 _OP_LONG_J_VALS = [1.6, 1.2, 0.8, 0.6]
+# Under a curve limiter the candidate comes off positive accel at this multiple of the cruise jerk:
+# a bend seen, lost and seen again finds the car accelerating, and at 1x a slow car spends ~3 s
+# getting back to zero. Braking itself builds at 1x. 3 is the knee in the sim (2x leaves a third of
+# the overshoot, 5x gains nothing more).
+OP_LONG_RELEASE_JERK_X = 3.
 
 
 def op_long_cruise_jerk(v_ego: float) -> float:
@@ -43,6 +48,7 @@ def op_long_cruise_jerk(v_ego: float) -> float:
 _STOCK_RESPONSE_T = 1.0
 
 _MPH_PER_MS = 2.23694
+_KPH_PER_MPH = 1.609344
 
 # shared solver gate: a constraint binds once the decel it requires reaches this fraction of
 # the budget; below 1.0 leaves headroom for slope and curvature error
@@ -63,7 +69,7 @@ class PlanningLimits:
   op_long: bool
   # stock path only: the dash has to be walked down before the ECU sees the new set speed
   walk_rate: float = 5.  # display units per second the servo actually achieves
-  track_gap: float = 0.  # display units walked before the ECU brakes at budget; 0 = the whole dip
+  track_gap: float = 0.  # gap below actual speed, mph, at which the ECU brakes at budget; 0 = the whole dip
 
   def jerk(self, v_ego: float) -> float:
     """The consumer's own jerk limit easing into a_budget; 0 where the ECU self-smooths."""
@@ -81,17 +87,20 @@ class PlanningLimits:
     """Jerk the published aTarget ramps at: the consumer's own on openpilot long, PUB_JERK on stock."""
     return self.jerk(v_ego) or PUB_JERK
 
-  def dash_traversal_time(self, delta_v_ms: float) -> float:
+  def dash_traversal_time(self, delta_v_ms: float, is_metric: bool = False) -> float:
     """Seconds of dash walking before a dip of delta_v brakes at budget (stock path only).
 
-    Display units are taken as mph: the measured rates are imperial-only so far, and for a
-    lead estimate the ~1.6x metric error is inside the response-time uncertainty anyway.
+    The gap the ECU brakes on is a speed; the servo walks display units at a press rate. A km/h
+    dash needs 1.6 presses for each mph of gap, so the same gap takes 1.6 times as long. The rate
+    itself is measured on mph dashes only; a km/h press is taken as one unit at the same cadence.
     """
     if self.op_long or delta_v_ms <= 0.:
       return 0.
     walk = delta_v_ms * _MPH_PER_MS
     if self.track_gap > 0.:
       walk = min(walk, self.track_gap)
+    if is_metric:
+      walk *= _KPH_PER_MPH
     return walk / max(self.walk_rate, 1.)
 
 

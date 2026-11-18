@@ -22,7 +22,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import a
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.forecast import LeadForecast
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import OP_LONG_A_BUDGET, op_long_cruise_jerk
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import OP_LONG_A_BUDGET, OP_LONG_RELEASE_JERK_X, op_long_cruise_jerk
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import make_smart_cruise_control
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.assist_mirror import SpeedLimitAssistMirror
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import pcm_machine_owns_sla
@@ -142,12 +142,16 @@ class LongitudinalPlannerSP:
     """Upstream caps the cruise candidate at A_CRUISE_MIN, gentle for a set-speed drop, and SLA
     coasts down to a lower limit the same way. SCC brakes for a curve through the same candidate by
     lowering v_cruise, planned on its own budget: while it is the target, rebuild the candidate from
-    it with that budget as the floor. Its a_target is not a plan to take (the map passes a_ego through)."""
+    it with that budget as the floor. Its a_target is not a plan to take (the map passes a_ego through).
+    Positive accel is released faster than brake is built, and never past one cruise step below zero."""
     if self.source not in SCC_SOURCES:
       return a_cruise
     j = op_long_cruise_jerk(self.v_ego) * DT_MDL
     a_limiter = np.clip(self.output_v_target - self.v_ego, -OP_LONG_A_BUDGET, ACCEL_MAX)
-    return min(a_cruise, float(np.clip(a_limiter, self.a_cruise_prev - j, self.a_cruise_prev + j)))
+    a_low = self.a_cruise_prev - j
+    if self.a_cruise_prev > 0.:
+      a_low = min(a_low, max(self.a_cruise_prev - OP_LONG_RELEASE_JERK_X * j, -j))
+    return min(a_cruise, float(np.clip(a_limiter, a_low, self.a_cruise_prev + j)))
 
   def update_e2e_target(self, sm: messaging.SubMaster, a_model: float, should_stop_model: bool,
                         reset_state: bool) -> tuple[float, bool]:

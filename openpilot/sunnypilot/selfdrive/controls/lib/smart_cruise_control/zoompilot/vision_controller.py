@@ -215,7 +215,7 @@ class SmartCruiseControlVision(VisionProfile, UpstreamVision):
     if not lim.op_long:
       v_dip = float(np.min(v_allowed))
       if np.isfinite(v_dip):
-        t_lead += lim.dash_traversal_time(max(self.v_ego - max(v_dip, MIN_V), 0.))
+        t_lead += lim.dash_traversal_time(max(self.v_ego - max(v_dip, MIN_V), 0.), self.is_metric)
     d_lead = lead_distance(self.v_ego, t_lead, lim.a_budget, lim.jerk(self.v_ego))
 
     self.a_required = required_decel(self.v_ego, v_allowed, dist, d_lead)

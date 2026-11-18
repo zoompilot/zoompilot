@@ -12,12 +12,15 @@ non-finite target.
 import math
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import custom
 from opendbc.car import structs
+from openpilot.common.realtime import DT_MDL
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import SCC_SOURCES, LongitudinalPlannerSP
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import OP_LONG_A_BUDGET
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import OP_LONG_A_BUDGET, OP_LONG_RELEASE_JERK_X, op_long_cruise_jerk
 
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
@@ -157,3 +160,22 @@ class TestLimiterDecel(OpenpilotTestCase):
 
   def test_never_raises_the_cruise_candidate(self):
     assert self.make(LongitudinalPlanSource.sccMap, 19.8, a_prev=-0.5).update_cruise_accel(-0.5) == -0.5
+
+  def test_positive_accel_is_released_faster_than_brake_is_built(self):
+    # a bend seen again while the car re-accelerates: off the throttle at the release multiple
+    step = op_long_cruise_jerk(20.) * DT_MDL
+    a = self.make(LongitudinalPlanSource.sccVision, 10., a_prev=1.0).update_cruise_accel(1.0)
+    assert a == pytest.approx(1.0 - OP_LONG_RELEASE_JERK_X * step)
+    # from zero or below, braking builds at the cruise jerk
+    a = self.make(LongitudinalPlanSource.sccVision, 10., a_prev=-0.3).update_cruise_accel(0.)
+    assert a == pytest.approx(-0.3 - step)
+
+  def test_release_does_not_carry_its_rate_into_braking(self):
+    # crossing zero: at most one cruise step below it
+    step = op_long_cruise_jerk(20.) * DT_MDL
+    a = self.make(LongitudinalPlanSource.sccVision, 10., a_prev=0.5 * step).update_cruise_accel(1.0)
+    assert a == pytest.approx(-step)
+
+  def test_release_applies_to_curve_limiters_only(self):
+    # a set-speed drop keeps upstream's candidate untouched
+    assert self.make(LongitudinalPlanSource.cruise, 10., a_prev=1.0).update_cruise_accel(0.9) == 0.9

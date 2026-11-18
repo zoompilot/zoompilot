@@ -42,17 +42,21 @@ class CurveSpeedProfile:
   """lat_scale, and speed_scale for speeds, follow the param on the controller's own params refresh."""
   lat_scale = 1.0
   speed_scale = 1.0
+  is_metric = False  # dash units, for the stock ACC dash-walk lead (limits.dash_traversal_time)
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self._set_scale(read_scale(self.params))
+    self.is_metric = self.params.get_bool("IsMetric")
 
   def _set_scale(self, scale: float) -> None:
     self.lat_scale, self.speed_scale = scale, math.sqrt(scale)
 
   def _refresh_profile(self) -> None:
-    if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0 and (scale := read_scale(self.params)) != self.lat_scale:
-      self._set_scale(scale)
+    if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
+      self.is_metric = self.params.get_bool("IsMetric")
+      if (scale := read_scale(self.params)) != self.lat_scale:
+        self._set_scale(scale)
 
 
 class VisionProfile(CurveSpeedProfile):
