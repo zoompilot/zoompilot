@@ -39,13 +39,13 @@ _CONFIRM_T = [0., 2.5]  # s
 _FIX_HOLD_T = 3.  # s
 
 
-def target_binds(v_ego: float, tv, d, lim: PlanningLimits) -> np.ndarray:
+def target_binds(v_ego: float, tv, d, lim: PlanningLimits, is_metric: bool = False) -> np.ndarray:
   """Which targets (speeds tv at distances d) bind: the decel each requires past the actuation
   lead reaches the commit fraction of the budget; same solver and gate as the vision path."""
   tv = np.asarray(tv, dtype=float)
   d = np.asarray(d, dtype=float)
   jerk = lim.jerk(v_ego)
-  d_lead = [lead_distance(v_ego, lim.t_lead + lim.dash_traversal_time(v_ego - v), lim.a_budget, jerk) for v in tv]
+  d_lead = [lead_distance(v_ego, lim.t_lead + lim.dash_traversal_time(v_ego - v, is_metric), lim.a_budget, jerk) for v in tv]
   a_req = np.array([required_decel(v_ego, [v], [dd], dl) for v, dd, dl in zip(tv, d, d_lead, strict=True)])
   return (tv <= v_ego) & (a_req >= COMMIT_FRAC * lim.a_budget)
 
@@ -101,7 +101,7 @@ class SmartCruiseControlMap(MapProfile, UpstreamMap):
     ahead = [(p, d - travelled) for p, d in zip(self.target_velocities[start:], distances[start:], strict=True) if d >= travelled]
     forward = [p for p, _ in ahead]
     forward_d = [d for _, d in ahead]
-    binds = target_binds(self.v_ego, [p["velocity"] for p in forward], forward_d, self.limits)
+    binds = target_binds(self.v_ego, [p["velocity"] for p in forward], forward_d, self.limits, self.is_metric)
     valid = [(float(p["velocity"]), p["latitude"], p["longitude"], d) for p, d, b in zip(forward, forward_d, binds, strict=True) if b]
     best = min(valid, key=lambda x: x[0], default=None)  # the slowest target, nearest on a tie
 

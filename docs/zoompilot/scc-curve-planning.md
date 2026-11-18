@@ -10,13 +10,23 @@ planners beside them, and the two SLA publishers in `controls/lib/speed_limit/`
 
 ## Which planner runs
 
-`zoompilot.make_smart_cruise_control(CP)` picks the curve planners once per drive. Brands in
-`zoompilot.TUNED_BRANDS` (`('mazda',)`, the brands whose stock ACC response and planning limits
-have been measured from their logs) run the zoompilot vision and map planners this document
-describes. Every other brand runs sunnypilot's `vision_controller.py`, `map_controller.py` and
+`zoompilot.make_smart_cruise_control(CP)` picks the curve planners once per drive. The zoompilot
+vision and map planners this document describes run on:
+
+- **openpilot long, every brand.** The planner drives the cruise candidate, so nothing about the
+  car's stock ACC is involved: the budget is the planner's and the lead is the car's
+  `longitudinalActuatorDelay`. In the op-long sim (25 recorded curves, actuator delay 0.05 to
+  0.5 s) they lose about 1.1 to 1.3 s per curve against 2.1 for sunnypilot's controller and dip
+  1 to 3 mph under the allowed speed against 6 to 7.
+- **stock ACC, brands in `zoompilot.TUNED_BRANDS`** (`('mazda',)`, the brands whose stock ACC
+  response and planning limits have been measured from their logs).
+
+Every other stock ACC brand runs sunnypilot's `vision_controller.py`, `map_controller.py` and
 `smart_cruise_control.py`, kept byte-identical to sunnypilot master together with their tests,
-so an unmeasured brand is not tuned on Mazda data and a sync never conflicts there. Only the
-zoompilot vision planner publishes `sccVAheadMin`; on every other brand it is 0, which leaves
+so an unmeasured brand is not tuned on Mazda data and a sync never conflicts there. Public fleet
+logs put Honda and Hyundai stock ACC at 0.3 to 0.45 m/s^2 whatever the dash gap, and in the sim
+the planner choice barely matters on such a plant, so there is nothing to gain by moving them.
+Only the zoompilot vision planner publishes `sccVAheadMin`; elsewhere it is 0, which leaves
 ICBM's restore on its stillness heuristic (`icbm.md`). `limits.py`, `speed_profile.py` and
 `publish_ramp` stay shared with the SLA publishers on every brand.
 
@@ -43,11 +53,17 @@ actuation lead are picked once.
 - **openpilot long**: budget 1.2 m/s^2 (`A_CRUISE_MIN`), jerk from `J_CRUISE_VALS`
   over `A_CRUISE_MAX_BP`, lead `longitudinalActuatorDelay`. Mirrored from the upstream
   planner, which cannot be imported (it imports the SP overlay); `test_limits.py` reads
-  the upstream source and pins the mirror.
+  the upstream source and pins the mirror. Under a curve limiter the candidate comes off
+  positive accel at `OP_LONG_RELEASE_JERK_X` (3) times that jerk, and never more than one
+  cruise step past zero: a bend seen, lost and seen again finds the car accelerating, and at
+  1x a slow car needs about 3 s to get back to zero (worst curve felt 3.23 m/s^2, 2.26 at 3x;
+  2x gives 2.56, 5x 2.14). Braking builds at 1x.
 - **stock ACC**: budget is the decel the overshoot lever holds the ECU to (mazda 0.75,
   the budget column of the actuation profile's `decel_overshoot`; unmeasured brands 0.5,
   where being wrong only means braking earlier), response 1.0 s, plus the time to walk the
-  dash down by the tracking gap at the measured servo walk rate (mazda 8 mph at 4 mph/s). The ECU
+  dash down by the tracking gap at the measured servo walk rate (mazda 8 mph at 4 units/s; on a
+  km/h dash the same gap is 1.6 times the presses, `dash_traversal_time(..., is_metric)`, the
+  press rate itself measured on mph dashes only). The ECU
   brakes on the gap as soon as it opens and the lever tracks `vEgo` down from there, so
   the rest of a deep dip is not dead time; leading by the whole dip committed a 30 mph
   drop 5 s early. The native 5 mph hold grid must not size the lead: synthesized holds
@@ -442,7 +458,8 @@ for every brand with a measured plant (`icbm.md`).
 
 | name | value | measurement | route |
 |---|---|---|---|
-| `TUNED_BRANDS` | `('mazda',)` | brands with a measured stock ACC response | n/a |
+| `TUNED_BRANDS` | `('mazda',)` | brands with a measured stock ACC response; openpilot long runs the planners on every brand | n/a |
+| `OP_LONG_RELEASE_JERK_X` | 3 | cruise-jerk multiple for releasing positive accel under a curve limiter | op-long sim, 25 curves |
 | `_A_LAT_CURVE_BP` / `_A_LAT_CURVE` | 15.6 / 24.6 / 31.3 m/s curve speed -> 2.2 / 2.1 / 2.2 m/s^2 | lateral ceiling (v^2 * curvature) at the curve's own speed (`curve_speed`, the table re-keyed on curvature). Driver-limited curves (129, corpus) p75 2.3 below 45 mph, 2.0 at 45-55; logged interstate curves are banked 2.5-4 deg (0.4-0.65 m/s^2 not felt). History: 2.0 flat until 09-30; 1.8 after route 260; set-keyed 2.0 -> 1.8 (40 -> 60 mph set) from 10-04 until 10-13, when 55+ was too slow and back roads a tad slow | 10-13 route sim, user reports |
 | `_BANK_TYPICAL_BP` / `_BANK_TYPICAL` | 7.8 / 12.3 / 16.8 m/s curve speed -> 0.05 / 0.3 / 0.48 m/s^2 | median side-signed `g * roll` over sustained curves; the bank the ceiling table already assumes | 10-12/13, 8.5 h |
 | `_BANK_SHIFT_MIN` / `_BANK_SHIFT_MAX` | -1.0 / +0.4 m/s^2 | clip on the departure from typical; corpus p90 departure +0.2 above 35 mph, +0.4 below | 10-12/13 |
@@ -473,7 +490,7 @@ for every brand with a measured plant (`icbm.md`).
 
 - The lateral-acceleration-percentile heuristic. Used the model's velocity plan, so a
   planned slowdown lowered the prediction below the abort threshold mid-braking. It is
-  still what the brands outside `TUNED_BRANDS` run.
+  still what stock ACC brands outside `TUNED_BRANDS` run.
 - Geometric curvature from `position.x/y`. Same range bias, worse near the car.
 - An uncapped bias gain (up to 2.07). Wide per-apex spread past 80 m; the replay bought
   no more apexes and added straight-road limiter activity.
