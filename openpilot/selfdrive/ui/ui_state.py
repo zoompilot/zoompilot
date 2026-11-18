@@ -93,7 +93,7 @@ class UIState(UIStateSP):
 
     # UI Status tracking
     self.status: UIStatus = UIStatus.DISENGAGED
-    self.started_frame: int = 0
+    self._started_frame: int = 0
     self.started_time: float = 0.0
     self._engaged_prev: bool = False
     self._started_prev: bool = False
@@ -151,6 +151,9 @@ class UIState(UIStateSP):
 
   def is_offroad(self) -> bool:
     return not self.started
+
+  def received_since_started(self, service: str) -> bool:
+    return self.sm.recv_frame[service] > self._started_frame
 
   def update(self) -> None:
     self.prime_state.start()  # start thread after manager forks ui
@@ -224,7 +227,7 @@ class UIState(UIStateSP):
     if self.started != self._started_prev or self.sm.frame == 1:
       self.status = UIStatus.DISENGAGED
       if self.started:
-        self.started_frame = self.sm.frame
+        self._started_frame = self.sm.frame
         self.started_time = time.monotonic()
         self.chestnut_present = self.sm["deviceState"].chestnutPresent or (self.chestnut_compiled and self.cable_may_be_chestnut())
 
@@ -250,7 +253,7 @@ class UIState(UIStateSP):
                              ChestnutState.UNCOMPILED if detected else ChestnutState.DISCONNECTED)
       return
 
-    model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
+    model_seen = self.received_since_started("modelV2")
     if not self.chestnut_present:
       self.chestnut_state = ChestnutState.DISCONNECTED
     elif not self.chestnut_compiled:
