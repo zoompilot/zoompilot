@@ -23,7 +23,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_prof
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import curve_speed_profile as profile
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import map_controller as zp_map
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import vision_controller as zp_vision
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.tests.vision_harness import make_cp, model_for_road
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.tests.vision_harness import make_cp, model_for_road, vehicle_params
 
 GENTLE, NORMAL, SPORTY = 0, 1, 2
 KAPPAS = np.linspace(0.0005, 0.03, 200)
@@ -43,7 +43,8 @@ def params():
 def sm_for(v, kappa):
   cs = messaging.new_message('controlsState')
   cs.controlsState.curvature = float(kappa)
-  return {'modelV2': model_for_road(v, lambda s: kappa).modelV2, 'controlsState': cs.controlsState}
+  return {'modelV2': model_for_road(v, lambda s: kappa).modelV2, 'controlsState': cs.controlsState,
+          'vehicleParameters': vehicle_params()}
 
 
 class TestReadScale:

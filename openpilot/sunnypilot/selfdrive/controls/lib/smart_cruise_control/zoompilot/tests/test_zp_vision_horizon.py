@@ -17,7 +17,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import A_PUB_MIN, PUB_JERK, get_planning_limits, publish_ramp
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.vision_controller import SmartCruiseControlVision, curve_speed
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.tests.vision_harness import (
-  SETPOINT, V_EGO, VisionCase, curve_at, make_cp, model_for_road)
+  SETPOINT, V_EGO, VisionCase, curve_at, make_cp, model_for_road, vehicle_params)
 
 OP_LONG_IDS = ["op_long", "stock"]
 
@@ -158,7 +158,7 @@ class TestLookaheadWire:
 
   def step(self, v=V_EGO, kappa_fn=lambda s: 0., long_enabled=True):
     sm = {'modelV2': model_for_road(v, kappa_fn).modelV2,
-          'controlsState': messaging.new_message('controlsState').controlsState}
+          'controlsState': messaging.new_message('controlsState').controlsState, 'vehicleParameters': vehicle_params()}
     self.scc_v.update(sm, long_enabled, False, v, 0., SETPOINT)
 
   def test_clear_road_caps_at_unset(self):
@@ -178,6 +178,6 @@ class TestLookaheadWire:
     self.params.put_bool("SmartCruiseControlVision", False, block=True)
     scc = SmartCruiseControlVision(make_cp())
     sm = {'modelV2': model_for_road(V_EGO, curve_at(60.)).modelV2,
-          'controlsState': messaging.new_message('controlsState').controlsState}
+          'controlsState': messaging.new_message('controlsState').controlsState, 'vehicleParameters': vehicle_params()}
     scc.update(sm, True, False, V_EGO, 0., SETPOINT)
     assert scc.v_ahead_min == 0.
