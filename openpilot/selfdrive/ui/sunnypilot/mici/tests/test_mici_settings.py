@@ -1276,109 +1276,42 @@ class TestModelsPanelMici:
     assert options.camera_offset.value == "-0.05 m"
 
 
-class TestSpeedAssistDial:
-  """Set Speed Assist's dial over mici's long indicator: shown with the assist on, the stack shifted to make
-  room, and the arc filling toward the parked needle with the lift."""
-
-  def test_fill_runs_from_the_arc_start_to_the_needle(self):
-    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
-    assert d.fill_to(0.0) == d.ARC_FROM
-    assert d.fill_to(1.0) == d.NEEDLE_DEG
-    assert d.fill_to(0.5) == (d.ARC_FROM + d.NEEDLE_DEG) / 2
-    assert d.fill_to(2.0) == d.NEEDLE_DEG
-
-  def test_needle_turns_green_only_on_arrival(self):
-    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import needle_level
-    assert needle_level(0.0) == needle_level(0.8) == 0.0
-    assert 0.0 < needle_level(0.92) < 1.0
-    assert needle_level(1.0) == 1.0
-
-  def test_dial_matches_the_car(self):
-    import numpy as np
-    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
-    arc = d.arc_outline(1.0, d.ARC_TO)
-    assert np.isclose(arc[:, 0].max() - arc[:, 0].min(), 35.0, atol=0.05)  # the lead car's width
-    needle = d.needle_outline(1.0)
-    top = -(d.RADIUS + d.STROKE / 2)
-    assert np.isclose(min(arc[:, 1].min(), needle[:, 1].min()), top, atol=0.05)
-    assert np.isclose(max(arc[:, 1].max(), needle[:, 1].max()) - top, d.DIAL_HEIGHT, atol=0.05)
-    # the needle stops short of the arc's inner edge
-    assert np.hypot(needle[:, 0], needle[:, 1]).max() <= d.RADIUS - d.STROKE / 2 - d.NEEDLE_CLEARANCE + 0.05
-
-  def test_layout_lands_on_whole_pixels(self):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    assert li.DIAL_TOP == int(li.DIAL_TOP) and li.STACK_TOP + li.STACK_SHIFT == int(li.STACK_TOP + li.STACK_SHIFT)
-    assert li.DIAL_TOP - li.DM_BOTTOM >= li.DIAL_GAP  # the margins stay wider than the stack's own pitch
-
-  @staticmethod
-  def _settle(monkeypatch, frames=200):
-    """LongIndicatorSP over a stub of upstream's _render that records the rect it is given and leaves the
-    stack fully shown; returns (stack rects, dial draws)."""
+class TestLongIndicatorWholePixels:
+  def test_stack_sits_on_whole_pixels(self, params, monkeypatch):
     import raylib_nb as rl
     from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
 
-    stacks, dials = [], []
-    def upstream_render(self, rect):
-      stacks.append(rect)
-      self._alpha_filter.x = self._dim_filter.x = 1.0
-    monkeypatch.setattr(LongIndicator, "_render", upstream_render)
-    monkeypatch.setattr(li, "draw_dial", lambda cx, top, **kw: dials.append((top, kw)))
+    rects = []
+    monkeypatch.setattr(LongIndicator, "_render", lambda self, rect: rects.append(rect))
     sp = li.LongIndicatorSP()
-    for _ in range(frames):
-      sp._render(rl.Rectangle(0, 0, 72, 240))
-    return stacks, dials
+    for y in (0.0, 0.25, 10.5):
+      sp._render(rl.Rectangle(0, y, 72, 240))
+      top = rects[-1].y + li.STACK_TOP
+      assert top == int(top) and 0 <= top - (y + li.STACK_TOP) < 1
 
-  @pytest.mark.parametrize("speed_assist", [True, False])
-  def test_stack_shifts_only_with_the_assist(self, params, monkeypatch, speed_assist):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    from openpilot.selfdrive.ui.ui_state import ui_state
 
-    monkeypatch.setattr(ui_state, "speed_assist", speed_assist)
-    stacks, dials = self._settle(monkeypatch)
-    if speed_assist:
-      assert stacks[-1].y == pytest.approx(li.STACK_SHIFT, abs=0.05)
-      assert dials[-1][0] == pytest.approx(li.DIAL_TOP, abs=0.05) and dials[-1][1]["alpha"] == pytest.approx(1.0, abs=0.01)
-    else:
-      # upstream's half-pixel rest position, half a pixel lower onto whole pixels
-      assert stacks[-1].y == pytest.approx(0.5) and dials[-1][1]["alpha"] == pytest.approx(0.0)
+class TestSpeedAssistGauge:
+  """The home footer's and the tizi button's Set Speed Assist gauge."""
 
-  def test_stack_slides_on_whole_pixels(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
-    from openpilot.selfdrive.ui.ui_state import ui_state
+  def test_outlines_fill_their_ink_box(self):
+    import numpy as np
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import GAUGE_ASPECT, gauge_outlines
+    ink = np.vstack(gauge_outlines(40.0))
+    assert np.allclose(ink.min(axis=0), (0, 0), atol=1e-3)
+    assert np.allclose(ink.max(axis=0), (GAUGE_ASPECT * 40, 40), atol=1e-3)
 
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    stacks, dials = self._settle(monkeypatch, frames=120)
+  def test_arrow_ends_on_the_needle(self):
     import math
-    from openpilot.system.ui.lib.application import gui_app
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_badge as b
+    swoosh = b._UNIT[2]
+    tip = swoosh[b.SWOOSH_SEGMENTS + 2]
+    assert math.degrees(math.atan2(tip[1], tip[0])) % 360 == pytest.approx(b.NEEDLE_DEG % 360, abs=1e-3)
 
-    tops = [li.STACK_TOP + s.y for s in stacks]
-    assert all(t == int(t) for t in tops) and all(top == int(top) for top, _ in dials)
-    steps = [b - a for a, b in zip([87.0] + tops[:-1], tops, strict=True)]
-    dt = 1 / gui_app.target_fps
-    # one way, never more than the filter's own travel per frame rounded up
-    assert min(steps) >= 0 and max(steps) <= math.ceil(li.STACK_SHIFT * dt / (li.SLIDE_RC + dt))
-    assert tops[-1] == li.STACK_TOP + li.STACK_SHIFT
-
-  def test_lift_fills_the_dial(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
-    from openpilot.selfdrive.ui.ui_state import ui_state
-
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(d, "lift_fraction", lambda: 0.75)
-    _, dials = self._settle(monkeypatch, frames=300)
-    assert dials[-1][1]["lift"] == pytest.approx(0.75, abs=0.01)
-
-  def test_lift_is_zero_without_openpilot_longitudinal(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
-    from openpilot.selfdrive.ui.ui_state import UIState
-    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: False))
-    assert d.lift_fraction() == 0.0
-
-  def test_dial_draws(self, params):
-    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import draw_dial
-    for lift in (0.0, 0.005, 0.4, 1.0):
-      draw_dial(36, 71, lift=lift)
+  def test_gauge_draws(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_badge import draw_gauge, draw_gauge_on_dial
+    draw_gauge(10, 10, 40, 0.9)
+    draw_gauge_on_dial(96, 96, 96, 1.0)
 
 
 class TestModelPathMode:

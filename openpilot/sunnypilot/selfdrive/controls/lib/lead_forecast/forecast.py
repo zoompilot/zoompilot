@@ -20,7 +20,10 @@ alpha-long logs show (35k samples, lead tracked 6 s, docs/zoompilot/lead-forecas
   lead 2 m further than it turns out at 6 s, the integral is unbiased and tighter.
 - A slow lead may not speed up in the forecast. Under 3 m/s, a predicted pull-away was wrong a
   quarter of the time, and the plan must not aim through a stopped car that stays put. The
-  allowance fades in to 8 m/s; above that predicted speed-ups held 85% of the time.
+  allowance fades in to 8 m/s; above that predicted speed-ups held 85% of the time. A lead
+  measured pulling away from a stop (LaunchGate: speed and acceleration rising for 0.1 s) lifts
+  the limit at once, so the car starts with it instead of waiting for it to reach 3 m/s; the lift
+  fades back if the launch stalls.
 - A radar lead takes the forecast only with LeadForecastRadar on, and only while the model's lead
   is the radar track: radard's own pairing is loose (25% of range, 10 m/s), so the forecast asks
   for the model's lead within RADAR_MATCH_* of the track, and drops the last shape when the track
@@ -90,12 +93,31 @@ RADAR_BRAKING_A_BP = [-0.5, -0.1]  # m/s^2
 # a stopped car that may stay put); lifted from the first to the second aLeadK.
 RADAR_LAUNCH_A_BP = [0.1, 0.5]  # m/s^2
 
+# A lead pulling away from a stop (LaunchGate). Within LAUNCH_RECENT_T of being under
+# LAUNCH_STOPPED_V, LAUNCH_T of measured speed and acceleration at or above LAUNCH_V and LAUNCH_A
+# lifts the low-speed limit in full: on camera leads the motion shows about 0.6 s before vLead
+# passes 0.5 m/s, and from there the model's pull-away was unbiased over 4 s (docs). The lift ends
+# when the lead's speed drops back under LAUNCH_V or LAUNCH_DROP_V below its peak, or its
+# acceleration stays under LAUNCH_STALL_A for LAUNCH_STALL_T while it is still slow, and fades out
+# at BLEND_RATE.
+LAUNCH_STOPPED_V = 0.5  # m/s
+LAUNCH_RECENT_T = 2.0  # s
+LAUNCH_V = 0.1  # m/s
+LAUNCH_A = 0.3  # m/s^2
+LAUNCH_T = 0.1  # s
+LAUNCH_STALL_A = 0.1  # m/s^2
+LAUNCH_STALL_T = 0.3  # s
+LAUNCH_DROP_V = 0.3  # m/s
+# a camera lead whose range jumps this far in a frame is another car
+LAUNCH_SWAP_DIST = 3.0  # m
 
-def forecast_speed(v_lead: float, model_v, a_lead: float = 0., radar: bool = False) -> np.ndarray:
+
+def forecast_speed(v_lead: float, model_v, a_lead: float = 0., radar: bool = False, launch: float = 0.) -> np.ndarray:
   """Lead speed at LEAD_T_IDXS: the model's predicted change from now, anchored on vLead. A radar
-  lead's measured acceleration may lift the low-speed limit."""
+  lead's measured acceleration, or a measured launch from a stop (LaunchGate's weight), may lift
+  the low-speed limit."""
   dv = np.asarray(model_v, dtype=float) - model_v[0]
-  low_speed = float(np.interp(v_lead, SPEEDUP_V_BP, [0., 1.]))
+  low_speed = max(float(np.interp(v_lead, SPEEDUP_V_BP, [0., 1.])), launch)
   if radar:
     low_speed = max(low_speed, float(np.interp(a_lead, RADAR_LAUNCH_A_BP, [0., 1.])))
   allowance = low_speed * float(np.interp(a_lead, SPEEDUP_A_BP, [0., 1.]))
@@ -150,6 +172,40 @@ def radar_matches(lead, model_lead, model_v_ego: float) -> bool:
   return abs((model_lead.v[0] - model_v_ego) - lead.vRel) <= RADAR_MATCH_SPEED
 
 
+class LaunchGate:
+  """Whether one lead is pulling away from a stop, from its measured speed and acceleration: the
+  weight (0..1) by which the forecast may speed it up below SPEEDUP_V_BP. Nothing lifts before the
+  lead has moved; a launch that stalls fades back to the limit."""
+
+  def __init__(self, dt: float = DT_MDL):
+    self.dt = dt
+    self.reset()
+
+  def reset(self) -> None:
+    self.since_stopped = math.inf  # s since the lead was last under LAUNCH_STOPPED_V
+    self.moving_t = 0.
+    self.stall_t = 0.
+    self.launched = False
+    self.peak_v = 0.
+    self.weight = 0.
+
+  def update(self, v: float, a: float) -> float:
+    self.since_stopped = 0. if v < LAUNCH_STOPPED_V else self.since_stopped + self.dt
+    moving = v >= LAUNCH_V and a >= LAUNCH_A and self.since_stopped <= LAUNCH_RECENT_T
+    self.moving_t = self.moving_t + self.dt if moving else 0.
+    if not self.launched and self.moving_t >= LAUNCH_T - 1e-6:
+      self.launched = True
+      self.stall_t = 0.
+      self.peak_v = v
+    elif self.launched:
+      self.peak_v = max(self.peak_v, v)
+      self.stall_t = self.stall_t + self.dt if a < LAUNCH_STALL_A and v < SPEEDUP_V_BP[1] else 0.
+      if v < LAUNCH_V or v < self.peak_v - LAUNCH_DROP_V or self.stall_t >= LAUNCH_STALL_T - 1e-6:
+        self.launched = False
+    self.weight = 1. if self.launched else max(0., self.weight - BLEND_RATE * self.dt)
+    return self.weight
+
+
 class LeadForecast:
   def __init__(self, params=None, dt: float = DT_MDL):
     self.params = params or Params()
@@ -163,6 +219,8 @@ class LeadForecast:
     self.v_knots: list[np.ndarray | None] = [None, None]
     self.lead_xv: list[np.ndarray | None] = [None, None]  # what the MPC got, for the plan report
     self.track_ids: list[int | None] = [None, None]  # the radar track each lead last was
+    self.launch_gates = [LaunchGate(dt), LaunchGate(dt)]
+    self.launch_ids: list[tuple | None] = [None, None]  # (radar, track id, dRel) the gate last saw
     self._calls = 0
 
   def install(self, mpc) -> None:
@@ -172,7 +230,21 @@ class LeadForecast:
     self._upstream_process_lead = mpc.process_lead
     mpc.process_lead = self.process_lead
 
-  def _target(self, lead, model_lead, model_v_ego: float):
+  def _update_launch(self, i: int, lead) -> float:
+    """The launch gate of lead i, restarted whenever the lead is another car."""
+    gate = self.launch_gates[i]
+    if not (lead.present and math.isfinite(lead.dRel) and math.isfinite(lead.vLead) and math.isfinite(lead.aLeadK)):
+      gate.reset()
+      self.launch_ids[i] = None
+      return 0.
+    radar, track = bool(lead.radar), int(lead.radarTrackId)
+    last = self.launch_ids[i]
+    if last is not None and (last[0] != radar or (track != last[1] if radar else abs(lead.dRel - last[2]) > LAUNCH_SWAP_DIST)):
+      gate.reset()
+    self.launch_ids[i] = (radar, track, float(lead.dRel))
+    return gate.update(float(lead.vLead), float(lead.aLeadK))
+
+  def _target(self, lead, model_lead, model_v_ego: float, launch: float = 0.):
     if not self.enabled:
       return Inhibit.disabled, None
     if not lead.present:
@@ -191,7 +263,7 @@ class LeadForecast:
         return Inhibit.mismatch, None
     elif range_offset(lead, model_lead) > MATCH_DIST:
       return Inhibit.mismatch, None
-    return Inhibit.none, forecast_speed(lead.vLead, model_lead.v, lead.aLeadK, radar=bool(lead.radar))
+    return Inhibit.none, forecast_speed(lead.vLead, model_lead.v, lead.aLeadK, radar=bool(lead.radar), launch=launch)
 
   def update(self, sm: messaging.SubMaster) -> None:
     self.frame += 1
@@ -204,8 +276,9 @@ class LeadForecast:
     leads_v3 = md.leadsV3
     model_v_ego = float(md.velocity.x[0]) if len(md.velocity.x) else float('nan')
     for i, lead in enumerate((rs.leadOne, rs.leadTwo)):
+      launch = self._update_launch(i, lead)
       if i < len(leads_v3):
-        inhibit, v_knots = self._target(lead, leads_v3[i], model_v_ego)
+        inhibit, v_knots = self._target(lead, leads_v3[i], model_v_ego, launch)
       else:
         inhibit, v_knots = (Inhibit.invalid if self.enabled else Inhibit.disabled), None
       # a new radar track is another car: the last one's shape must not fade out on it

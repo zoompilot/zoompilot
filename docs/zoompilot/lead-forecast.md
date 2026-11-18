@@ -59,9 +59,12 @@ For leadOne and leadTwo, paired with `leadsV3[0]` and `[1]` as radard pairs them
 ```
 v(t) = max(0, vLead + allowance * (model v(t) - model v(0)) where that change is > 0,
                 vLead +             (model v(t) - model v(0)) where it is <= 0)
-allowance = interp(vLead, [3, 8] m/s, [0, 1]) * interp(aLeadK, [-1, -0.3] m/s^2, [0, 1])
+allowance = max(interp(vLead, [3, 8] m/s, [0, 1]), launch) * interp(aLeadK, [-1, -0.3] m/s^2, [0, 1])
 x(t) = max(dRel, upstream's min_x_lead) + integral of v(t)
 ```
+
+`launch` is the lead's launch gate weight, 0 unless the lead was measured pulling away from a stop
+(see [Drive-offs](#drive-offs-the-launch-gate)).
 
 on the MPC's 13 nodes (v linear between the model's knots, x integrated exactly). The forecast
 is used only when the radarState lead is present, not a radar track, the model arrays are six
@@ -110,6 +113,10 @@ above). Cut-ins followed by the new lead accelerating: none on camera leads in t
 | `SPEEDUP_A_BP` | -1, -0.3 m/s^2 | a braking lead forecast to speed up: 1.2% of braking-and-closing frames, but under -1 m/s^2 a quarter kept slowing |
 | `MATCH_DIST` | 4 m | radarState's camera lead is `x[0] - 1.52` of the same or previous model frame |
 | `BLEND_RATE` | 4 /s | full switch in 0.25 s; no step in the obstacle |
+| `LAUNCH_V`, `LAUNCH_A`, `LAUNCH_T` | 0.1 m/s, 0.3 m/s^2, 0.1 s | launch gate: earliest setting that kept added false starts at 2 stops (see Drive-offs) |
+| `LAUNCH_STOPPED_V`, `LAUNCH_RECENT_T` | 0.5 m/s, 2 s | the gate opens only for a lead stopped within the last 2 s |
+| `LAUNCH_STALL_A`, `LAUNCH_STALL_T`, `LAUNCH_DROP_V` | 0.1 m/s^2, 0.3 s, 0.3 m/s | stall: no longer accelerating while slow, or speed off its peak; the drop rule halved added false starts (4 to 2) at no delay cost |
+| `LAUNCH_SWAP_DIST` | 3 m | a camera lead's range jumping this far in a frame is another car; restarts the gate |
 
 ## Radar leads (`LeadForecastRadar`)
 
@@ -187,13 +194,98 @@ to the camera-only version on routes 0000004a-62 (101k frames).
 Not covered by data: Toyota's radar with a current model (the only Toyota rlogs with modelV2 are
 the regen fixtures; commaCarSegments is CAN only). A Camry 2021-24 tester drives it first.
 
+## Drive-offs: the launch gate
+
+The low-speed limit made the forecast the slowest of all at a drive-off. A lead pulling away from
+a stop was held at its current speed until it passed 3 m/s, while upstream's extrapolation at
+least rode the lead's measured acceleration. Behind a camera lead the plan left `should_stop`
+0.65 s after upstream would have and the car moved 1.4 s after the lead passed 0.5 m/s. nicko's
+`mpc-lead-trajectory` branch (openpilot#37824's process_lead on sunnypilot: no low-speed limit,
+the model's own x) starts with the lead, but it also starts for the quarter of predicted
+pull-aways that do not happen.
+
+`LaunchGate` (one per lead) lifts the limit only once the lead is measured moving: within 2 s of
+being under 0.5 m/s, speed at or above 0.1 m/s and acceleration at or above 0.3 m/s^2 for 0.1 s
+(radarState's `vLead` and `aLeadK`: the model's current lead state on camera leads, the track on
+radar ones). The lift is immediate, since it only moves the obstacle away. It ends when the lead
+drops back under 0.1 m/s or 0.3 m/s below its peak, or stays under 0.1 m/s^2 for 0.3 s while under
+8 m/s, and then fades at `BLEND_RATE`. A new car (radar track id, or a camera range jump over 3 m)
+restarts the gate. Before the gate opens nothing changes, and FCW and `hasLead` are untouched.
+
+On camera leads the motion shows 0.6 s (p50) before `vLead` passes 0.5 m/s. At that moment the
+model's pull-away is unbiased: lead travel over the next 2 / 4 s, error mean +0.32 / -0.11 m, MAE
+1.16 / 3.03 m (the limit was 2.1 / 10.1 m pessimistic, upstream 1.2 / 7.2 m; 110 drive-offs).
+
+Validation (zoompilot-research `tools/mazda_long/lead_launch/`): every stop behind a lead in the
+`lead_event_index` cache, engaged or not, 97.5 h of frames. 111 camera-lead and 384 radar-lead
+drive-offs (radar ones are the Mazda radar on stock ACC drives), plus 40 / 112 min of the ego
+stopped behind a lead that stays stopped for 2 s or more. Closed loop from the stop: each arm runs
+the planner's MPC and cruise candidates, the logged e2e candidate (model `shouldStop` and accel)
+while the car is where the log had it, and the car as the Mazda: StandstillHold's debounce, 0.9 s
+to motion, then the plan through a 0.25 s lag. Against the logged plan's go, arm (a) is -0.05 s
+at p50 (68% within 0.15 s) on the 37 engaged camera drives, which ran (a), and the upstream arm
+-0.10 s (82%) on the 11 older engaged radar drives, which ran upstream.
+
+Camera leads; times from the lead passing 0.5 m/s, gaps in m, "excess" is the gap less the MPC's
+steady following distance while moving, false starts = stops where the plan asks to go while the
+lead stays stopped 2 s and (a) does not:
+
+| arm | plan go p50 (p10 / p90) | car moves p50 (p90) | gap 2 s / 4 s p50 | excess p10, first 6 s | FCW | added false starts |
+|---|---|---|---|---|---|---|
+| upstream (forecast off) | -0.45 (-1.20 / +0.00) | +0.75 (+1.20) | 8.2 / 12.9 | -0.2 | 0 | 1 |
+| (a) before this change | +0.20 (-1.10 / +0.55) | +1.40 (+1.80) | 8.8 / 15.6 | +2.8 | 0 | 0 |
+| (b) nicko / #37824 | -1.09 (-2.30 / -0.25) | +0.25 (+0.95) | 7.4 / 11.0 | -3.8 | 0 | 26 |
+| (b2) (a) without the limit | -1.05 (-2.30 / -0.20) | +0.26 (+0.95) | 7.6 / 11.1 | -3.1 | 0 | 18 |
+| (c) launch gate | -0.60 (-1.20 / -0.15) | +0.65 (+1.10) | 7.9 / 11.9 | -2.1 | 0 | 2 |
+
+Radar leads:
+
+| arm | plan go p50 | car moves p50 | gap 2 s / 4 s p50 | excess p10 | FCW | added false starts |
+|---|---|---|---|---|---|---|
+| upstream | +0.12 | +1.35 | 7.9 / 12.9 | -3.2 | 0 | 0 |
+| (a) | -0.15 | +1.08 | 7.7 / 12.7 | -2.6 | 0 | 0 |
+| (b) | -0.85 | +0.75 | 7.4 / 12.1 | -4.2 | 0 | 41 |
+| (b2) | -0.65 | +0.90 | 7.5 / 12.4 | -3.6 | 0 | 23 |
+| (c) | -0.20 | +1.05 | 7.7 / 12.7 | -2.9 | 0 | 2 |
+
+So on camera leads the gate takes back 0.8 s of the 1.3 s between (a) and (b) for 2 added false
+starts against (b)'s 26, and the car moves 0.75 s sooner. The rest of (b)'s lead is the model's
+prediction before any motion shows, which is what the limit is for. On radar leads (a) already
+lifted on measured `aLeadK` (`RADAR_LAUNCH_A_BP`) and the gate changes little. The gap runs closer
+than (a) in the first seconds (excess p10 -2.1 m) because the plan now expects the pull-away that
+the lead then makes; it never closes below the standstill gap and no arm fired FCW.
+
+Grid, camera, plan go p50 / added false starts, before the drop rule: `LAUNCH_A` 0.2 instead of
+0.3 gains 0.05-0.1 s and doubles false starts (7-9 vs 4); `LAUNCH_V` 0.1 vs 0.2 gains 0.2 s at the
+same count; `LAUNCH_T` 0.05-0.15 moves 0.05 s either way. The drop rule (`LAUNCH_DROP_V`) then
+took 4 to 2 at no cost. Rejected: flooring the limited forecast with upstream's extrapolation of
+`aLeadK` (0.05 s earlier, one more false start, and it changes the forecast before any gate
+opens), and the model's own `v[0]` / `a[0]` for camera leads instead of radarState's (the same
+signal a frame sooner; it needs one more frame of persistence for the same false-fire rate).
+
+Elsewhere nothing changes: on 97.5 h of frames the MPC's lead trajectories differ from (a) on
+0.52%, all with a gate open or fading (a stop within the last 2 s). Open loop (logged seeding, as
+`lead_forecast_replay.py`) within 10 s of any open gate, 0.56M frames: the MPC candidate is never
+lower than (a)'s (p1 +0.01 m/s^2), differs by at most +0.09 above 10 m/s (36 frames), and FCW
+frames are the same (11 and 11). Process replay of plannerd on five segments (three alpha long,
+two stock ACC): three plan identically (one stock segment's reported forecast differs on 3 frames,
+a lead pulling away at 1 m/s), and the two with stops differ only from the drive-off on (aTarget
+up to +0.77, never lower, except -0.05 for 4 s afterwards from the planner's own carried state).
+
+On the Mazda the car moves 1.1 s (p50, 1.05-1.4) after the plan leaves `should_stop`: 0.28 s until
+the command leaves the hold (StandstillHold's 0.2 s debounce, 0.05 s above 0.3 m/s^2; the plan
+crosses 0.3 in its first 0.2 s in 26% of gated launches, 5% before), then the breakaway ramp to
+about 1 m/s^2 and the powertrain. That is the floor under any planner change here.
+
 ## Tried and rejected
 
 - Model `x` for position (the PR): optimistic by 2 m at 6 s; integrated speed is unbiased.
-- Allowing a forecast speed-up only for a lead already pulling away: costs the speed-up cases
-  where the model was right 85% of the time, and does nothing for the slow-lead launch case that
-  needs it, which the low-speed allowance covers. The braking-lead case it guards is covered by
-  `SPEEDUP_A_BP` instead.
+- Allowing a forecast speed-up only for a lead already pulling away, at every speed: costs the
+  speed-up cases where the model was right 85% of the time. The braking-lead case it guards is
+  covered by `SPEEDUP_A_BP` instead. Under 3 m/s it is what the launch gate now does: there the
+  limit alone held the car until the lead reached 3 m/s (see Drive-offs).
+- Dropping the low-speed limit (openpilot#37824, nicko's branch; arms (b), (b2) in Drive-offs):
+  0.5 s sooner than the gate at a drive-off, but 13 times the added false starts.
 - The camera formula for radar leads: optimistic behind a lead radar measures braking, and far
   more pessimistic than upstream behind accelerating leads (see Radar leads).
 - FCW against the measured path for radar leads (crash check on upstream's extrapolation while
