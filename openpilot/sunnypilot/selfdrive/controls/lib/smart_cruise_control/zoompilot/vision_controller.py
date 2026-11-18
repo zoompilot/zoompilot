@@ -14,6 +14,7 @@ docs/zoompilot/scc-curve-planning.md for tuning data and design details.
 import numpy as np
 
 import openpilot.cereal.messaging as messaging
+from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN_V
@@ -37,6 +38,20 @@ _PLAN_MARGIN = 0.95
 # The same table by curvature (ascending), so each point's ceiling needs no speed solve.
 _A_LAT_KAPPA_BP = [a * _PLAN_MARGIN / v ** 2 for v, a in zip(_A_LAT_CURVE_BP[::-1], _A_LAT_CURVE[::-1], strict=True)]
 _A_LAT_KAPPA = [a * _PLAN_MARGIN for a in _A_LAT_CURVE[::-1]]
+
+# Bank. What the car feels is v^2 * kappa - g * roll (signed, left positive; against the IMU on
+# the 10-12/13 drives, 0.97 and 0.91). The table above was tuned on curves carrying the typical
+# bank for their speed (median g * roll over sustained curves, side-signed): +0.48 m/s2 from
+# 35 mph (designed roads, hardly ever adverse), +0.3 at 25-35, about zero at intersection speed.
+# Only a departure from that moves a point's ceiling, so a typical curve plans as it did, a flat
+# or adverse one slows and a steep one is let through. Roll along the path is the road roll now
+# plus the model's predicted change (modelV2.orientation.x, which tracks the realised change
+# with slope 1.0, corr 0.86 at 2-4 s; doc).
+_BANK_TYPICAL_BP = [7.8, 12.3, 16.8]  # m/s curve speed; 17.5, 27.5, 37.5 mph
+_BANK_TYPICAL = [0.05, 0.3, 0.48]  # m/s2
+_BANK_SHIFT_MIN, _BANK_SHIFT_MAX = -1.0, 0.4  # m/s2, before the planning margin
+_BANK_FLOOR = 0.5  # a shifted ceiling keeps at least this share of the table's
+_ROLL_MAX = 0.14  # rad, 8 deg, paramsd's lowered validity bound
 
 # Compensate the measured distance-dependent curvature bias before solving. The gain returns
 # to one in the near field, changing brake timing without changing apex speed.
@@ -100,9 +115,29 @@ def curve_table(scale: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
 _NORMAL_TABLE = curve_table()
 
 
-def curve_speed(kappa, table: tuple[np.ndarray, np.ndarray] = _NORMAL_TABLE) -> np.ndarray:
-  """Allowed speed at each path point under the curve-speed ceiling, planning margin included."""
-  return allowed_speed(kappa, np.interp(kappa, *table))
+def curve_speed(kappa, table: tuple[np.ndarray, np.ndarray] = _NORMAL_TABLE, shift=0.) -> np.ndarray:
+  """Allowed speed at each path point under the curve-speed ceiling, planning margin included,
+  with each point's ceiling moved by shift (bank_shift)."""
+  a_lat = np.interp(kappa, *table)
+  return allowed_speed(kappa, np.maximum(a_lat + shift, _BANK_FLOOR * a_lat))
+
+
+def bank_shift(kappa, side, roll, table: tuple[np.ndarray, np.ndarray] = _NORMAL_TABLE) -> np.ndarray:
+  """Ceiling shift at each path point, m/s2 with the planning margin: how far the bank carries
+  more (+) or less (-) of the lateral load than the table's typical curve at that speed.
+  side is the sign of the curvature (left +; 0 without a roll reading), roll the road roll there, rad."""
+  side = np.asarray(side, dtype=float)
+  credit = ACCELERATION_DUE_TO_GRAVITY * np.clip(roll, -_ROLL_MAX, _ROLL_MAX) * side
+  typical = np.interp(curve_speed(kappa, table), _BANK_TYPICAL_BP, _BANK_TYPICAL)
+  # side 0 is no bank reading (or a straight point): no shift
+  return np.where(side != 0., np.clip(credit - typical, _BANK_SHIFT_MIN, _BANK_SHIFT_MAX) * _PLAN_MARGIN, 0.)
+
+
+def path_roll(road_roll: float, model) -> np.ndarray | float:
+  """Road roll along the model path, rad: now, plus the change the model predicts."""
+  predicted = np.asarray(model.orientation.x, dtype=float)
+  n = len(model.orientationRate.z)
+  return road_roll + predicted if len(predicted) == n and np.all(np.isfinite(predicted)) else road_roll
 
 
 class SmartCruiseControlVision(VisionProfile, UpstreamVision):
@@ -135,7 +170,8 @@ class SmartCruiseControlVision(VisionProfile, UpstreamVision):
       return
 
     model = sm['modelV2']
-    rate_z = np.abs(np.asarray(model.orientationRate.z, dtype=float))
+    rate_z_signed = np.asarray(model.orientationRate.z, dtype=float)
+    rate_z = np.abs(rate_z_signed)
     vel = np.asarray(model.velocity.x, dtype=float)
     x = np.asarray(model.position.x, dtype=float)
     y = np.asarray(model.position.y, dtype=float)
@@ -152,11 +188,16 @@ class SmartCruiseControlVision(VisionProfile, UpstreamVision):
     dist[1:] = np.cumsum(np.hypot(np.diff(x), np.diff(y)))
 
     lim = self.limits
+    table = self._curve_table
+    # Without a valid road roll (paramsd still converging) every point plans on the typical bank.
+    vp = sm['vehicleParameters']
+    side = np.sign(rate_z_signed) if vp.valid else np.zeros_like(rate_z_signed)
+    roll = path_roll(vp.roll, model)
     # The raw near field says whether the car is in a curve.
     near_d = max(self.v_ego, MIN_V) * (_NEAR_T_BIG if model.big else _NEAR_T)
     near = dist <= near_d  # dist[0] is 0, so never empty
     k_near = float(np.max(kappa[near]))
-    self.v_near_min = float(curve_speed(k_near, self._curve_table))
+    self.v_near_min = float(np.min(curve_speed(kappa, table, bank_shift(kappa, side, roll, table))[near]))
     # Publish near-path lateral acceleration for UI state.
     self.max_pred_lat_acc = k_near * self.v_ego ** 2
 
@@ -164,8 +205,10 @@ class SmartCruiseControlVision(VisionProfile, UpstreamVision):
     fade = np.interp(self.v_ego, _KAPPA_BIAS_V_BP, _KAPPA_BIAS_V_FADE)
     depth_fade = min(fade, np.interp(self.v_cruise_setpoint, _KAPPA_DEPTH_SET_BP, [1., 0.]))
     bias = np.interp(dist, _KAPPA_BIAS_D, _KAPPA_BIAS_GAIN) - 1.
-    v_allowed = curve_speed(kappa * (1. + bias * fade), self._curve_table)
-    v_profile = curve_speed(kappa * (1. + bias * depth_fade), self._curve_table)
+    k_allowed = kappa * (1. + bias * fade)
+    k_profile = kappa * (1. + bias * depth_fade)
+    v_allowed = curve_speed(k_allowed, table, bank_shift(k_allowed, side, roll, table))
+    v_profile = curve_speed(k_profile, table, bank_shift(k_profile, side, roll, table))
 
     # Stock ACC lead time includes the set-speed traversal to the lowest target.
     t_lead = lim.t_lead

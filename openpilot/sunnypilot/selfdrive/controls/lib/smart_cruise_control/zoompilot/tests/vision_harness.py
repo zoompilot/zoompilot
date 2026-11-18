@@ -44,7 +44,8 @@ ATTENUATION_D = [0., 30., 50., 70., 90., 110., 130., 200.]
 ATTENUATION = [1.0, 0.94, 0.88, 0.79, 0.66, 0.55, 0.30, 0.30]
 
 
-def model_for_road(v: float, kappa_fn, v_model: float | None = None, attenuate: bool = False, big: bool = False):
+def model_for_road(v: float, kappa_fn, v_model: float | None = None, attenuate: bool = False, big: bool = False,
+                   roll_fn=None):
   """Render kappa(s) into model arrays as the model would report driving it at speed v.
 
   v_model lets the model's own velocity plan differ from v (a planned slowdown); the yaw
@@ -52,7 +53,8 @@ def model_for_road(v: float, kappa_fn, v_model: float | None = None, attenuate: 
 
   attenuate applies the measured range under-read, so the road reaches the controller the
   way the real model would report it rather than as perfect geometry. big marks the frame as
-  the big model's (modelV2.big), which selects its planning horizon.
+  the big model's (modelV2.big), which selects its planning horizon. roll_fn(s) is the change in
+  road roll the model predicts there (modelV2.orientation.x), rad.
   """
   t = np.array(ModelConstants.T_IDXS)
   s = v * t
@@ -74,8 +76,21 @@ def model_for_road(v: float, kappa_fn, v_model: float | None = None, attenuate: 
   orientation_rate = log.XYZTData.new_message()
   orientation_rate.z = [float(kappa_fn(si) * vm) for si in s]
   model.modelV2.orientationRate = orientation_rate
+  if roll_fn is not None:
+    orientation = log.XYZTData.new_message()
+    orientation.x = [float(roll_fn(si)) for si in s]
+    model.modelV2.orientation = orientation
   model.modelV2.big = big
   return model
+
+
+def vehicle_params(roll: float | None = None):
+  """vehicleParameters with a road roll, rad (positive banks a left curve); None is no valid
+  estimate, which plans every curve on the typical bank."""
+  vp = messaging.new_message('vehicleParameters')
+  vp.vehicleParameters.valid = roll is not None
+  vp.vehicleParameters.roll = float(roll or 0.)
+  return vp.vehicleParameters
 
 
 def curve_at(d_curve: float, kappa: float = CURVE_KAPPA):
@@ -117,17 +132,18 @@ class VisionCase:
     return SmartCruiseControlVision(make_cp(op_long=False))
 
   def make_sm(self, v: float, kappa_fn, cur_curvature: float = 0., v_model: float | None = None,
-              attenuate: bool = False, big: bool = False) -> Any:
+              attenuate: bool = False, big: bool = False, roll: float | None = None) -> Any:
     controls_state = messaging.new_message('controlsState')
     controls_state.controlsState.curvature = float(cur_curvature)
     return {'modelV2': model_for_road(v, kappa_fn, v_model, attenuate, big).modelV2,
-            'controlsState': controls_state.controlsState}
+            'controlsState': controls_state.controlsState, 'vehicleParameters': vehicle_params(roll)}
 
   def run_road(self, v: float, kappa_fn, n: int = 3, cur_curvature: float = 0.,
                v_model: float | None = None, setpoint: float = SETPOINT,
-               enabled: bool = True, override: bool = False, scc=None, attenuate: bool = False, big: bool = False):
+               enabled: bool = True, override: bool = False, scc=None, attenuate: bool = False, big: bool = False,
+               roll: float | None = None):
     scc = scc or self.scc_v
-    sm = self.make_sm(v, kappa_fn, cur_curvature, v_model, attenuate, big)
+    sm = self.make_sm(v, kappa_fn, cur_curvature, v_model, attenuate, big, roll)
     for _ in range(n):
       scc.update(sm, enabled, override, v, 0., setpoint)
     return scc

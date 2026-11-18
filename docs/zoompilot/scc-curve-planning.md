@@ -193,6 +193,43 @@ to the budget (`publish_ramp`).
 apex on it instead of over it. Swept against the corpus: at 1.0 the sim leaves 13% of
 fair apexes above 2.2 m/s^2; at 0.95 that drops to 5% for 1.4% of speed given up.
 
+## Road bank
+
+What the car feels is `v^2 * kappa - g * roll` (signed, left positive; `roll` is
+`vehicleParameters.roll`). Against the IMU on the 10-12/13 drives (8.5 h, 9 routes) the fit is
+0.97 and 0.91, and the roll term takes the residual from 0.27 to 0.17 m/s^2. commaai/openpilot
+21f7747d (11-16) uses the same term for its e2e curve offset, with the roll now only.
+
+The ceiling table was tuned on real curves, which carry the bank typical for their speed.
+Median `g * roll`, side-signed, over sustained curves (`|lat| > 1` for 2 s):
+
+| curve speed, mph | 15-20 | 20-25 | 25-30 | 30-35 | 35-40 | 40-45 | 45-80 |
+|---|---|---|---|---|---|---|---|
+| bank carry, m/s^2 | +0.04 | +0.12 | +0.32 | +0.26 | +0.50 | +0.31 | +0.45 to +0.54 |
+
+Above 35 mph it is hardly ever adverse (p10 +0.22 to +0.36). So `bank_shift` moves a point's
+ceiling only by its departure from `_BANK_TYPICAL` (0.05 / 0.3 / 0.48 at 17.5 / 27.5 / 37.5 mph),
+clipped to -1.0 / +0.4 and kept above half the table. A typical curve plans as before, a flat
+or adverse one slows, a steep one is let through. Profiles (`CurveSpeedProfile`) scale the
+table, not the bank: the bank is physics, not taste.
+
+Roll along the path is the roll now plus `modelV2.orientation.x`, the model's predicted change.
+Upstream comments that term out; on these drives it tracks the realised change (roll at
+`t + tau` minus roll at `t`) with slope 1.0 and corr 0.86 at 2-4 s, 0.95-0.97 on changes over
+1.5 deg, and halves the error of holding the roll now (0.35 vs 0.70 deg at 3 s). That is what
+lets a banked curve ahead count before the car is in it.
+
+`vehicleParameters.roll` includes body roll (outward, like adverse camber), so the carry is
+understated in a hard curve; the typical table was measured the same way, so the departure is
+consistent. Without `vehicleParameters.valid` (paramsd converging) every point plans on the
+typical bank, which is the old plan exactly.
+
+Route sim, 10-12/13 roads, stock ACC, bank off -> on (25 road curves; felt = peak over apex
++-30 m at the simulated speed, recorded roll): felt p50 1.46 -> 1.57, sd 0.39 -> 0.34, max
+2.49 -> 2.46, time lost 1.86 -> 1.73 s. Banked interstate curves (carry +0.77 to +0.83) gain
+2-7 mph and stay at or under 1.8 felt; the one flat curve (2c1, carry -0.02) drops 1.9 mph,
+felt 2.39 -> 2.19.
+
 ## Commit, hold, release
 
 Commit when `a_required >= COMMIT_FRAC * a_budget`. Once braking, hold while the near
@@ -407,6 +444,9 @@ for every brand with a measured plant (`icbm.md`).
 |---|---|---|---|
 | `TUNED_BRANDS` | `('mazda',)` | brands with a measured stock ACC response | n/a |
 | `_A_LAT_CURVE_BP` / `_A_LAT_CURVE` | 15.6 / 24.6 / 31.3 m/s curve speed -> 2.2 / 2.1 / 2.2 m/s^2 | lateral ceiling (v^2 * curvature) at the curve's own speed (`curve_speed`, the table re-keyed on curvature). Driver-limited curves (129, corpus) p75 2.3 below 45 mph, 2.0 at 45-55; logged interstate curves are banked 2.5-4 deg (0.4-0.65 m/s^2 not felt). History: 2.0 flat until 09-30; 1.8 after route 260; set-keyed 2.0 -> 1.8 (40 -> 60 mph set) from 10-04 until 10-13, when 55+ was too slow and back roads a tad slow | 10-13 route sim, user reports |
+| `_BANK_TYPICAL_BP` / `_BANK_TYPICAL` | 7.8 / 12.3 / 16.8 m/s curve speed -> 0.05 / 0.3 / 0.48 m/s^2 | median side-signed `g * roll` over sustained curves; the bank the ceiling table already assumes | 10-12/13, 8.5 h |
+| `_BANK_SHIFT_MIN` / `_BANK_SHIFT_MAX` | -1.0 / +0.4 m/s^2 | clip on the departure from typical; corpus p90 departure +0.2 above 35 mph, +0.4 below | 10-12/13 |
+| `_BANK_FLOOR` | 0.5 | a shifted ceiling keeps half the table's | n/a |
 | `_KAPPA_DEPTH_SET_BP` | 20.1 to 24.6 m/s set speed | the range gain stops setting the dash target from a 55 mph set (timing keeps it) | route 2c0, 10-13 route sim |
 | `_IN_CURVE_MARGIN` | 1.0 m/s | the plan holds while the near field limits the car below `vEgo` plus this | user reports |
 | `_PLAN_MARGIN` | 0.95 | 13% -> 5% of fair apexes above 2.2 for 1.4% speed | corpus sim |
