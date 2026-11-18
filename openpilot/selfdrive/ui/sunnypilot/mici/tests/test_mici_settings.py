@@ -1362,7 +1362,8 @@ class TestModelPathMode:
     monkeypatch.setattr(ui_state, "status", UIStatus[status])
     monkeypatch.setattr(ui_state, "started", True)
     msgs = {'carState': SimpleNamespace(steeringAngleDeg=0.)}
-    monkeypatch.setattr(ui_state, "sm", type("SM", (), {"frame": 0, "__getitem__": lambda self, k: msgs[k]})())
+    monkeypatch.setattr(ui_state, "sm", type("SM", (), {"frame": 0, "recv_frame": {'carState': 1}, "__getitem__": lambda self, k: msgs[k]})())
+    monkeypatch.setattr(ui_state, "_started_frame", 0)
     drawn = []
     monkeypatch.setattr(hud_renderer.rl, "draw_texture_pro", lambda tex, src, dst, origin, rot, color: drawn.append(color))
     hud = hud_renderer.HudRenderer()

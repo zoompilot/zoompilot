@@ -127,7 +127,7 @@ class SpeedLimitRenderer(Widget, SpeedLimitAlertRenderer):
   def update(self):
     SpeedLimitAlertRenderer.update(self)
     sm = ui_state.sm
-    if sm.recv_frame["carState"] < ui_state.started_frame:
+    if not ui_state.received_since_started("carState"):
       self.set_speed = SET_SPEED_NA
       self.speed = 0.0
       return

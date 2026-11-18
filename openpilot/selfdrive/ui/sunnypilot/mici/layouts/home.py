@@ -46,14 +46,16 @@ class MiciHomeLayoutSP(MiciHomeLayout):
     waiting = chestnut_state == ChestnutState.WAITING
 
     # the port is known while Jetlink holds it, whatever enumerated
-    self._usb_icon.set_visible(usb_connected and usb_unknown and not ui_state.adb_blocked)
+    failed = chestnut_state in (ChestnutState.UNCOMPILED, ChestnutState.FAILED)
+    self._usb_icon.set_visible(usb_connected and usb_unknown and not ui_state.adb_blocked and not failed)
     self._chestnut_loading_icon.set_opacity(0.35 + 0.65 * (0.5 - 0.5 * math.cos(rl.get_time() * 6.0)))
     self._chestnut_loading_icon.set_visible(not usb_unknown and loading)
     self._chestnut_icon.set_opacity(0.5 if waiting else 1.0)
     self._chestnut_icon.set_visible(not usb_unknown and not loading and
                                     chestnut_state in (ChestnutState.READY, ChestnutState.ACTIVE,
                                                        ChestnutState.WAITING))
-    self._chestnut_failed_icon.set_visible(not usb_unknown and chestnut_state in (ChestnutState.UNCOMPILED, ChestnutState.FAILED))
+    # a failed chestnut drops its USB, the icon stays (as upstream)
+    self._chestnut_failed_icon.set_visible(failed)
 
   def _render(self, rect):
     super()._render(rect)
