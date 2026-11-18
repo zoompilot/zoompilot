@@ -5,8 +5,9 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
 zoompilot's curve speed planners (vision and map), tuned from measurements of the brands
-listed here. Every other brand runs sunnypilot's own controllers, wrapped only for the Curve
-Speed profile (curve_speed_profile.py). See docs/zoompilot/scc-curve-planning.md.
+listed here. Every other brand runs sunnypilot's own controllers, wrapped for the Curve Speed
+profile (curve_speed_profile.py), plus the lateral ceiling learner on the vision one
+(stock_vision.py). See docs/zoompilot/scc-curve-planning.md.
 """
 
 # brands whose stock ACC response and planning limits have been measured from their logs
@@ -22,7 +23,9 @@ def make_smart_cruise_control(CP):
     scc.vision = SmartCruiseControlVision(CP)
     scc.map = SmartCruiseControlMap(CP)
   else:
+    # every other brand keeps sunnypilot's planners; the vision one also learns the car's lateral ceiling
     from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot import curve_speed_profile
-    scc.vision = curve_speed_profile.SmartCruiseControlVision()
+    from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.zoompilot.stock_vision import SmartCruiseControlVision
+    scc.vision = SmartCruiseControlVision(CP)
     scc.map = curve_speed_profile.SmartCruiseControlMap()
   return scc

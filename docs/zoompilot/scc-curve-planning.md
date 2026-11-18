@@ -20,6 +20,11 @@ zoompilot vision planner publishes `sccVAheadMin`; on every other brand it is 0,
 ICBM's restore on its stillness heuristic (`icbm.md`). `limits.py`, `speed_profile.py` and
 `publish_ramp` stay shared with the SLA publishers on every brand.
 
+The one addition on those brands is the per-car lateral ceiling learner: `zoompilot/stock_vision.py`
+subclasses sunnypilot's vision planner (left untouched), starts the learner on its flat 2 m/s2 cap,
+and, with "Learn Steering Limit" on and a lesson learned, caps the curve speed at the car's learned
+ceiling instead. Toggle off or nothing learned: exactly sunnypilot's planner.
+
 ## The shape of the problem
 
 A curve is a region, not a point, and the path ahead can hold several. `speed_profile`
