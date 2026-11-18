@@ -97,7 +97,6 @@ class DeveloperUiRenderer(Widget):
     if self.dev_ui_mode == DeveloperUiState.OFF:
       return
 
-    sm = ui_state.sm
     if not ui_state.received_since_started("carState"):
       return
 
