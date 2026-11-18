@@ -9,9 +9,9 @@ from openpilot.selfdrive.ui.mici.onroad import blend_colors
 from openpilot.selfdrive.ui.mici.onroad.status import status_fade
 from openpilot.selfdrive.ui.onroad.model_renderer import ModelRenderer as BaseModelRenderer, CLIP_MARGIN, MAX_DRAW_DISTANCE, STOCK_PATH_GRADIENT
 from openpilot.system.ui.lib.application import gui_app
-from openpilot.system.ui.lib.polygon import draw_polygon
+from openpilot.system.ui.lib.polygon import Gradient, draw_polygon
 
-from openpilot.selfdrive.ui.sunnypilot.mici.onroad.model_renderer import LANE_LINE_COLORS_SP, ModelRendererSP
+from openpilot.selfdrive.ui.sunnypilot.mici.onroad.model_renderer import ModelRendererSP
 
 LEAD_BAR_LENGTH = 12.0  # px
 LEAD_BAR_WIDTH = 1.8  # m
@@ -20,8 +20,17 @@ LANE_LINE_COLORS = {
   UIStatus.DISENGAGED: rl.Color(200, 200, 200, 255),
   UIStatus.OVERRIDE: rl.Color(255, 255, 255, 255),
   UIStatus.ENGAGED: rl.Color(0, 255, 64, 255),
-  **LANE_LINE_COLORS_SP,
 }
+
+
+# zoompilot: the path under MADS lateral-only, STOCK_PATH_GRADIENT's shape without its green.
+# The path's color is the longitudinal state; the lane lines, wheel and torque bar are the lateral one
+LAT_ONLY_PATH_GRADIENT = Gradient(
+  start=(0.0, 1.0),
+  end=(0.0, 0.0),
+  colors=[rl.Color(255, 255, 255, 102), rl.Color(255, 255, 255, 89), rl.Color(255, 255, 255, 0)],
+  stops=[0.0, 0.5, 1.0],
+)
 
 
 class LeadVehicle:
@@ -69,12 +78,13 @@ class ModelRenderer(BaseModelRenderer, ModelRendererSP):
     extrinsics_calibration = sm['extrinsicsCalibration']
     self._path_offset_z = extrinsics_calibration.height[0] if extrinsics_calibration.height else HEIGHT_INIT[0]
 
-    self._longitudinal_control = ui_state.long_engaged
+    if sm.updated['carParams']:
+      self._longitudinal_control = sm['carParams'].openpilotLongitudinalControl
 
     model = sm['modelV2']
     radar_state = sm['radarState'] if sm.valid['radarState'] else None
     lead_one = radar_state.leadOne if radar_state else None
-    render_lead_indicator = self._longitudinal_control and radar_state is not None
+    render_lead_indicator = self._longitudinal_control and ui_state.cruise_engaged and radar_state is not None  # not under MADS lateral-only
 
     # Update model data when needed
     model_updated = sm.updated['modelV2']
@@ -195,6 +205,9 @@ class ModelRenderer(BaseModelRenderer, ModelRendererSP):
 
     if ui_state.status == UIStatus.DISENGAGED:
       draw_polygon(self._rect, path_pts, rl.Color(0, 0, 0, 90))
+    elif not ui_state.cruise_engaged:
+      # MADS lateral-only: nobody is driving the speed, so no green and no acceleration colors
+      draw_polygon(self._rect, path_pts, gradient=LAT_ONLY_PATH_GRADIENT)
     elif not self._longitudinal_control:
       draw_polygon(self._rect, path_pts, gradient=STOCK_PATH_GRADIENT)
     elif len(self._path_gradient.colors) > 1:

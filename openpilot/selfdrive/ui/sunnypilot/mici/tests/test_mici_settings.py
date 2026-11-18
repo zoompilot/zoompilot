@@ -1047,14 +1047,14 @@ class TestAlphaLongitudinalPanelMici:
   def test_settings_opens_the_sp_panels(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.settings import SettingsLayoutSP
-    from openpilot.selfdrive.ui.mici.layouts.settings.toggles import TogglesLayoutMici
+    from openpilot.selfdrive.ui.mici.layouts.settings.driving import DrivingLayoutMici
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import SoftwareLayoutSP
     from openpilot.system.ui.lib.application import gui_app
 
     buttons = {btn.text: btn for btn in SettingsLayoutSP()._scroller.items if hasattr(btn, "text")}
     pushed = []
     monkeypatch.setattr(gui_app, "push_widget", lambda w: pushed.append(w))
-    for label, cls in (("toggles", TogglesLayoutMici), ("developer", DeveloperLayoutMiciSP), ("software", SoftwareLayoutSP)):
+    for label, cls in (("driving", DrivingLayoutMici), ("developer", DeveloperLayoutMiciSP), ("software", SoftwareLayoutSP)):
       buttons[label]._click_callback()
       assert type(pushed[-1]) is cls
 
@@ -1276,66 +1276,186 @@ class TestModelsPanelMici:
     assert options.camera_offset.value == "-0.05 m"
 
 
-class TestSpeedAssistBadge:
-  """The Set Speed Assist badge comes and goes with the wheel and waits for the model icon."""
+class TestSpeedAssistDial:
+  """Set Speed Assist's dial over mici's long indicator: shown with the assist on, the stack shifted to make
+  room, and the arc filling toward the parked needle with the lift."""
 
-  def _settle(self, hud, monkeypatch, frames=200):
+  def test_fill_runs_from_the_arc_start_to_the_needle(self):
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
+    assert d.fill_to(0.0) == d.ARC_FROM
+    assert d.fill_to(1.0) == d.NEEDLE_DEG
+    assert d.fill_to(0.5) == (d.ARC_FROM + d.NEEDLE_DEG) / 2
+    assert d.fill_to(2.0) == d.NEEDLE_DEG
+
+  def test_needle_turns_green_only_on_arrival(self):
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import needle_level
+    assert needle_level(0.0) == needle_level(0.8) == 0.0
+    assert 0.0 < needle_level(0.92) < 1.0
+    assert needle_level(1.0) == 1.0
+
+  def test_dial_matches_the_car(self):
+    import numpy as np
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
+    arc = d.arc_outline(1.0, d.ARC_TO)
+    assert np.isclose(arc[:, 0].max() - arc[:, 0].min(), 35.0, atol=0.05)  # the lead car's width
+    needle = d.needle_outline(1.0)
+    top = -(d.RADIUS + d.STROKE / 2)
+    assert np.isclose(min(arc[:, 1].min(), needle[:, 1].min()), top, atol=0.05)
+    assert np.isclose(max(arc[:, 1].max(), needle[:, 1].max()) - top, d.DIAL_HEIGHT, atol=0.05)
+    # the needle stops short of the arc's inner edge
+    assert np.hypot(needle[:, 0], needle[:, 1]).max() <= d.RADIUS - d.STROKE / 2 - d.NEEDLE_CLEARANCE + 0.05
+
+  def test_layout_lands_on_whole_pixels(self):
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
+    assert li.DIAL_TOP == int(li.DIAL_TOP) and li.STACK_TOP + li.STACK_SHIFT == int(li.STACK_TOP + li.STACK_SHIFT)
+    assert li.DIAL_TOP - li.DM_BOTTOM >= li.DIAL_GAP  # the margins stay wider than the stack's own pitch
+
+  @staticmethod
+  def _settle(monkeypatch, frames=200):
+    """LongIndicatorSP over a stub of upstream's _render that records the rect it is given and leaves the
+    stack fully shown; returns (stack rects, dial draws)."""
     import raylib_nb as rl
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import hud_renderer
-    drawn = []
-    monkeypatch.setattr(hud_renderer, "draw_gauge_centered", lambda *a: drawn.append(a))
+    from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
+
+    stacks, dials = [], []
+    def upstream_render(self, rect):
+      stacks.append(rect)
+      self._alpha_filter.x = self._dim_filter.x = 1.0
+    monkeypatch.setattr(LongIndicator, "_render", upstream_render)
+    monkeypatch.setattr(li, "draw_dial", lambda cx, top, **kw: dials.append((top, kw)))
+    sp = li.LongIndicatorSP()
     for _ in range(frames):
-      hud._draw_speed_assist(rl.Rectangle(0, 0, 536, 240))
-    return drawn
+      sp._render(rl.Rectangle(0, 0, 72, 240))
+    return stacks, dials
 
-  @pytest.mark.parametrize(("long_engaged", "chestnut", "shown"), [
-    (True, "DISCONNECTED", True),
-    (False, "DISCONNECTED", False),  # disengaged or MADS lateral-only: leaves with the long indicator
-    (True, "LOADING", False),  # the model icon owns the corner
-    (True, "ACTIVE", False),  # within the model icon's persistence after engaging
-  ])
-  def test_follows_long_engaged(self, params, monkeypatch, long_engaged, chestnut, shown):
-    import raylib_nb as rl
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
+  @pytest.mark.parametrize("speed_assist", [True, False])
+  def test_stack_shifts_only_with_the_assist(self, params, monkeypatch, speed_assist):
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
+    from openpilot.selfdrive.ui.ui_state import ui_state
 
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: long_engaged))
-    monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState[chestnut])
-    hud = HudRendererSP()
-    hud._chestnut_fade_time = rl.get_time()
-    drawn = self._settle(hud, monkeypatch)
-    if shown:
-      assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA_IDLE, abs=0.02)
+    monkeypatch.setattr(ui_state, "speed_assist", speed_assist)
+    stacks, dials = self._settle(monkeypatch)
+    if speed_assist:
+      assert stacks[-1].y == pytest.approx(li.STACK_SHIFT, abs=0.05)
+      assert dials[-1][0] == pytest.approx(li.DIAL_TOP, abs=0.05) and dials[-1][1]["alpha"] == pytest.approx(1.0, abs=0.01)
     else:
-      assert not drawn
+      # upstream's half-pixel rest position, half a pixel lower onto whole pixels
+      assert stacks[-1].y == pytest.approx(0.5) and dials[-1][1]["alpha"] == pytest.approx(0.0)
 
-  def test_swaps_in_after_the_model_icon(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.mici.onroad.hud_renderer import SET_SPEED_PERSISTENCE
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, HudRendererSP
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
+  def test_stack_slides_on_whole_pixels(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    stacks, dials = self._settle(monkeypatch, frames=120)
+    import math
+    from openpilot.system.ui.lib.application import gui_app
+
+    tops = [li.STACK_TOP + s.y for s in stacks]
+    assert all(t == int(t) for t in tops) and all(top == int(top) for top, _ in dials)
+    steps = [b - a for a, b in zip([87.0] + tops[:-1], tops, strict=True)]
+    dt = 1 / gui_app.target_fps
+    # one way, never more than the filter's own travel per frame rounded up
+    assert min(steps) >= 0 and max(steps) <= math.ceil(li.STACK_SHIFT * dt / (li.SLIDE_RC + dt))
+    assert tops[-1] == li.STACK_TOP + li.STACK_SHIFT
+
+  def test_lift_fills_the_dial(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
+    from openpilot.selfdrive.ui.ui_state import ui_state
+
+    monkeypatch.setattr(ui_state, "speed_assist", True)
+    monkeypatch.setattr(d, "lift_fraction", lambda: 0.75)
+    _, dials = self._settle(monkeypatch, frames=300)
+    assert dials[-1][1]["lift"] == pytest.approx(0.75, abs=0.01)
+
+  def test_lift_is_zero_without_openpilot_longitudinal(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.onroad import speed_assist_dial as d
+    from openpilot.selfdrive.ui.ui_state import UIState
+    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: False))
+    assert d.lift_fraction() == 0.0
+
+  def test_dial_draws(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.onroad.speed_assist_dial import draw_dial
+    for lift in (0.0, 0.005, 0.4, 1.0):
+      draw_dial(36, 71, lift=lift)
+
+
+class TestModelPathMode:
+  """The path's color is the longitudinal state: grey under MADS lateral-only, green with the car's own
+  ACC engaged, the acceleration colors with openpilot longitudinal."""
+
+  @pytest.mark.parametrize(("status", "cruise", "op_long", "expected"), [
+    ("LAT_ONLY", False, False, "lat_only"),
+    ("LAT_ONLY", False, True, "lat_only"),  # alpha long fitted, cruise not engaged
+    ("OVERRIDE", False, True, "lat_only"),  # steering override under MADS lateral-only
+    ("ENGAGED", True, False, "stock"),
+    ("ENGAGED", True, True, "accel"),
+    ("LONG_ONLY", True, True, "accel"),
+  ])
+  def test_path_follows_longitudinal(self, params, monkeypatch, status, cruise, op_long, expected):
+    import numpy as np
     import raylib_nb as rl
+    from openpilot.selfdrive.ui.mici.onroad import model_renderer
+    from openpilot.selfdrive.ui.ui_state import UIState, UIStatus, ui_state
+    from openpilot.system.ui.lib.polygon import Gradient
 
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.ACTIVE)
-    hud = HudRendererSP()
-    hud._chestnut_fade_time = rl.get_time() - SET_SPEED_PERSISTENCE - 0.1
-    drawn = self._settle(hud, monkeypatch)
-    assert drawn and drawn[-1][3] == pytest.approx(SPEED_ASSIST_ALPHA_IDLE, abs=0.02)
+    monkeypatch.setattr(ui_state, "status", UIStatus[status])
+    monkeypatch.setattr(ui_state, "rainbow_path", False)
+    monkeypatch.setattr(UIState, "cruise_engaged", property(lambda _: cruise))
+    drawn = []
+    monkeypatch.setattr(model_renderer, "draw_polygon", lambda rect, pts, color=None, gradient=None: drawn.append(color or gradient))
+    renderer = model_renderer.ModelRenderer()
+    renderer._rect = rl.Rectangle(0, 0, 464, 240)
+    renderer._path.projected_points = np.zeros((4, 2), dtype=np.float32)
+    renderer._longitudinal_control = cruise and op_long
+    accel = Gradient(start=(0.0, 1.0), end=(0.0, 0.0), colors=[rl.WHITE, rl.WHITE], stops=[0.0, 1.0])
+    renderer._path_gradient = accel
+    renderer._draw_path()
+    assert len(drawn) == 1
+    assert drawn[0] is {"lat_only": model_renderer.LAT_ONLY_PATH_GRADIENT, "stock": model_renderer.STOCK_PATH_GRADIENT, "accel": accel}[expected]
 
-  @pytest.mark.parametrize("fraction", [0.5, 1.0])
-  def test_brightens_with_the_lift(self, params, monkeypatch, fraction):
-    from openpilot.selfdrive.ui.sunnypilot.mici.onroad.hud_renderer import SPEED_ASSIST_ALPHA_IDLE, SPEED_ASSIST_ALPHA_LIFT, HudRendererSP
-    expected = SPEED_ASSIST_ALPHA_IDLE + (SPEED_ASSIST_ALPHA_LIFT - SPEED_ASSIST_ALPHA_IDLE) * fraction
-    from openpilot.selfdrive.ui.ui_state import ChestnutState, UIState, ui_state
+  @pytest.mark.parametrize(("status", "dimmed"), [("ENGAGED", False), ("LAT_ONLY", False), ("OVERRIDE", False),
+                                                  ("LONG_ONLY", True), ("DISENGAGED", True)])
+  def test_wheel_dims_unless_steering(self, monkeypatch, status, dimmed):
+    # cruise on with lateral off (MADS longitudinal-only) dims like disengaged; override stays bright
+    from types import SimpleNamespace
 
-    monkeypatch.setattr(ui_state, "speed_assist", True)
-    monkeypatch.setattr(UIState, "long_engaged", property(lambda _: True))
-    monkeypatch.setattr(ui_state, "chestnut_state", ChestnutState.DISCONNECTED)
-    monkeypatch.setattr(HudRendererSP, "_speed_assist_lift_fraction", staticmethod(lambda: fraction))
-    drawn = self._settle(HudRendererSP(), monkeypatch)
-    assert drawn and drawn[-1][3] == pytest.approx(expected, abs=0.02)
+    import raylib_nb as rl
+    from openpilot.selfdrive.ui.mici.onroad import DIMMED_ICON_ALPHA, hud_renderer
+    from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
+
+    monkeypatch.setattr(ui_state, "status", UIStatus[status])
+    monkeypatch.setattr(ui_state, "started", True)
+    msgs = {'carState': SimpleNamespace(steeringAngleDeg=0.)}
+    monkeypatch.setattr(ui_state, "sm", type("SM", (), {"frame": 0, "__getitem__": lambda self, k: msgs[k]})())
+    drawn = []
+    monkeypatch.setattr(hud_renderer.rl, "draw_texture_pro", lambda tex, src, dst, origin, rot, color: drawn.append(color))
+    hud = hud_renderer.HudRenderer()
+    for frame in range(1, 200):
+      ui_state.sm.frame = frame
+      drawn.clear()
+      hud._draw_steering_wheel(rl.Rectangle(0, 0, 100, 240))
+    wheel = drawn[1]
+    assert wheel.a == pytest.approx(255 * (DIMMED_ICON_ALPHA if dimmed else 1.0), abs=2)
+
+  @pytest.mark.parametrize(("status", "drawn_as"), [("LAT_ONLY", "ENGAGED"), ("LONG_ONLY", "DISENGAGED")])
+  def test_status_fade_draws_mads_by_steering(self, monkeypatch, status, drawn_as):
+    # lane lines, wheel and torque bar are green only while openpilot steers; the confidence ball keeps its own colors
+    import raylib_nb as rl
+    from openpilot.selfdrive.ui.mici.onroad.status import StatusFade
+    from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
+
+    monkeypatch.setattr(ui_state, "status", UIStatus[status])
+    folded, raw = StatusFade(), StatusFade(fold=False)
+    for frame in range(1, 200):
+      ui_state.sm.frame = frame
+      folded.weight(UIStatus.ENGAGED), raw.weight(UIStatus.ENGAGED)
+    colors = {UIStatus.ENGAGED: rl.Color(0, 255, 64, 255), UIStatus.OVERRIDE: rl.Color(255, 255, 255, 255),
+              UIStatus.DISENGAGED: rl.Color(200, 200, 200, 255)}
+    drawn = folded.color(colors)
+    assert (drawn.r, drawn.g, drawn.b) == pytest.approx(tuple(getattr(colors[UIStatus[drawn_as]], c) for c in "rgb"), abs=2)
+    assert raw.weight(UIStatus[status]) == pytest.approx(1.0, abs=0.01)
 
 
 class TestCurveSpeed:

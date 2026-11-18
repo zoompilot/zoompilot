@@ -25,28 +25,31 @@ RIGHT_UNIT_SIZE = 28
 RIGHT_UNITS = ("m", "km/h", "mph", "m/s^2")
 
 
-def load_text_texture(font: rl.Font, text: str, font_size: int) -> rl.Texture:
-  """Rasterize white text into a texture, so it can be drawn rotated with draw_texture_pro."""
+def load_text_texture(font: rl.Font, text: str, font_size: int, x: int, y: int, clip: rl.Rectangle) -> rl.Texture | None:
+  """White text as a texture, so it can be drawn rotated with draw_texture_pro. raylib draws on the CPU,
+  straight into the screen, with no render textures: draw the text at (x, y), copy it out and put the pixels
+  back. Call it during a frame, with `clip` the scissor in force. None if the text would not land whole inside
+  it and the screen, since a clipped copy would be cached blank; try again where it does."""
   size = measure_text_cached(font, text, font_size)
-  width, height = math.ceil(size.x), math.ceil(size.y)
-  target = rl.load_render_texture(width, height)
-  rl.begin_texture_mode(target)
-  rl.clear_background(rl.BLANK)
-  rl.draw_text_ex(font, text, rl.Vector2(0, 0), font_size, 0, rl.WHITE)
-  rl.end_texture_mode()
+  if not (max(clip.x, 0) <= x and x + size.x <= min(clip.x + clip.width, gui_app.width) and
+          max(clip.y, 0) <= y and y + size.y <= min(clip.y + clip.height, gui_app.height)):
+    return None
+  screen = rl.cpu.screen()  # rows bottom-up, at the window's scale
+  px = screen.shape[1] / gui_app.width
+  left, right = math.floor(x * px), math.ceil((x + size.x) * px)
+  top, bottom = math.floor(y * px), math.ceil((y + size.y) * px)
+  area = screen[screen.shape[0] - bottom:screen.shape[0] - top, left:right]
+  saved = area.copy()
+  area[:] = 0
+  rl.draw_text_ex(font, text, rl.Vector2(x, y), font_size, 0, rl.WHITE)
+  rgba = np.full((*area.shape[:2], 4), 255, dtype=np.uint8)
+  rgba[..., 3] = area[::-1, :, 0]
+  area[:] = saved
 
-  image = rl.load_image_from_texture(target.texture)
-  pixels = np.frombuffer(image.to_bytes(width * height * 4), dtype=np.uint8).reshape(height, width, 4)
-  rl.unload_image(image)
-  rl.unload_render_texture(target)
-
-  # Blending onto a transparent target leaves the coverage in rgb and squares the alpha; rebuild straight alpha.
-  # Render textures are stored bottom-up, so flip the rows.
-  rgba = np.full((height, width, 4), 255, dtype=np.uint8)
-  rgba[..., 3] = pixels[::-1, :, 0]
-  texture = rl.load_texture_from_image(rl.Image(rgba, width, height, 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8))
+  texture = rl.load_texture_from_image(rl.Image(rgba, rgba.shape[1], rgba.shape[0], 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8))
   rl.set_texture_filter(texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
   rl.set_texture_wrap(texture, rl.TextureWrap.TEXTURE_WRAP_CLAMP)
+  texture.width, texture.height = math.ceil(size.x), math.ceil(size.y)  # drawn at the text's size, whatever the window's scale
   return texture
 
 
@@ -69,8 +72,8 @@ class DeveloperUiRenderer(Widget):
     self._font_bold: rl.Font = gui_app.font(FontWeight.BOLD)
     self._font_semi_bold: rl.Font = gui_app.font(FontWeight.SEMI_BOLD)
     self.dev_ui_mode = DeveloperUiState.OFF
-    # rotated units (raylib_nb has no draw_text_pro), built outside the frame since onroad renders inside a scissor
-    self._unit_textures = {unit: load_text_texture(self._font_bold, unit, RIGHT_UNIT_SIZE) for unit in RIGHT_UNITS}
+    # rotated units (raylib_nb has no draw_text_pro), rasterized where they are first drawn
+    self._unit_textures: dict[str, rl.Texture] = {}
 
     self.rel_dist_elem = RelDistElement()
     self.rel_speed_elem = RelSpeedElement()
@@ -134,9 +137,9 @@ class DeveloperUiRenderer(Widget):
 
     current_y = y
     for element in elements:
-      current_y += self._draw_right_dev_ui_element(x, current_y, element)
+      current_y += self._draw_right_dev_ui_element(x, current_y, element, rect)
 
-  def _draw_right_dev_ui_element(self, x: int, y: int, element: UiElement) -> int:
+  def _draw_right_dev_ui_element(self, x: int, y: int, element: UiElement, clip: rl.Rectangle) -> int:
     x += 0
     y += 230
     container_width = 184
@@ -151,8 +154,11 @@ class DeveloperUiRenderer(Widget):
     centered_value_x = x + (container_width - value_width) / 2
     rl.draw_text_ex(self._font_bold, element.value, rl.Vector2(centered_value_x, y), value_size, 0, element.color)
 
-    if element.unit:
-      unit_texture = self._unit_textures[element.unit]
+    if element.unit and element.unit not in self._unit_textures:
+      unit_texture = load_text_texture(self._font_bold, element.unit, RIGHT_UNIT_SIZE, x, y, clip)
+      if unit_texture is not None:
+        self._unit_textures[element.unit] = unit_texture
+    if unit_texture := self._unit_textures.get(element.unit):
       units_x = x + container_width
       units_y = y + (value_size / 2) + (unit_texture.width / 2)
       src = rl.Rectangle(0, 0, unit_texture.width, unit_texture.height)

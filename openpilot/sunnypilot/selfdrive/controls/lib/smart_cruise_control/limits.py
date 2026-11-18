@@ -20,8 +20,10 @@ from opendbc.sunnypilot.car.icbm_actuation_profile import get_actuation_profile
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.speed_profile import required_decel
 
-# openpilot long's cruise candidate: clip(v_cruise - v_ego, A_CRUISE_MIN, max) with a jerk
-# clip from J_CRUISE_VALS. Mirrored from selfdrive/controls/lib/longitudinal_planner.py, which
+# openpilot long's cruise candidate: v_cruise - v_ego smoothed over 1 s (#39266), clipped to
+# [A_CRUISE_MIN, max], with a jerk clip from J_CRUISE_VALS. SCC's rebuild of it in a bend
+# (LongitudinalPlannerSP.update_cruise_accel) takes the gap unsmoothed, so curve braking starts
+# without the 1 s lag. Mirrored from selfdrive/controls/lib/longitudinal_planner.py, which
 # cannot be imported from here (it imports the SP overlay, which imports this package);
 # tests/test_limits.py pins these to the upstream source.
 OP_LONG_A_BUDGET = 1.2

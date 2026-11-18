@@ -178,6 +178,7 @@ def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monke
   from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
   from openpilot.selfdrive.ui.sunnypilot.onroad.long_indicator import STACK_GAP, long_indicator_top
   from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
+  from openpilot.system.ui.lib.application import gui_app
 
   monkeypatch.setattr(ui_state, "sm", {"driverMonitoringState": SimpleNamespace(isRHD=rhd)})
   monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
@@ -198,7 +199,46 @@ def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monke
 
   assert render_at(1.0) == [(monitor.x + monitor.width / 2, UI_CONFIG.header_height + half)]  # sure: top, in the monitor's column
   assert render_at(0.0)[0][1] == pytest.approx(long_indicator_top(rect, rhd) - STACK_GAP - half)  # down to the car and bars
-  assert render_at(-0.5) == []  # disengaged: faded out
+  monkeypatch.setattr(ui_state, "status", UIStatus.DISENGAGED)
+  ball._confidence_filter.x = 1.0
+  ball._update_state()
+  ball._render(rect)  # disengaged: fades as it sinks, not before
+  assert ball._alpha_filter.x == pytest.approx(ball._confidence_filter.x)
+  for _ in range(5 * gui_app.target_fps):
+    ball._update_state()
+    drawn.clear()
+    ball._render(rect)
+  assert drawn == []
+
+
+@pytest.mark.parametrize(("x", "y", "drawn"), [
+  (100, 100, True),
+  (95, 100, False),     # left of the scissor
+  (2110, 100, False),   # past the screen's right edge, inside the scissor
+  (100, 1060, False),   # past the bottom
+])
+def test_unit_label_is_only_rasterized_whole(monkeypatch, x, y, drawn):
+  """The unit label is copied off the screen once and cached: a clipped first draw would cache it blank."""
+  from types import SimpleNamespace
+
+  import raylib_nb as rl
+  from openpilot.selfdrive.ui.sunnypilot.onroad import developer_ui
+
+  class Rasterized(Exception):
+    pass
+
+  def screen():
+    raise Rasterized
+
+  monkeypatch.setattr(developer_ui, "measure_text_cached", lambda *a: rl.Vector2(60, 30))
+  monkeypatch.setattr(developer_ui, "gui_app", SimpleNamespace(width=2160, height=1080))
+  monkeypatch.setattr(developer_ui.rl, "cpu", SimpleNamespace(screen=screen))
+  clip = rl.Rectangle(100, 20, 2200, 1060)
+  if drawn:
+    with pytest.raises(Rasterized):
+      developer_ui.load_text_texture(None, "km/h", 28, x, y, clip)
+  else:
+    assert developer_ui.load_text_texture(None, "km/h", 28, x, y, clip) is None
 
 
 def test_confidence_ball_is_a_visuals_toggle(params):

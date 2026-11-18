@@ -202,14 +202,13 @@ class HudRenderer(Widget):
     # When disengaged it's grayed out, except for steerRequired alerts which show it orange.
     critical = self._wheel_critical_filter.update(self._show_wheel_critical)
     idle_color = lerp_color(WHEEL_WHITE, WHEEL_ORANGE, critical)
-    # sunnypilot: MADS lateral-only is steering, so the wheel is green then too
-    wheel_color = status_fade.color({UIStatus.ENGAGED: WHEEL_GREEN, UIStatus.LAT_ONLY: WHEEL_GREEN,
-                                     UIStatus.OVERRIDE: idle_color, UIStatus.DISENGAGED: idle_color})
-    engaged = status_fade.weight(UIStatus.ENGAGED) + status_fade.weight(UIStatus.LAT_ONLY)
+    wheel_color = status_fade.color({UIStatus.ENGAGED: WHEEL_GREEN, UIStatus.OVERRIDE: idle_color, UIStatus.DISENGAGED: idle_color})
+    engaged = status_fade.weight(UIStatus.ENGAGED)
     glow = engaged + (1 - engaged) * critical
     wheel_txt = self._txt_wheel
 
-    if self._show_wheel_critical or ui_state.status != UIStatus.DISENGAGED:
+    # zoompilot: MADS longitudinal-only isn't steering, so it dims like disengaged
+    if self._show_wheel_critical or ui_state.status not in (UIStatus.DISENGAGED, UIStatus.LONG_ONLY):
       self._wheel_alpha_filter.update(255)
     else:
       self._wheel_alpha_filter.update(255 * DIMMED_ICON_ALPHA)

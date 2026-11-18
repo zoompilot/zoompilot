@@ -16,11 +16,9 @@ from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
-from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.accel_boost import SetSpeedAssistGatedBoost
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.lead_forecast.forecast import LeadForecast
@@ -42,7 +40,6 @@ CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 class LongitudinalPlannerSP:
   # set by the host planner before the e2e candidate is built
   CP: structs.CarParams
-  accel_boost: AccelBoost
   a_cruise: float
   v_desired_trajectory: np.ndarray
   a_desired_trajectory: np.ndarray
@@ -173,8 +170,6 @@ class LongitudinalPlannerSP:
     return a_e2e, should_stop_model
 
   def update(self, sm: messaging.SubMaster) -> None:
-    if not isinstance(self.accel_boost, SetSpeedAssistGatedBoost):
-      self.accel_boost = SetSpeedAssistGatedBoost(lambda: self.e2e_set_speed.enabled)
     self.events_sp.clear()
     self.lead_forecast.update(sm)
 

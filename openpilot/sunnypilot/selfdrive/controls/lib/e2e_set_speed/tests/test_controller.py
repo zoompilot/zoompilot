@@ -22,7 +22,7 @@ V_EGO = 20.
 STANDARD = log.LongitudinalPersonality.standard
 A_CRUISE = 0.5  # the planner's cruise candidate
 RISE = op_long_cruise_jerk(V_EGO)
-SETTLE_FRAMES = round(2. / (op_long_cruise_jerk(40.) * DT)) + 10
+SETTLE_FRAMES = round(2. / (min(c.REENGAGE_JERK, op_long_cruise_jerk(40.)) * DT)) + 10  # a 2 m/s^2 gap
 
 
 def run(ctl, n, sm, a_model=0., a_cruise=A_CRUISE, **kwargs):
@@ -66,13 +66,22 @@ def test_idle_resets_at_once(kwargs):
   assert (ctl.inhibit, ctl.lift) == (Inhibit.inactive, 0.)
 
 
-def test_lifts_from_the_first_frame_at_the_rate_limit():
+def test_lifts_from_the_first_frame_on_the_jerk_budget():
+  # the gap holds still, so the lift moves only with its authority, at the re-engage budget
   ctl = new_controller()
   lifts = [run(ctl, 1, build_sm(V_EGO), a_cruise=1.5) for _ in range(SETTLE_FRAMES)]
-  assert lifts[0] == pytest.approx(RISE * DT)
-  assert max(np.diff([0.] + lifts)) <= RISE * DT + 1e-9
+  assert lifts[0] == pytest.approx(c.REENGAGE_JERK * DT)
+  assert max(np.diff([0.] + lifts)) <= c.REENGAGE_JERK * DT + 1e-9
   assert lifts[-1] == pytest.approx(1.5)
   assert ctl.inhibit == Inhibit.none
+
+
+def test_lift_never_rises_past_the_cruise_jerk():
+  # a small gap re-engages faster, but the lift still rises no faster than the cruise candidate
+  ctl = new_controller()
+  lifts = [run(ctl, 1, build_sm(V_EGO), a_cruise=0.1) for _ in range(SETTLE_FRAMES)]
+  assert max(np.diff([0.] + lifts)) <= RISE * DT + 1e-9
+  assert lifts[-1] == pytest.approx(0.1)
 
 
 def test_floor_is_the_cruise_candidate():
@@ -196,6 +205,26 @@ def test_a_bend_ahead_fades_the_lift(lat, fade):
   assert ctl.lift == pytest.approx(fade * A_CRUISE)
 
 
+@pytest.mark.parametrize("a_cruise", [0.5, 1.5])
+def test_bend_flicker_moves_the_lift_on_the_jerk_budget(a_cruise):
+  # the path's bend over 10 s flickering frame to frame across the fade's band: the lift follows on
+  # the fade's budget, not at the frame rate
+  ctl = settled(a_cruise=a_cruise)
+  lifts = [ctl.lift]
+  for i in range(200):
+    lat = 0.9 if i % 2 else 0.7
+    lifts.append(run(ctl, 1, build_sm(V_EGO, yaw_rate=bend_ahead(lat)), a_cruise=a_cruise))
+  assert max(np.abs(np.diff(lifts))) <= c.FADE_JERK * DT + 1e-9
+  assert 0.25 * a_cruise - 1e-9 <= ctl.lift <= 0.75 * a_cruise + 1e-9  # inside the flicker's fades, 0.25-0.75
+
+
+def test_bend_ahead_eases_the_lift_off_on_the_jerk_budget():
+  ctl = settled(a_cruise=1.5)
+  lifts = [run(ctl, 1, build_sm(V_EGO, yaw_rate=bend_ahead(1.2)), a_cruise=1.5) for _ in range(SETTLE_FRAMES)]
+  assert lifts[0] == pytest.approx(1.5 - c.FADE_JERK * DT)
+  assert lifts[-1] == 0.
+
+
 def test_lane_change_drops_the_lift():
   ctl = settled()
   run(ctl, 1, build_sm(V_EGO, lane_change=True))
@@ -232,20 +261,29 @@ def test_approach_closes_small_gaps_gently():
 
 @pytest.mark.parametrize("v", [5., 15., 25.])
 def test_approach_is_continuous_at_the_target(v):
-  # no step where the car reaches the target: the pace falls smoothly to 0 and stays there
+  # no step where the car reaches the target: the pace falls smoothly through 0
   step = 1e-3
   gaps = np.linspace(-1., 10., 11001)
   paces = np.array([approach.approach_accel(v - g, v, STANDARD) for g in gaps])
   assert all(np.diff(paces) >= 0.)
   assert max(np.diff(paces)) <= np.sqrt(2 * approach.APPROACH_JERK * step) + 1e-9  # the root's steepest step, off the target
-  assert paces[gaps <= 0.].max() == 0.
+  assert approach.approach_accel(v, v, STANDARD) == 0.
+
+
+@pytest.mark.parametrize("gap", [0.01, 0.1])
+def test_approach_settles_on_the_gap_near_the_target(gap):
+  # inside 2 * jerk the pace is the gap at 1 /s, under the root, so the floor eases in by itself
+  for v in approach.APPROACH_BP:
+    assert approach.approach_accel(v - gap, v, STANDARD) == pytest.approx(gap)
+  assert approach.approach_accel(V_EGO - 0.2, V_EGO, STANDARD) == pytest.approx(np.sqrt(2 * approach.APPROACH_JERK * 0.2))
 
 
 @pytest.mark.parametrize("over", [0., 0.5, 5.])
-def test_approach_asks_nothing_at_or_over_the_target(over):
+def test_approach_pulls_back_over_the_target(over):
+  # over the target the pace is the gap, pulling back toward it however the cruise candidate lags
   for personality in (log.LongitudinalPersonality.relaxed, STANDARD, log.LongitudinalPersonality.aggressive):
     for v in approach.APPROACH_BP:
-      assert approach.approach_accel(v + over, v, personality) == 0.
+      assert approach.approach_accel(v + over, v, personality) == pytest.approx(-over)
 
 
 def test_approach_follows_the_personality():

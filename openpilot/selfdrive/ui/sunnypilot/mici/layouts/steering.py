@@ -227,9 +227,9 @@ class SteeringLayoutMici(NavScroller):
 
     self._nnlc_toggle.refresh()
 
-    # an angle car's torque params are cleared by ui_state's _enforce_constraints
+    # an angle or curvature car's torque params are cleared by ui_state's _enforce_constraints
     torque_allowed = self._torque_allowed = (ui_state.CP is not None and
-                                             ui_state.CP.steerControlType != car.CarParams.SteerControlType.angle)
+                                             ui_state.CP.steerControlType == car.CarParams.SteerControlType.torque)
 
     mads_on = ui_state.params.get_bool("Mads")
     offroad = ui_state.is_offroad()
