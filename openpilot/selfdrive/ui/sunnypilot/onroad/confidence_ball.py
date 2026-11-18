@@ -16,6 +16,7 @@ import numpy as np
 import raylib_nb as rl
 
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
+from openpilot.selfdrive.ui.mici.onroad.status import status_fade
 from openpilot.selfdrive.ui.onroad.hud_renderer import COLORS, UI_CONFIG
 from openpilot.selfdrive.ui.sunnypilot.onroad.augmented_road_view import BORDER_COLORS_SP
 from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
@@ -59,11 +60,6 @@ def draw_ball(cx: float, cy: float, radius: float, top: rl.Color, bottom: rl.Col
 
 
 class ConfidenceBallTizi(ConfidenceBall):
-  def __init__(self):
-    super().__init__()
-    # fade at the sink's pace: mici's 0.05 s fade would empty the track before the ball got halfway down
-    self._alpha_filter.alpha = self._confidence_filter.alpha
-
   def _render(self, rect: rl.Rectangle) -> None:
     is_rhd = ui_state.sm['driverMonitoringState'].isRHD
     monitor = driver_monitor_rect(rect, is_rhd)
@@ -74,10 +70,11 @@ class ConfidenceBallTizi(ConfidenceBall):
     frame = rl.Rectangle(cx - half, top, 2 * half, bottom - top)
     rl.draw_rectangle_rounded(frame, 1.0, 24, COLORS.BLACK_TRANSLUCENT)
     rl.draw_rectangle_rounded_lines_ex(frame, 1.0, 24, 6, COLORS.BORDER_TRANSLUCENT)
-    # mici's filter rests at 0 while disengaged: the ball sinks to the bottom of the track, fading as it goes
+    # as on mici, it sinks to the bottom of the track while disengaged, here fading as it goes. The color still
+    # comes from the confidence
     confidence = self._confidence_filter.x
-    alpha = self._alpha_filter.update(0.0 if ui_state.status == UIStatus.DISENGAGED else 1.0)
+    alpha = 1 - status_fade.weight(UIStatus.DISENGAGED)
     if alpha < 0.01:
       return
-    cy = top + half + (1 - max(confidence, 0.0)) * (bottom - top - 2 * half)
+    cy = top + half + (1 - max(confidence * alpha, 0.0)) * (bottom - top - 2 * half)
     draw_ball(cx, cy, RADIUS, *_ball_colors(confidence), alpha)
