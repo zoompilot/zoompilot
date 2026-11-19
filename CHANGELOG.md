@@ -1,4 +1,4 @@
-zoompilot v2026.11.19-19
+zoompilot v2026.11.19-20
 ========================
 * Synced with openpilot of 2026-11-15 and sunnypilot of 2026-11-14; updating installs AGNOS 20.6.
 * New features
