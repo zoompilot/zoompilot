@@ -16,13 +16,11 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import approach
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed import controller as c
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController, Inhibit
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, T_IDXS, build_sm, plan_ramp
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
 
 V_EGO = 20.
 STANDARD = log.LongitudinalPersonality.standard
 A_CRUISE = 0.5  # the planner's cruise candidate
-RISE = op_long_cruise_jerk(V_EGO)
-SETTLE_FRAMES = round(2. / (min(c.REENGAGE_JERK, op_long_cruise_jerk(40.)) * DT)) + 10  # a 2 m/s^2 gap
+SETTLE_FRAMES = round(2. / (c.RISE_JERK * DT)) + 10  # a 2 m/s^2 gap
 
 
 def run(ctl, n, sm, a_model=0., a_cruise=A_CRUISE, **kwargs):
@@ -66,22 +64,41 @@ def test_idle_resets_at_once(kwargs):
   assert (ctl.inhibit, ctl.lift) == (Inhibit.inactive, 0.)
 
 
-def test_lifts_from_the_first_frame_on_the_jerk_budget():
-  # the gap holds still, so the lift moves only with its authority, at the re-engage budget
+CRUISE_JERK = 1.  # m/s^3, about upstream's at V_EGO
+
+
+@pytest.mark.parametrize("floor", [
+  lambda t: 1.5,                         # steady
+  lambda t: min(CRUISE_JERK * t, 0.8),   # as on engaging: the planner seeds its cruise candidate at the
+])                                       # car's acceleration, so the floor starts closed and opens fast
+def test_lifted_candidate_rises_on_the_jerk(floor):
+  # from the model's on the first frame, at RISE_JERK whatever the floor does, up to the floor
   ctl = new_controller()
-  lifts = [run(ctl, 1, build_sm(V_EGO), a_cruise=1.5) for _ in range(SETTLE_FRAMES)]
-  assert lifts[0] == pytest.approx(c.REENGAGE_JERK * DT)
-  assert max(np.diff([0.] + lifts)) <= c.REENGAGE_JERK * DT + 1e-9
-  assert lifts[-1] == pytest.approx(1.5)
+  sm = build_sm(V_EGO)
+  out = [run(ctl, 1, sm, a_cruise=floor(i * DT)) for i in range(SETTLE_FRAMES)]
+  assert out[0] == 0.
+  assert max(np.diff(out)) <= c.RISE_JERK * DT + 1e-9
+  second = round(1. / DT)
+  assert out[second] == pytest.approx(c.RISE_JERK * second * DT, abs=2 * c.RISE_JERK * DT)
+  assert out[-1] == pytest.approx(floor(SETTLE_FRAMES * DT))
   assert ctl.inhibit == Inhibit.none
 
 
-def test_lift_never_rises_past_the_cruise_jerk():
-  # a small gap re-engages faster, but the lift still rises no faster than the cruise candidate
+def test_lift_takes_up_the_models_wander():
+  # the model eases off inside the gain's band: the lift fills in at once and the candidate holds
+  ctl = settled()
+  assert run(ctl, 1, build_sm(V_EGO), a_model=c.GAIN_BP[1]) == pytest.approx(A_CRUISE)
+  assert ctl.lift == pytest.approx(A_CRUISE - c.GAIN_BP[1])
+
+
+def test_models_own_acceleration_is_never_held_back():
+  # the model pulling harder than RISE_JERK: the candidate is the model's, the lift gives way to it
   ctl = new_controller()
-  lifts = [run(ctl, 1, build_sm(V_EGO), a_cruise=0.1) for _ in range(SETTLE_FRAMES)]
-  assert max(np.diff([0.] + lifts)) <= RISE * DT + 1e-9
-  assert lifts[-1] == pytest.approx(0.1)
+  lifts = []
+  for a_model in np.arange(0., 1.5, CRUISE_JERK * DT):
+    assert run(ctl, 1, build_sm(V_EGO), a_model=a_model, a_cruise=1.5) >= a_model
+    lifts.append(ctl.lift)
+  assert max(lifts) <= c.RISE_JERK * DT + 1e-9
 
 
 def test_floor_is_the_cruise_candidate():
@@ -249,7 +266,7 @@ def test_invalid_model_passes_through():
   assert ctl.inhibit == Inhibit.invalid
 
 
-FAR = 40.  # m/s under the target: the root is past every ceiling
+FAR = 80.  # m/s under the target: the root is past every ceiling
 
 
 def test_approach_closes_small_gaps_gently():
@@ -266,16 +283,22 @@ def test_approach_is_continuous_at_the_target(v):
   gaps = np.linspace(-1., 10., 11001)
   paces = np.array([approach.approach_accel(v - g, v, STANDARD) for g in gaps])
   assert all(np.diff(paces) >= 0.)
-  assert max(np.diff(paces)) <= np.sqrt(2 * approach.APPROACH_JERK * step) + 1e-9  # the root's steepest step, off the target
+  assert max(np.diff(paces)) <= np.sqrt(2 * approach.APPROACH_JERK_V[0] * step) + 1e-9  # the root's steepest step, off the target
   assert approach.approach_accel(v, v, STANDARD) == 0.
 
 
-@pytest.mark.parametrize("gap", [0.01, 0.1])
+@pytest.mark.parametrize("gap", [0.01, 0.05])
 def test_approach_settles_on_the_gap_near_the_target(gap):
   # inside 2 * jerk the pace is the gap at 1 /s, under the root, so the floor eases in by itself
   for v in approach.APPROACH_BP:
     assert approach.approach_accel(v - gap, v, STANDARD) == pytest.approx(gap)
-  assert approach.approach_accel(V_EGO - 0.2, V_EGO, STANDARD) == pytest.approx(np.sqrt(2 * approach.APPROACH_JERK * 0.2))
+  assert approach.approach_accel(V_EGO - 0.2, V_EGO, STANDARD) == pytest.approx(np.sqrt(2 * approach.APPROACH_JERK_V[-1] * 0.2))
+
+
+def test_approach_is_brisker_in_town():
+  # the same shortfall asks more pulling away from a stop than at highway speed, under both ceilings
+  town, highway = (approach.approach_accel(v, v + 5., STANDARD) for v in (8., 20.))
+  assert highway < 0.6 < town < approach.approach_ceiling(8., STANDARD)
 
 
 @pytest.mark.parametrize("over", [0., 0.5, 5.])
