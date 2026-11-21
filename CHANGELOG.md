@@ -1,18 +1,18 @@
-zoompilot vUNRELEASED
+zoompilot v2026.11.21-22
 ========================
-* 2026-11-21
-  * comma 3X: fixed "Low Communication Rate" errors caused by openpilot's UI refactor.
-  * Synced with openpilot of 2026-11-20.
-  * openpilot changes
-    * New driving model and driver monitoring model.
-    * Gentle slowdown for upcoming curves.
-    * Aggressive personality accelerates quicker again; here only with Set Speed Assist off.
-    * Fixed false excessive actuation alerts.
-    * comma 4: lane-wide stop bar; the wheel starts centered.
-  * Slow for Curves: zoompilot's curve planning now runs on every openpilot longitudinal car, not only Mazda.
-  * Slow for Curves: banked curves are taken a little faster, off-camber ones slower.
-  * Set Speed Assist: gentler pickup when engaging and when returning to your set speed.
-  * Auto lane change: fixed so it only changes one lane per blinker cycle.
+* comma 3X: fixed "Low Communication Rate" errors caused by openpilot's UI refactor.
+* Synced with openpilot of 2026-11-20.
+* openpilot changes
+  * New driver monitoring model.
+  * Gentle slowdown for upcoming curves.
+  * Aggressive personality accelerates quicker again; here only with Set Speed Assist off.
+  * Fixed false excessive actuation alerts.
+  * comma 4: lane-wide stop bar; the wheel starts centered.
+* Slow for Curves
+  * zoompilot's curve planning now runs on every openpilot longitudinal car, not only Mazda.
+  * Banked curves are taken a little faster, off-camber ones slower.
+* Set Speed Assist: gentler pickup when engaging and when returning to your set speed.
+* Auto lane change: fixed so it only changes one lane per blinker cycle.
 
 zoompilot v2026.11.19-20
 ========================
