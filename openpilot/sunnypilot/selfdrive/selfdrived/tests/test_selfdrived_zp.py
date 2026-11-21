@@ -8,7 +8,7 @@ import pytest
 
 from openpilot.cereal import custom, log, messaging
 from opendbc.car import structs
-from openpilot.selfdrive.selfdrived.events import EventName, Events
+from openpilot.selfdrive.selfdrived.events import EVENTS, EventName, Events
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeMode
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
@@ -190,3 +190,10 @@ class TestRoadEdgeAlert:
     alert = EVENTS_SP_ZP[EventNameSP.laneChangeRoadEdge][ET.WARNING](None, None, None, False, 0, 0)
     assert alert.audible_alert == audible
     assert alert.alert_size == AlertSize.small, "the on-screen alert is the same in both modes"
+
+
+class TestPersonalityAlert:
+  def test_kept_on_every_device(self):
+    # upstream maps it to {} on mici (#39327); events_zp puts it back
+    alert = EVENTS[EventName.personalityChanged][ET.WARNING](None, None, None, False, 0, "relaxed")
+    assert alert.alert_text_1 == "Driving Personality: Relaxed"

@@ -15,7 +15,7 @@ from opendbc.car.structs import car
 from opendbc.sunnypilot.car.stock_ecu import StockEcuState
 from openpilot.common.constants import CV
 from openpilot.common.hardware import HARDWARE
-from openpilot.selfdrive.selfdrived.events import get_display_speed
+from openpilot.selfdrive.selfdrived.events import EVENTS, EventName, get_display_speed, personality_changed_alert
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, NoEntryAlert, \
   EngagementAlert, NormalPermanentAlert, AlertCallbackType
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import pcm_machine_owns_sla
@@ -130,6 +130,13 @@ def speed_limit_pre_active_alert(CP: car.CarParams, CS: car.CarState, sm: messag
     "",
     AlertStatus.normal, alert_size,
     Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleLow, .1)
+
+
+# upstream dropped the personality alert on mici (#39327); keep it, the distance bars still
+# highlight once it clears
+EVENTS[EventName.personalityChanged] = {
+  ET.WARNING: personality_changed_alert,
+}
 
 
 # zoompilot's text for sunnypilot's events
