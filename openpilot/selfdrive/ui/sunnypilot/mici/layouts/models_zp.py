@@ -1,0 +1,67 @@
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+The tici models panel's driving options, for the comma 4 models panel.
+"""
+from collections.abc import Callable
+
+from openpilot.common.constants import CV
+from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigParamControlSP, BigParamOption, speed_unit
+from openpilot.system.ui.sunnypilot.lib.switch import Switch
+from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.system.ui.lib.multilang import tr
+
+
+def _per_mph() -> float:
+  """Display units per mph: LaneTurnValue is stored in mph."""
+  return CV.MPH_TO_KPH if ui_state.is_metric else 1
+
+
+def _hundredths(v: int) -> str:
+  return f"{v / 100:.2f}"
+
+
+def _option(title: str, param: str, fmt: Callable[[int], str], unit: str | Callable[[], str], **kwargs) -> BigParamOption:
+  """A float param, x100 in the picker, whose button reads the picker label and the unit."""
+  unit_text = unit if callable(unit) else lambda: unit
+  return BigParamOption(title, param, float_param=True, label_callback=lambda v: f"{fmt(v)} {unit_text()}",
+                        picker_label_callback=fmt, picker_unit=unit, **kwargs)
+
+
+class ModelOptions:
+  def __init__(self):
+    self.lane_center = BigParamControlSP(tr("lane center assist"), "Blendful",
+                                         description=tr("Alpha. Nudges the car toward the middle of the lane.\n" +
+                                                        "Stronger when the lane lines are clear. Yields around obstacles.\n" +
+                                                        "The center line turns blue as it nudges."))
+
+    # LaneTurnDesire is the picker's off. A metric step of 0.62 mph lands on each whole km/h, as the tici panel steps it
+    self.lane_turn = _option(tr("lane turn desires"), "LaneTurnValue", lambda v: str(round(v / 100 * _per_mph())), speed_unit,
+                             min_value=500, max_value=2000, value_change_step=lambda: round(100 / _per_mph()),
+                             switch=Switch("LaneTurnDesire", False, tr("off")),
+                             description=tr("With the blinker on below this speed, plans the turn that way.\n" +
+                                            "Stops the car picking the wrong turn at a red light."))
+
+    self.big_smoothing = BigParamControlSP(tr("smooth big model"), "BigModelSmoothing",
+                                           description=tr("Gives big models the small models' steering smoothing.\n" +
+                                                          "Can calm small side-to-side wiggles on straight roads."))
+
+    # LagdToggle is the picker's live
+    self.steer_delay = _option(tr("steer delay"), "LagdToggleDelay", _hundredths, "s", min_value=5, max_value=50,
+                               switch=Switch("LagdToggle", True, tr("live")),
+                               description=tr("Live learns how long your car takes to respond to steering, as stock openpilot does.\n" +
+                                              "A number is a fixed software delay instead. Default is live."))
+
+    self.camera_offset = _option(tr("camera offset"), "CameraOffset", _hundredths, "m", min_value=-35, max_value=35,
+                                 description=tr("Shifts where the model thinks the camera sits.\n" +
+                                                "Positive moves the car left, negative right."))
+
+    # between the panel's lane center and jetlink rows; big_smoothing sits after jetlink
+    self.items = [self.lane_turn, self.steer_delay, self.camera_offset]
+
+  def refresh(self):
+    for item in (*self.items, self.big_smoothing):
+      item.refresh()

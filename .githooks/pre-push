@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "$(git rev-parse --git-common-dir)/lfs.py" pre-push "$@"
