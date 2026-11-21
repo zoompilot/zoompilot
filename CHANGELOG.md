@@ -1,7 +1,7 @@
 zoompilot vUNRELEASED
 ========================
 * 2026-11-21
-  * comma 3X: onroad bottom fade removed; it slowed the UI.
+  * comma 3X: fixed "Low Communication Rate" errors caused by openpilot's UI refactor.
   * Synced with openpilot of 2026-11-20.
   * openpilot changes
     * New driving model and driver monitoring model.
