@@ -1,3 +1,8 @@
+zoompilot vUNRELEASED
+========================
+* 2026-11-21
+  * comma 4: the driving personality alert is back.
+
 zoompilot v2026.11.21-22
 ========================
 * comma 3X: fixed "Low Communication Rate" errors caused by openpilot's UI refactor.
