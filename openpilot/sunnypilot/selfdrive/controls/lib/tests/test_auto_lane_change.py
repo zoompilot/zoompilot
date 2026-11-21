@@ -10,6 +10,7 @@ from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper, LaneCha
 from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AutoLaneChangeController, AutoLaneChangeMode, \
   AUTO_LANE_CHANGE_TIMER, ONE_SECOND_DELAY, EDGE_DELAY
 from openpilot.common.test import OpenpilotTestCase
+from openpilot.sunnypilot.selfdrive.controls.lib.tests.test_lane_turn_desire import DummyCarState
 
 AUTO_LANE_CHANGE_TIMER_COMBOS = [
   (AutoLaneChangeMode.NUDGELESS, AUTO_LANE_CHANGE_TIMER[AutoLaneChangeMode.NUDGELESS]),
@@ -289,3 +290,57 @@ class TestAutoLaneChangeController(OpenpilotTestCase):
     # BSM detected with nudge - should still be blocked
     self.alc.update_lane_change(blindspot_detected=True, edge_detected=False, brake_pressed=False, torque_applied=True)
     assert self.alc.lane_change_blocked
+
+
+def FakeCarState(left_blinker=False, steering_torque=0.0):
+  return DummyCarState(vEgo=30.0, leftBlinker=left_blinker, steeringPressed=abs(steering_torque) > 0, steeringTorque=steering_torque)
+
+
+class TestOneLanePerBlinker(OpenpilotTestCase):
+  """A finished lane change with the blinker still on, then torque toward the blinker side."""
+
+  def setup_method(self):
+    self.DH = DesireHelper()
+    self.DH.alc.read_params = lambda: None
+    self.DH.lane_turn_controller.update_params = lambda: None
+
+  def _step(self, cs, lane_change_prob=0.0, n=1):
+    for _ in range(n):
+      self.DH.update(cs, True, lane_change_prob)
+
+  def _run_first_change(self, mode, torque):
+    self.DH.alc.lane_change_set_timer = mode
+    self._step(FakeCarState())
+    self._step(FakeCarState(left_blinker=True, steering_torque=torque), lane_change_prob=1.0, n=int(4.0 / DT_MDL))
+    assert self.DH.lane_change_state == LaneChangeState.laneChangeStarting
+    self._step(FakeCarState(left_blinker=True), lane_change_prob=1.0, n=int(3.0 / DT_MDL))
+    self._step(FakeCarState(left_blinker=True), lane_change_prob=0.0)
+    assert self.DH.lane_change_state == LaneChangeState.preLaneChange
+
+  @parameterized.expand(AUTO_LANE_CHANGE_TIMER_COMBOS)
+  def test_auto_mode_ignores_torque_after_a_change(self, timer_state, timer_delay):
+    self._run_first_change(timer_state, torque=0.0)
+    self._step(FakeCarState(left_blinker=True, steering_torque=30.0), n=int(5.0 / DT_MDL))
+    assert self.DH.lane_change_state == LaneChangeState.preLaneChange
+
+    # cycling the blinker arms the next change
+    self._step(FakeCarState())
+    assert self.DH.lane_change_state == LaneChangeState.off
+    self._step(FakeCarState(left_blinker=True), lane_change_prob=1.0, n=int(4.0 / DT_MDL))
+    assert self.DH.lane_change_state == LaneChangeState.laneChangeStarting
+
+  def test_nudge_mode_still_chains_on_torque(self):
+    self._run_first_change(AutoLaneChangeMode.NUDGE, torque=30.0)
+    self._step(FakeCarState(left_blinker=True, steering_torque=30.0))
+    assert self.DH.lane_change_state == LaneChangeState.laneChangeStarting
+
+  @parameterized.expand(AUTO_LANE_CHANGE_TIMER_COMBOS)
+  def test_auto_mode_nudge_after_brake_still_works(self, timer_state, timer_delay):
+    self.DH.alc.lane_change_set_timer = timer_state
+    self._step(FakeCarState())
+    cs = FakeCarState(left_blinker=True)
+    cs.brakePressed = True
+    self._step(cs, n=int(5.0 / DT_MDL))
+    assert self.DH.lane_change_state == LaneChangeState.preLaneChange
+    self._step(FakeCarState(left_blinker=True, steering_torque=30.0), n=2)
+    assert self.DH.lane_change_state == LaneChangeState.laneChangeStarting

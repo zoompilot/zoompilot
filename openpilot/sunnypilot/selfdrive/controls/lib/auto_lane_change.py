@@ -57,6 +57,10 @@ class AutoLaneChangeController:
 
     self.read_params()
 
+  @property
+  def auto_mode(self) -> bool:
+    return self.lane_change_set_timer not in (AutoLaneChangeMode.OFF, AutoLaneChangeMode.NUDGE)
+
   def reset(self) -> None:
     # Auto reset if parent state indicates we should
     if self.DH.lane_change_state == log.LaneChangeState.off and \
@@ -100,7 +104,7 @@ class AutoLaneChangeController:
     # 2. Brake wasn't previously pressed
     # 3. We've waited long enough
 
-    if self.lane_change_set_timer in (AutoLaneChangeMode.OFF, AutoLaneChangeMode.NUDGE):
+    if not self.auto_mode:
       return False
 
     if self.prev_brake_pressed:
@@ -121,7 +125,11 @@ class AutoLaneChangeController:
     self.auto_lane_change_allowed = self.update_allowed()
 
     # BSM always blocks. Edge blocks auto mode but nudge can override.
+    # In the auto modes one blinker activation is one lane: once a change has run, wheel torque with the
+    # blinker still on (resting hands, reaching for the stalk) must not start another.
     if blindspot_detected:
+      self.lane_change_blocked = True
+    elif self.auto_mode and self.prev_lane_change:
       self.lane_change_blocked = True
     elif edge_detected:
       self.lane_change_blocked = not torque_applied
