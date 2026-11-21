@@ -18,9 +18,8 @@ from openpilot.common.realtime import DT_MDL as DT
 from openpilot.selfdrive.controls.lib.longitudinal_planner import get_cruise_accel
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel, approach_ceiling
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import LIFT_FALL, E2ESetSpeedController
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import LIFT_FALL, RISE_JERK, E2ESetSpeedController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.tests.helpers import ENGAGED, build_sm, plan_ramp
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
 
 V_PREF = 20.  # m/s, the model's own pace
 V_CRUISE = V_PREF + 6 * CV.MPH_TO_MS  # set 6 mph above it, the median gap in the logs
@@ -32,7 +31,7 @@ WANDER = ((0.065, 7.), (0.065, 13.), (0.065, 29.))  # (m/s^2, period s)
 
 
 def simulate(enabled, seconds=60., tau=50., brake_at=None, coast_at=None, plan_drop=4., v0=V_PREF, wander=False):
-  """Rows of (t, v_ego, a_model, e2e candidate). brake_at: the model brakes at -0.5 from then on.
+  """Rows of (t, v_ego, a_model, e2e candidate, planner output). brake_at: the model brakes at -0.5 from then on.
   coast_at: from then on the model eases off gently, inside the gain's band, toward a stop its plan
   shows plan_drop m/s under the current speed at the end of the horizon. wander: add WANDER."""
   ctl = E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled), dt=DT)
@@ -81,9 +80,9 @@ def test_added_jerk_bounded():
   # the model never brakes in this run, so the lift never takes the gain's faster drop
   log = simulate(True)
   lift = log[:, 3] - log[:, 2]
-  jerk = np.diff(lift) / DT
-  assert -LIFT_FALL - 1e-6 <= jerk.min() and jerk.max() <= op_long_cruise_jerk(0.) + 1e-6
-  assert lift.min() >= 0.
+  assert -LIFT_FALL - 1e-6 <= (np.diff(lift) / DT).min() and lift.min() >= 0.
+  # the model's acceleration only falls as the car gains speed, so every rise is the lift's
+  assert (np.diff(log[:, 3]) / DT).max() <= RISE_JERK + 1e-6
 
 
 def test_yields_to_a_slowdown_within_half_a_second():
@@ -127,9 +126,10 @@ def test_holds_the_set_speed_without_oscillating(wander):
 
 
 def test_closes_a_shortfall_without_overshoot():
-  # 5 m/s under the set speed: within 0.2 m/s in about 10 s, never past it, no harder than the ceiling
+  # 5 m/s under the set speed: within 0.2 m/s in about 15 s, as stock ACC paces it, never past it,
+  # no harder than the ceiling
   log = simulate(True, seconds=40., v0=V_CRUISE - 5.)
   within = log[np.abs(V_CRUISE - log[:, 1]) < 0.2, 0]
-  assert within[0] < 13.
+  assert within[0] < 16.
   assert log[:, 1].max() - V_CRUISE < 0.02  # 0.033 without the gap line
   assert log[:, 4].max() <= approach_ceiling(V_CRUISE - 5., STANDARD) + 1e-6

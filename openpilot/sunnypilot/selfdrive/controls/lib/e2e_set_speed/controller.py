@@ -13,17 +13,17 @@ min() keeps the car at the model's pace either way.
 
 This lifts the e2e candidate toward what chill mode would do and never lowers it:
 
-  e2e = a_model + lift,  lift -> authority * max(0, floor - a_model),  authority -> gain * fade
+  e2e = a_model + lift,  lift -> gain * fade * max(0, floor - a_model)
 
 floor is chill mode's answer, the lower of the planner's own lead MPC and cruise candidates
 (upstream's cruise law with SCC and SLA's targets), so with nothing to slow for experimental mode
 drives and follows as chill does, closing on the target speed no harder than a production ACC
 (approach.py, a step gentler on Relaxed and firmer on Aggressive). gain fades the lift out as
 the model eases off, now or over its plan (a stop, a light, a closing lead), and below walking
-pace, and fade as the road bends, now or ahead, at the current speed. The authority moves on a jerk
-budget, except to let go for the model (REENGAGE_JERK). Every slowdown is the
-model's: the lift only lets go of it, and a lead that brakes binds through the MPC candidate at
-once.
+pace, and fade as the road bends, now or ahead, at the current speed. The lifted candidate rises
+on a comfort jerk (RISE_JERK), from engaging on, and lets go for the model at once. Every slowdown
+is the model's: the lift only lets go of it, and a lead that brakes binds through the MPC candidate
+at once.
 
 A lift that could go negative made the car pump on a straight road: the plan's far end flickers
 by several mph from one frame to the next, and handing back added speed on each flicker
@@ -35,14 +35,12 @@ import math
 
 import numpy as np
 
-from opendbc.car import rate_limit
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import custom, log
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
-from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import op_long_cruise_jerk
 
 Inhibit = custom.LongitudinalPlanZP.E2ESetSpeed.Inhibit
 LaneChangeState = log.LaneChangeState
@@ -64,17 +62,17 @@ HORIZON = 10.0  # s
 # fast. A lead counts in full under 15 s to contact and not at all past 25 s.
 LEAD_TTC_BP = [15., 25.]  # s
 
-# The lift rises at upstream's cruise jerk, as the cruise candidate it stands in for. This is the
-# slowest it eases off, e.g. on a lane change or a bend.
+# The lifted candidate rises at most this fast, whatever raises it: engaging, the gain or the fade
+# coming back, the floor (a lead pulling away, a higher set speed). Stock ACC builds at 0.08 m/s^3
+# (median rising jerk, the CX-5's MRCC) to 0.6 (its limit). Faster only as the model's own
+# acceleration rises: that is never held back. docs/zoompilot/e2e-set-speed.md, "Rise".
+RISE_JERK = 0.2  # m/s^3
+# The slowest the lift eases off, e.g. on a lane change or a bend.
 LIFT_FALL = 2.4  # m/s^3
 
-# With k = gain * fade, e2e = a_model + k * gap = (1 - k) * a_model + k * floor (gap = floor - a_model):
-# a blend of two smooth signals, plus k' * gap. That term is all the jerk the lift adds, and k is read
-# each frame from flickering inputs (the path's bends over 10 s, the model's wander), so k moves on a
-# jerk budget: it re-engages at most REENGAGE_JERK / gap a second, and the fade, a comfort gate (curve
-# speed is SCC's, through the floor), moves at most FADE_JERK / gap either way. Letting go for the
-# model (the gain, a lane change) is still at once. docs/zoompilot/e2e-set-speed.md, "Authority".
-REENGAGE_JERK = 0.3  # m/s^3
+# The fade is a comfort gate (curve speed is SCC's, through the floor) read from the path's bends
+# over 10 s, which flicker: it falls at most FADE_JERK / gap a second (gap = floor - a_model), so
+# the flicker does not drop the lift. Coming back it is the candidate's rise that paces it.
 FADE_JERK = 0.3  # m/s^3
 MIN_GAP = 0.05  # m/s^2, only to bound the step at a closed gap
 
@@ -99,8 +97,6 @@ class E2ESetSpeedController:
     self.params_frames = int(PARAMS_UPDATE_PERIOD / dt)
     self.frame = -1
     self.enabled = False
-    self.reengage_jerk = REENGAGE_JERK
-    self.fade_jerk = FADE_JERK
     self._reset(Inhibit.disabled)
 
   def _reset(self, reason) -> None:
@@ -108,10 +104,9 @@ class E2ESetSpeedController:
     self.fade = 0.
     self.plan_fade = 0.
     self.floor = 0.
-    self.authority = 0.
     self.lift = 0.
+    self.e2e = -math.inf  # nothing to rise from yet: the next frame starts at the model's
     self.inhibit = reason
-    self._fresh = True  # the fade starts from the road as it is, with nothing to smooth yet
 
   def _update_params(self) -> None:
     if self.frame % self.params_frames == 0:
@@ -165,9 +160,7 @@ class E2ESetSpeedController:
                  float(np.interp(v_ego, [MIN_SPEED, FULL_SPEED], [0., 1.])))
     gap = max(0., self.floor - a_model)
     fade = float(np.interp(lat_ahead, FADE_LAT_BP, [1., 0.]))
-    fade_step = self.fade_jerk * self.dt / max(gap, MIN_GAP)
-    self.fade = fade if self._fresh else float(np.clip(fade, self.fade - fade_step, self.fade + fade_step))
-    self._fresh = False
+    self.fade = max(fade, self.fade - FADE_JERK * self.dt / max(gap, MIN_GAP))
 
     if not self.enabled:
       self.inhibit = Inhibit.disabled
@@ -175,11 +168,13 @@ class E2ESetSpeedController:
       self.inhibit = Inhibit.laneChange
     else:
       self.inhibit = Inhibit.none
-    authority = self.gain * self.fade if self.inhibit == Inhibit.none else 0.
-    self.authority = min(authority, self.authority + self.reengage_jerk * self.dt / max(gap, MIN_GAP))
-    target = self.authority * gap
+    target = self.gain * self.fade * gap if self.inhibit == Inhibit.none else 0.
+    # The candidate, not the lift, is what rises on the jerk: the lift is free to take up the
+    # model's wander under a steady candidate, and gives way as the model's own acceleration rises.
+    rise = max(self.e2e + RISE_JERK * self.dt - a_model, 0.)
     # Normally the lift eases off at LIFT_FALL. When the model starts to brake the gain drops, and
     # the lift may drop with it in one frame, so at gain 0 the model's braking is not delayed.
     fall = max(LIFT_FALL * self.dt, (1. - self.gain) * self.lift)
-    self.lift = rate_limit(target, self.lift, -fall, op_long_cruise_jerk(v_ego) * self.dt)
-    return a_model + self.lift
+    self.lift = max(min(target, rise), self.lift - fall)
+    self.e2e = a_model + self.lift
+    return self.e2e
