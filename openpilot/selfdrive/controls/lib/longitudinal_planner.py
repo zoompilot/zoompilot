@@ -111,7 +111,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_should_stop_mpc = should_stop(v_ego, output_a_target_mpc)
     curve_offset = self.curve_speed.update(sm['modelV2'], sm['vehicleParameters'].roll)
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration + curve_offset
-    if personality == log.LongitudinalPersonality.aggressive:
+    # zoompilot: Set Speed Assist shapes the model's accel itself, so the boost only applies with it off
+    if personality == log.LongitudinalPersonality.aggressive and not self.e2e_set_speed.enabled:
       speed_scale = np.interp(v_ego, [5.0, 10.0], [0.0, 1.0])
       accel_scale = np.interp(output_a_target_e2e, [-1.0, -0.5], [0.0, 1.0])
       output_a_target_e2e += AGGRESSIVE_ACCEL_BOOST * speed_scale * accel_scale
