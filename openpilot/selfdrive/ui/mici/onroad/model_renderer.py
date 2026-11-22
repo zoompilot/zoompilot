@@ -272,11 +272,12 @@ class ModelRenderer(BaseModelRenderer, ModelRendererSP):
     if not self._path.projected_points.size:
       return
 
-    if ui_state.rainbow_path:
-      self.rainbow_path.draw_rainbow_path(self._rect, self._path)
-      return
-
     path_pts = self._path.projected_points + self._draw_offset()
+
+    if ui_state.rainbow_path:
+      # not RainbowPath.draw_rainbow_path: it draws the points as they are, without the offset or the fade
+      draw_polygon(self._rect, path_pts, gradient=_faded(self.rainbow_path.get_gradient(), self._visible))
+      return
 
     if not ui_state.cruise_engaged:
       # MADS lateral-only: nobody is driving the speed, so no green and no acceleration colors
