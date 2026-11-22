@@ -1,5 +1,7 @@
 zoompilot vUNRELEASED
 ========================
+* 2026-11-22
+  * comma 4: fixed the rainbow path drawing left of the lane lines.
 * 2026-11-21
   * comma 4: the driving personality alert is back.
 
