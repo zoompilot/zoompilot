@@ -64,6 +64,24 @@ def _tier_label(kph_value):
   value = kph_value if ui_state.is_metric else _mph(kph_value)
   return f"{value}{speed_unit()}"
 
+def _tier_offset_label(tier, lo, hi):
+  if ui_state.is_metric:
+    unit = "km/h"
+    lower = lo
+    upper = hi
+  else:
+    unit = "mph"
+    lower = _mph(lo) if lo is not None else None
+    upper = _mph(hi) if hi is not None else None
+
+  if lower is None:
+    speed_range = f"0–{upper} {unit}"
+  elif upper is None:
+    speed_range = f">{lower} {unit}"
+  else:
+    speed_range = f"{lower + 1}–{upper} {unit}"
+
+  return f"{speed_range} {tr('offset')}"
 
 def _tier_description(lo, hi):
   """lo/hi are the tier's km/h bounds; lo=None means 'up to hi', hi=None means 'over lo'."""
@@ -155,7 +173,7 @@ class CruiseLayoutMici(NavScroller):
                    (TIER_LIMITS_KPH[2], None)]
     self._sl_tier_options = []
     for i, (param, (lo, hi)) in enumerate(zip(TIER_PARAMS, tier_bounds, strict=True), start=1):
-      option = BigParamOption(tr("tier {} offset").format(i), param,
+      option = BigParamOption(_tier_offset_label(i, lo, hi), param,
                               min_value=-30, max_value=30, label_callback=_tier_label, picker_unit=speed_unit,
                               description=_tier_description(lo, hi))
       option.set_visible(lambda: self._offset_type_value() == OFFSET_PER_SPEED)

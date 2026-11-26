@@ -227,7 +227,7 @@ sections:
         value: 3
     - key: SpeedLimitOffsetTier1
       widget: option
-      title: Offset - Range 1
+      title: Per Speed - 0–50 km/h (0–31 mph)
       description: Applies when the speed limit is up to 50 km/h (30 mph).
       min: -30
       max: 30
@@ -242,7 +242,7 @@ sections:
         value: 2
     - key: SpeedLimitOffsetTier2
       widget: option
-      title: Offset - Range 2
+      title: Per Speed - 51–60 km/h (31–40 mph)
       description: Applies when the speed limit is 51 to 60 km/h (31 to 40 mph).
       min: -30
       max: 30
@@ -257,7 +257,7 @@ sections:
         value: 2
     - key: SpeedLimitOffsetTier3
       widget: option
-      title: Offset - Range 3
+      title: Per Speed - 61–80 km/h (41–50 mph)
       description: Applies when the speed limit is 61 to 80 km/h (41 to 50 mph).
       min: -30
       max: 30
@@ -272,7 +272,7 @@ sections:
         value: 2
     - key: SpeedLimitOffsetTier4
       widget: option
-      title: Offset - Range 4
+      title: Per Speed - >80 km/h (>50 mph)
       description: Applies when the speed limit is over 80 km/h (over 50 mph).
       min: -30
       max: 30

@@ -1,3 +1,4 @@
+
 """
 Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 
@@ -45,6 +46,11 @@ SPEED_LIMIT_OFFSET_DESCRIPTIONS = [
 # Keep in sync with the tier lookup in speed_limit_resolver.py.
 TIER_LIMITS_METRIC = (50, 60, 80)    # km/h
 TIER_LIMITS_IMPERIAL = (30, 40, 50)  # mph
+
+# Tier boundaries are stored in km/h internally.
+# Keep these aligned with the resolver's thresholds.
+TIER_LIMITS_KPH = (50, 60, 80)
+
 TIER_PARAMS = (
   "SpeedLimitOffsetTier1",
   "SpeedLimitOffsetTier2",
@@ -93,7 +99,7 @@ class SpeedLimitSettingsLayout(Widget):
       description="",
       buttons=SPEED_LIMIT_OFFSET_TYPE_BUTTONS,
       param="SpeedLimitOffsetType",
-      button_width=380,  # four buttons now, same width as the mode selector
+      button_width=380,
     )
 
     self._speed_limit_value_offset = option_item_sp(
@@ -105,11 +111,19 @@ class SpeedLimitSettingsLayout(Widget):
       label_callback=self._get_offset_label,
     )
 
-    # one offset control per speed limit range, shown only for the Per Speed type
+    # One offset control per speed limit range.
+    # The title and description dynamically follow the selected speed unit.
+    tier_bounds = [
+      (None, TIER_LIMITS_KPH[0]),
+      (TIER_LIMITS_KPH[0], TIER_LIMITS_KPH[1]),
+      (TIER_LIMITS_KPH[1], TIER_LIMITS_KPH[2]),
+      (TIER_LIMITS_KPH[2], None),
+    ]
+
     self._tier_offsets = []
-    for idx, param in enumerate(TIER_PARAMS):
+    for idx, (param, (lo, hi)) in enumerate(zip(TIER_PARAMS, tier_bounds, strict=True)):
       item = option_item_sp(
-        title=f"{tr('Offset')} - {tr('Range')} {idx + 1}",
+        title=lambda lower=lo, upper=hi: self._get_tier_offset_title(lower, upper),
         param=param,
         min_value=-30,
         max_value=30,
@@ -161,13 +175,39 @@ class SpeedLimitSettingsLayout(Widget):
     return f"{value} {unit}"
 
   @staticmethod
+  def _mph(kph: int) -> int:
+    from openpilot.common.constants import CV
+    return round(kph * CV.KPH_TO_MPH)
+
+  @classmethod
+  def _get_tier_offset_title(cls, lo, hi):
+    """Build the tier title using the driver's selected speed unit."""
+    if ui_state.is_metric:
+      unit = tr("km/h")
+      lower = lo
+      upper = hi
+    else:
+      unit = tr("mph")
+      lower = cls._mph(lo) if lo is not None else None
+      upper = cls._mph(hi) if hi is not None else None
+
+    if lower is None:
+      speed_range = f"0–{upper} {unit}"
+    elif upper is None:
+      speed_range = f"Over {lower} {unit}"
+    else:
+      speed_range = f"{lower + 1}–{upper} {unit}"
+
+    return f"{tr('Offset')} - {speed_range}"
+
+  @staticmethod
   def _get_tier_description(idx: int):
-    """Describes which speed limits this tier covers, in the driver's own unit."""
-    unit = tr("km/h") if ui_state.is_metric else tr("mph")
+    """Describe which speed limits this tier covers in the driver's selected unit."""
     limits = TIER_LIMITS_METRIC if ui_state.is_metric else TIER_LIMITS_IMPERIAL
+    unit = tr("km/h") if ui_state.is_metric else tr("mph")
 
     if idx == 0:
-      return tr("Applies when the speed limit is up to {} {}.").format(limits[0], unit)
+      return tr("Applies when the speed limit is 0 to {} {}.").format(limits[0], unit)
     if idx < len(limits):
       return tr("Applies when the speed limit is {} to {} {}.").format(limits[idx - 1] + 1, limits[idx], unit)
     return tr("Applies when the speed limit is over {} {}.").format(limits[-1], unit)
@@ -209,7 +249,7 @@ class SpeedLimitSettingsLayout(Widget):
     offset_type = ui_state.params.get("SpeedLimitOffsetType", return_default=True)
     per_speed = offset_type == int(SpeedLimitOffsetType.per_speed)
 
-    # single offset control for fixed / percent, tier controls for per speed
+    # Single offset control for fixed / percent, tier controls for per speed.
     self._speed_limit_value_offset.set_visible(offset_type != int(SpeedLimitOffsetType.off) and not per_speed)
     for item in self._tier_offsets:
       item.set_visible(per_speed)
