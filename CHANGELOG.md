@@ -1,5 +1,7 @@
 zoompilot vUNRELEASED
 ========================
+* 2026-11-25
+  * Lane change smoothing: fixed the levels being applied backwards, which could carry the car past the new lane on the slower settings.
 * 2026-11-22
   * comma 4: fixed the rainbow path drawing left of the lane lines.
 * 2026-11-21

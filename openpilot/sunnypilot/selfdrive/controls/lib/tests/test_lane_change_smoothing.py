@@ -4,18 +4,22 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import math
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+from opendbc.car.car_helpers import interfaces
+from opendbc.car.mazda.values import CAR as MAZDA
+from opendbc.car.vehicle_model import VehicleModel
 from openpilot.cereal import log, messaging
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature, MAX_LATERAL_JERK
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import (
-  LaneChangeSmoothing, clip_curvature_rate, read_level, LEVEL_JERK_FACTOR, LEVEL_TIME_EXTRA,
+  ENTRY_SIGN, LaneChangeSmoothing, clip_curvature_rate, read_level, LEVEL_JERK_FACTOR, LEVEL_TIME_EXTRA,
   LEVELS, LEVEL_OFF, LEVEL_FAST, LEVEL_MEDIUM, LEVEL_EXTRA_SLOW, UNWIND_JERK_MAX, SMOOTH_RELEASE_T,
 )
 
@@ -88,12 +92,12 @@ class TestLaneChangeSmoothing(OpenpilotTestCase):
     assert self.update(OFF, 0.002, 0.0) == 1.0
 
   def test_clamped_during_maneuver(self):
-    jf = self.update(LEFT_STARTING, 0.001, 0.0)
+    jf = self.update(LEFT_STARTING, -0.001, 0.0)
     assert jf == pytest.approx(self.lcs.set_jerk)
     assert jf < 0.2  # the default level is a real clamp
 
   def test_finishing_state_keeps_clamp(self):
-    jf = self.update(LEFT_FINISHING, 0.001, 0.0)
+    jf = self.update(LEFT_FINISHING, -0.001, 0.0)
     assert jf == pytest.approx(self.lcs.set_jerk)
 
   def test_lateral_inactive_resets(self):
@@ -111,27 +115,31 @@ class TestLaneChangeSmoothing(OpenpilotTestCase):
 
   def test_unwind_tracks_the_model(self):
     # against the entry direction the factor follows the lag, up to the unwind cap
-    self.update(LEFT_STARTING, 0.001, 0.0)
-    small = self.update(LEFT_STARTING, -0.001, 0.0)
-    large = self.update(LEFT_STARTING, -0.005, 0.0)
+    self.update(LEFT_STARTING, -0.001, 0.0)
+    small = self.update(LEFT_STARTING, 0.001, 0.0)
+    large = self.update(LEFT_STARTING, 0.005, 0.0)
     assert self.lcs.set_jerk < small < large <= UNWIND_JERK_MAX + 1e-9
 
   def test_unwind_direction_follows_lane_change_direction(self):
-    # a right lane change unwinds with positive curvature steps
-    self.update(RIGHT_STARTING, -0.001, 0.0)
-    assert self.update(RIGHT_STARTING, 0.005, 0.0) > self.lcs.set_jerk
-    assert self.update(RIGHT_STARTING, -0.005, 0.0) == pytest.approx(self.lcs.set_jerk)
+    # curvature is positive to the right: a right lane change enters positive and unwinds negative
+    self.update(RIGHT_STARTING, 0.001, 0.0)
+    assert self.update(RIGHT_STARTING, -0.005, 0.0) > self.lcs.set_jerk
+    assert self.update(RIGHT_STARTING, 0.005, 0.0) == pytest.approx(self.lcs.set_jerk)
+    self.lcs.reset()
+    self.update(LEFT_STARTING, -0.001, 0.0)
+    assert self.update(LEFT_STARTING, 0.005, 0.0) > self.lcs.set_jerk
+    assert self.update(LEFT_STARTING, -0.005, 0.0) == pytest.approx(self.lcs.set_jerk)
 
   def test_unwind_is_continuous_in_lag(self):
     # no bang-bang at the crest: a vanishing lag gets a vanishing boost
-    self.update(LEFT_STARTING, 0.001, 0.0)
-    assert self.update(LEFT_STARTING, -1e-6, 0.0) == pytest.approx(self.lcs.set_jerk, abs=1e-3)
+    self.update(LEFT_STARTING, -0.001, 0.0)
+    assert self.update(LEFT_STARTING, 1e-6, 0.0) == pytest.approx(self.lcs.set_jerk, abs=1e-3)
 
   def test_unwind_stays_armed_through_release(self):
-    self.update(LEFT_STARTING, 0.001, 0.0)
+    self.update(LEFT_STARTING, -0.001, 0.0)
     for _ in range(10):
       self.update(OFF, 0.0, 0.0)
-    assert self.update(OFF, -0.005, 0.0) > self.lcs.set_jerk
+    assert self.update(OFF, 0.005, 0.0) > self.lcs.set_jerk
 
   def test_rate_clip_scales_with_factor(self):
     full, _ = clip_curvature(15.0, 0.0, 0.01, 0.0)
@@ -158,7 +166,8 @@ class TestLaneChangeSmoothing(OpenpilotTestCase):
 class TestClosedLoop(OpenpilotTestCase):
   """A toy lane change: the planner is a PD on the remaining lateral offset (closed loop on
   the car, like the model), the car follows the clipped curvature command, and the
-  lane-change state machine flips on the lane line and at the new center."""
+  lane-change state machine flips on the lane line and at the new center. y and curvature
+  are positive to the right, as in the model frame, so this is a right lane change."""
 
   V_EGO = 25.0
   A_MAX = 1.5  # m/s^2, lateral accel the planner is willing to use
@@ -167,7 +176,7 @@ class TestClosedLoop(OpenpilotTestCase):
   def simulate(self, smoothing: LaneChangeSmoothing | None):
     y, y_dot, k_cmd = 0.0, 0.0, 0.0
     state = LaneChangeState.laneChangeStarting
-    jerks, t_done = [], None
+    jerks, entry_jerks, t_done = [], [], None
     for i in range(int(self.T_MAX / DT_CTRL)):
       t = i * DT_CTRL
       err = LANE_WIDTH - y
@@ -180,26 +189,63 @@ class TestClosedLoop(OpenpilotTestCase):
       k_model = a_des / self.V_EGO ** 2
       jf = 1.0
       if smoothing is not None:
-        jf = smoothing.update(make_cs(self.V_EGO), make_model(state, LaneChangeDirection.left), True, k_model, k_cmd)
+        jf = smoothing.update(make_cs(self.V_EGO), make_model(state, LaneChangeDirection.right), True, k_model, k_cmd)
       k_next, _ = clip_curvature(self.V_EGO, k_cmd, clip_curvature_rate(self.V_EGO, k_cmd, k_model, jf), 0.0)
       jerks.append(abs(k_next - k_cmd) / DT_CTRL * self.V_EGO ** 2)
+      if t < 0.5:
+        entry_jerks.append(jerks[-1])
       k_cmd = k_next
       y_dot += k_cmd * self.V_EGO ** 2 * DT_CTRL
       y += y_dot * DT_CTRL
-    return y, max(jerks), t_done
+    return y, max(jerks), t_done, max(entry_jerks)
 
   def setup_method(self):
     self.params = Params()
 
   def test_smoothed_lane_change_completes_without_snap(self):
-    y_stock, jerk_stock, t_stock = self.simulate(None)
+    y_stock, jerk_stock, t_stock, _ = self.simulate(None)
     assert t_stock is not None
     for level in LEVELS[1:]:
       self.params.put("LaneChangeSmoothing", level, block=True)
       lcs = LaneChangeSmoothing()
-      y, jerk, t_done = self.simulate(lcs)
+      y, jerk, t_done, entry_jerk = self.simulate(lcs)
       assert t_done is not None, f"level {level} never settled"
       assert t_done >= t_stock
       assert abs(y - LANE_WIDTH) < 0.2, f"level {level} ended {y:.2f} m"
       assert jerk <= UNWIND_JERK_MAX * MAX_LATERAL_JERK + 1e-6
       assert jerk < jerk_stock
+      assert entry_jerk <= LEVEL_JERK_FACTOR[level] * MAX_LATERAL_JERK + 1e-6, f"level {level} entry is not capped"
+
+
+class TestSignConvention(OpenpilotTestCase):
+  """ENTRY_SIGN against sources that do not share its assumption. It shipped inverted once,
+  with tests written from the same assumption: the steer into the lane ran on the unwind
+  tracker and the arrest was held at the level's cap, so the car slid past the new lane."""
+
+  def test_entry_sign_matches_controlsd_curvature(self):
+    CP = interfaces[MAZDA.MAZDA_CX5_2022].get_non_essential_params(MAZDA.MAZDA_CX5_2022)
+    VM = VehicleModel(CP)
+    steer_left = math.radians(10.0)  # carState.steeringAngleDeg is positive to the left
+    curvature_left = -VM.calc_curvature(steer_left, 20.0, 0.0)  # controlsd's controlsState.curvature
+    assert np.sign(curvature_left) == ENTRY_SIGN[LaneChangeDirection.left]
+    assert np.sign(-curvature_left) == ENTRY_SIGN[LaneChangeDirection.right]
+
+  def test_right_change_in_a_right_curve_arrests(self):
+    # the shape of a logged failure: 32 m/s in a right-hand curve, extra slow. The model steps
+    # into the right lane, then swings back through the curve's own curvature to counter-steer.
+    Params().put("LaneChangeSmoothing", LEVEL_EXTRA_SLOW, block=True)
+    lcs = LaneChangeSmoothing()
+    v, k_curve = 32.0, 5.5e-4
+    cap = LEVEL_JERK_FACTOR[LEVEL_EXTRA_SLOW] * MAX_LATERAL_JERK
+    k_cmd, gaps = k_curve, []
+    for i in range(int(4.5 / DT_CTRL)):
+      t = i * DT_CTRL
+      k_model = 12e-4 if t < 1.0 else float(np.interp(t, [1.0, 4.5], [12e-4, -6e-4]))
+      jf = lcs.update(make_cs(v), RIGHT_STARTING, True, k_model, k_cmd)
+      k_next, _ = clip_curvature(v, k_cmd, clip_curvature_rate(v, k_cmd, k_model, jf), 0.0)
+      if t < 1.0:
+        assert (k_next - k_cmd) / DT_CTRL * v ** 2 <= cap + 1e-6  # entry holds the level's cap
+      elif k_model < k_cmd:
+        gaps.append((k_next - k_model) * v ** 2)
+      k_cmd = k_next
+    assert gaps and max(gaps[20:]) < 0.2  # m/s^2: the command follows the model down, it is not left behind
