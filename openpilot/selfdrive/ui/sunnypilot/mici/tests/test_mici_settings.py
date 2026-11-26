@@ -1375,7 +1375,7 @@ class TestModelPathMode:
       ui_state.sm.frame = frame
       drawn.clear()
       hud._draw_steering_wheel(rl.Rectangle(0, 0, 100, 240))
-    wheel = drawn[1]
+    wheel = drawn[0]  # then its highlight
     assert wheel.a == pytest.approx(255 * (DIMMED_ICON_ALPHA if dimmed else 1.0), abs=2)
 
   @pytest.mark.parametrize(("status", "drawn_as"), [("LAT_ONLY", "ENGAGED"), ("LONG_ONLY", "DISENGAGED")])
