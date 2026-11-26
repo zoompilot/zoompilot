@@ -22,6 +22,17 @@ SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
 
 ALL_SOURCES = tuple(SpeedLimitSource.schema.enumerants.values())
 
+TIER_PARAMS = (
+  "SpeedLimitOffsetTier1",
+  "SpeedLimitOffsetTier2",
+  "SpeedLimitOffsetTier3",
+  "SpeedLimitOffsetTier4",
+)
+# upper bound of tiers 1-3 in the user's unit; tier 4 is everything above.
+# must match TIER_LIMITS_* in speed_limit_settings.py and the descriptions in cruise.yaml
+TIER_LIMITS_METRIC = (50, 60, 80)    # km/h
+TIER_LIMITS_IMPERIAL = (30, 40, 50)  # mph
+
 
 class SpeedLimitResolver:
   limit_solutions: dict[custom.LongitudinalPlanSP.SpeedLimit.Source, float]
@@ -80,6 +91,7 @@ class SpeedLimitResolver:
       self.params
     )
     self.offset_value = self.params.get("SpeedLimitValueOffset", return_default=True)
+    self.tier_offsets = self._read_tier_offsets()
 
     self.speed_limit = 0.
     self.speed_limit_last = 0.
@@ -108,6 +120,25 @@ class SpeedLimitResolver:
       self.is_metric = self.params.get_bool("IsMetric")
       self.offset_type = self.params.get("SpeedLimitOffsetType", return_default=True)
       self.offset_value = self.params.get("SpeedLimitValueOffset", return_default=True)
+      self.tier_offsets = self._read_tier_offsets()
+
+  def _read_tier_offsets(self) -> list[int]:
+    return [int(self.params.get(p, return_default=True)) for p in TIER_PARAMS]
+
+  def _get_per_speed_offset(self) -> float:
+    if self.speed_limit <= 0.:
+      return 0.
+
+    # pick the tier in the driver's unit; round so e.g. 50 km/h (13.889 m/s) never lands in tier 2 from float error
+    if self.is_metric:
+      limit = round(self.speed_limit * CV.MS_TO_KPH)
+      bounds, to_ms = TIER_LIMITS_METRIC, CV.KPH_TO_MS
+    else:
+      limit = round(self.speed_limit * CV.MS_TO_MPH)
+      bounds, to_ms = TIER_LIMITS_IMPERIAL, CV.MPH_TO_MS
+
+    tier = next((i for i, upper in enumerate(bounds) if limit <= upper), len(bounds))
+    return float(self.tier_offsets[tier] * to_ms)
 
   def _get_speed_limit_offset(self) -> float:
     if self.offset_type == OffsetType.off:
@@ -116,6 +147,8 @@ class SpeedLimitResolver:
       return float(self.offset_value * (CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS))
     elif self.offset_type == OffsetType.percentage:
       return float(self.offset_value * 0.01 * self.speed_limit)
+    elif self.offset_type == OffsetType.per_speed:
+      return self._get_per_speed_offset()
     else:
       raise NotImplementedError("Offset not supported")
 
@@ -206,3 +239,4 @@ class SpeedLimitResolver:
     self.update_speed_limit_states()
 
     self.frame += 1
+

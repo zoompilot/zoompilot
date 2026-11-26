@@ -205,6 +205,8 @@ sections:
         label: Fixed
       - value: 2
         label: Percentage
+      - value: 3
+        label: Per Speed
     - key: SpeedLimitValueOffset
       widget: option
       title: Speed Limit Offset Value
@@ -219,6 +221,70 @@ sections:
         key: SpeedLimitOffsetType
         op: '>'
         value: 0
+      - type: param_compare
+        key: SpeedLimitOffsetType
+        op: '<'
+        value: 3
+    - key: SpeedLimitOffsetTier1
+      widget: option
+      title: Per Speed - 0–50 km/h (0–31 mph)
+      description: Applies when the speed limit is up to 50 km/h (30 mph).
+      min: -30
+      max: 30
+      step: 1
+      unit:
+        metric: km/h
+        imperial: mph
+      visibility:
+      - type: param_compare
+        key: SpeedLimitOffsetType
+        op: '>'
+        value: 2
+    - key: SpeedLimitOffsetTier2
+      widget: option
+      title: Per Speed - 51–60 km/h (31–40 mph)
+      description: Applies when the speed limit is 51 to 60 km/h (31 to 40 mph).
+      min: -30
+      max: 30
+      step: 1
+      unit:
+        metric: km/h
+        imperial: mph
+      visibility:
+      - type: param_compare
+        key: SpeedLimitOffsetType
+        op: '>'
+        value: 2
+    - key: SpeedLimitOffsetTier3
+      widget: option
+      title: Per Speed - 61–80 km/h (41–50 mph)
+      description: Applies when the speed limit is 61 to 80 km/h (41 to 50 mph).
+      min: -30
+      max: 30
+      step: 1
+      unit:
+        metric: km/h
+        imperial: mph
+      visibility:
+      - type: param_compare
+        key: SpeedLimitOffsetType
+        op: '>'
+        value: 2
+    - key: SpeedLimitOffsetTier4
+      widget: option
+      title: Per Speed - >80 km/h (>50 mph)
+      description: Applies when the speed limit is over 80 km/h (over 50 mph).
+      min: -30
+      max: 30
+      step: 1
+      unit:
+        metric: km/h
+        imperial: mph
+      visibility:
+      - type: param_compare
+        key: SpeedLimitOffsetType
+        op: '>'
+        value: 2
 - id: smart_cruise
   title: Smart Cruise Control
   description: ''
