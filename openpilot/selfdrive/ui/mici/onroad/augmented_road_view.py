@@ -7,7 +7,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.mici.onroad import SIDE_PANEL_WIDTH
 from openpilot.selfdrive.ui.mici.onroad.alert_renderer import AlertRenderer
 from openpilot.selfdrive.ui.mici.onroad.driver_state import DriverStateRenderer
-from openpilot.selfdrive.ui.mici.onroad.status import status_fade
+from openpilot.selfdrive.ui.mici.onroad.status import StatusFade
 from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
 from openpilot.selfdrive.ui.mici.onroad.model_renderer import ModelRenderer
@@ -31,6 +31,9 @@ OpState = log.SelfdriveState.OpenpilotState
 CALIBRATED = log.ExtrinsicsCalibration.Status.calibrated
 NARROW_ROAD_CAM = VisionStreamType.VISION_STREAM_NARROW_ROAD
 WIDE_CAM = VisionStreamType.VISION_STREAM_WIDE_ROAD
+VisualAlert = car.CarControl.HUDControl.VisualAlert
+DM_ALERTS = ('driverDistracted2', 'driverDistracted3')
+UNCOLORED_ALERTS = ('brakeHold', 'resumeRequired', 'laneChangeBlocked', 'driverUnresponsive1', 'driverUnresponsive2', 'driverUnresponsive3')
 DEFAULT_DEVICE_CAMERA = DEVICE_CAMERAS["tici", "ar0231"]
 
 
@@ -183,6 +186,7 @@ class AugmentedRoadView(CameraView):
     self._long_indicator = LongIndicator()
     self._alert_renderer = AlertRenderer()
     self._driver_state_renderer = DriverStateRenderer(background=False)
+    self._status = StatusFade(0.1)
     self._confidence_ball = ConfidenceBall()
     self._offroad_label = UnifiedLabel("start the car", 46, FontWeight.DISPLAY,
                                        text_color=rl.Color(255, 255, 255, 255),
@@ -226,6 +230,7 @@ class AugmentedRoadView(CameraView):
       rl.draw_rectangle_rec(self.rect, rl.BLACK)
       self._render_offroad_text(rl.Rectangle(self.rect.x + SIDE_PANEL_WIDTH, self.rect.y, self.rect.width - SIDE_PANEL_WIDTH, self.rect.height))
       self._hud_renderer.set_wheel_critical_icon(False)
+      self._driver_state_renderer.set_warning(False)
       self._render_left_panel(False)
       return
 
@@ -267,8 +272,12 @@ class AugmentedRoadView(CameraView):
     self._hud_renderer.set_can_draw_top_icons(alert_to_render is None)
     # critical alerts show a warning icon where the torque bar is
     self._hud_renderer.set_torque_bar_hidden(alert_to_render is not None and alert_to_render.status == log.SelfdriveState.AlertStatus.critical)
-    self._hud_renderer.set_wheel_critical_icon(alert_to_render is not None and not not_animating_out and
-                                               alert_to_render.visual_alert == car.CarControl.HUDControl.VisualAlert.steerRequired)
+    showing = alert_to_render is not None and not not_animating_out
+    event = alert_to_render.alert_type.split('/')[0] if showing else ''
+    warning = showing and event not in UNCOLORED_ALERTS and (alert_to_render.status != log.SelfdriveState.AlertStatus.normal or
+                                                             alert_to_render.visual_alert == VisualAlert.steerRequired)
+    self._hud_renderer.set_wheel_critical_icon(warning and event not in DM_ALERTS)
+    self._driver_state_renderer.set_warning(warning and event in DM_ALERTS and (ui_state.status != UIStatus.DISENGAGED or ui_state.always_on_dm))
     self._alert_renderer.render(self._content_rect)
     self._hud_renderer.render(self._content_rect)
 
@@ -312,7 +321,7 @@ class AugmentedRoadView(CameraView):
 
     # Grey out DMoji when disengaged unless AlwaysOnDM is enabled. In the side panel nothing overlaps it, otherwise it hides under the set speed
     self._driver_state_renderer.set_should_draw(not show_navigation or not self._hud_renderer.drawing_top_icons())
-    self._driver_state_renderer.set_dimmed(1.0 if not ui_state.started else 0.0 if ui_state.always_on_dm else status_fade.weight(UIStatus.DISENGAGED))
+    self._driver_state_renderer.set_dimmed(1.0 if not ui_state.started else 0.0 if ui_state.always_on_dm else self._status.weight(UIStatus.DISENGAGED))
     self._driver_state_renderer.set_show_under_alerts(not show_navigation)
     # the 52px cone is centered 36px from the top left
     dm_size = self._driver_state_renderer.rect.width
@@ -321,6 +330,7 @@ class AugmentedRoadView(CameraView):
     # sunnypilot: with navigation the column is over the camera, where the left blind spot icon draws
     left_bsm = show_navigation and gui_app.sunnypilot_ui() and self._hud_renderer.left_blind_spot_detected()
     self._long_indicator.set_should_draw((not show_navigation or not self._hud_renderer.drawing_top_icons()) and not left_bsm)
+    self._long_indicator.set_has_lead(ui_state.started and self._model_renderer.has_lead)
     self._long_indicator.render(left_rect)
     self._hud_renderer.render_steering_wheel(left_rect)
 
