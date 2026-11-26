@@ -1,5 +1,11 @@
 zoompilot vUNRELEASED
 ========================
+* 2026-11-26
+  * Synced with openpilot of 2026-11-25.
+  * Acceleration and following distance tuning per personality (openpilot).
+  * comma 4: path and lead show while disengaged; speed dial on stock ACC (openpilot).
+  * Lane change smoothing: fixed slower levels drifting across lane lines.
+  * Mazda alpha long: restore hands-on-wheel message on the dash during alerts
 * 2026-11-22
   * comma 4: fixed the rainbow path drawing left of the lane lines.
 * 2026-11-21
