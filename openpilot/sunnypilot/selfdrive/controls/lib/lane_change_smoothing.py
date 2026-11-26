@@ -70,8 +70,9 @@ SMOOTH_RELEASE_T = 2.0  # s
 UNWIND_TAU = 0.2        # s
 UNWIND_JERK_MAX = 0.6
 
-# Sign of the curvature that steers into the new lane (openpilot: left is positive).
-ENTRY_SIGN = {LaneChangeDirection.left: 1.0, LaneChangeDirection.right: -1.0}
+# Sign of the curvature that steers into the new lane. Curvature is positive to the right:
+# controlsd negates VM.calc_curvature, whose steering angle is positive to the left.
+ENTRY_SIGN = {LaneChangeDirection.left: -1.0, LaneChangeDirection.right: 1.0}
 
 
 def read_level(params) -> int:
