@@ -5,6 +5,7 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalTogglesMici
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import (
   BigButtonSP,
@@ -28,12 +29,27 @@ SL_MODE_WARN = 2
 SL_MODE_ASSIST = 3
 ACC_LONG_PRESS_MAP = {1: 1, 2: 5, 3: 10}
 
+# SpeedLimitOffsetType values (index into the offset type toggle)
+OFFSET_NONE = 0
+OFFSET_FIXED = 1
+OFFSET_PERCENT = 2
+OFFSET_PER_SPEED = 3
+
+# Per-speed tiers: a limit up to each threshold (km/h) uses that tier's offset, anything above the last uses the last tier.
+# Tier offsets (SpeedLimitOffsetTier1..4) are stored in km/h and shown in mph for imperial users.
+TIER_LIMITS_KPH = (50, 60, 80)
+TIER_PARAMS = ("SpeedLimitOffsetTier1", "SpeedLimitOffsetTier2", "SpeedLimitOffsetTier3", "SpeedLimitOffsetTier4")
+
+
+def _mph(kph):
+  return round(kph * CV.KPH_TO_MPH)
+
 
 def _offset_unit():
   t = int(ui_state.params.get("SpeedLimitOffsetType", return_default=True))
-  if t == 2:
+  if t == OFFSET_PERCENT:
     return "%"
-  if t == 1:
+  if t in (OFFSET_FIXED, OFFSET_PER_SPEED):
     return speed_unit()
   return ""
 
@@ -41,6 +57,41 @@ def _offset_unit():
 def _offset_label(value):
   unit = _offset_unit()
   return f"{value}{unit}" if unit else tr("none")
+
+
+def _tier_label(kph_value):
+  # tier offsets are stored in km/h
+  value = kph_value if ui_state.is_metric else _mph(kph_value)
+  return f"{value}{speed_unit()}"
+
+def _tier_offset_label(tier, lo, hi):
+  if ui_state.is_metric:
+    unit = "km/h"
+    lower = lo
+    upper = hi
+  else:
+    unit = "mph"
+    lower = _mph(lo) if lo is not None else None
+    upper = _mph(hi) if hi is not None else None
+
+  if lower is None:
+    speed_range = f"0–{upper} {unit}"
+  elif upper is None:
+    speed_range = f">{lower} {unit}"
+  else:
+    speed_range = f"{lower + 1}–{upper} {unit}"
+
+  return f"{speed_range} {tr('offset')}"
+
+def _tier_description(lo, hi):
+  """lo/hi are the tier's km/h bounds; lo=None means 'up to hi', hi=None means 'over lo'."""
+  if lo is None:
+    rng = tr("Used when the speed limit is {} km/h ({} mph) or lower.").format(hi, _mph(hi))
+  elif hi is None:
+    rng = tr("Used when the speed limit is over {} km/h ({} mph).").format(lo, _mph(lo))
+  else:
+    rng = tr("Used when the speed limit is over {} up to {} km/h (over {} up to {} mph).").format(lo, hi, _mph(lo), _mph(hi))
+  return rng + "\n" + tr("Shown in km/h or mph to match your unit. Negative values go below the limit.")
 
 
 class CruiseLayoutMici(NavScroller):
@@ -105,13 +156,35 @@ class CruiseLayoutMici(NavScroller):
                                                            "Car or map uses only that one."))
     # cars that report no limit always use the map
     self._sl_source.set_visible(lambda: car_shows_limit(ui_state.CP, ui_state.CP_SP))
-    self._sl_offset_type = BigMultiParamToggleSP(tr("offset type"), "SpeedLimitOffsetType", [tr("none"), tr("fixed"), "%"], off_index=0,
+    self._sl_offset_type = BigMultiParamToggleSP(tr("offset type"), "SpeedLimitOffsetType",
+                                                 [tr("none"), tr("fixed"), "%", tr("per speed")], off_index=0,
                                                  description=tr("Adds an offset to the speed limit.\n" +
-                                                                "Fixed adds a set amount of speed. % adds a percentage of the limit."))
+                                                                "Fixed adds a set amount of speed. % adds a percentage of the limit.\n" +
+                                                                "Per speed sets a different amount for each speed limit range."))
     self._sl_offset_value = BigParamOption(tr("offset value"), "SpeedLimitValueOffset",
                                            min_value=-30, max_value=30, label_callback=_offset_label, picker_unit=_offset_unit,
                                            description=tr("The amount added to the speed limit. Negative values go below it."))
-    self._sl_view = self._speed_limit_btn.link_sub_panel([self._sl_mode, self._sl_source, self._sl_offset_type, self._sl_offset_value])
+    # single offset value is replaced by the per-tier values when the type is per speed
+    self._sl_offset_value.set_visible(lambda: self._offset_type_value() != OFFSET_PER_SPEED)
+
+    tier_bounds = [(None, TIER_LIMITS_KPH[0]),
+                   (TIER_LIMITS_KPH[0], TIER_LIMITS_KPH[1]),
+                   (TIER_LIMITS_KPH[1], TIER_LIMITS_KPH[2]),
+                   (TIER_LIMITS_KPH[2], None)]
+    self._sl_tier_options = []
+    for i, (param, (lo, hi)) in enumerate(zip(TIER_PARAMS, tier_bounds, strict=True), start=1):
+      option = BigParamOption(_tier_offset_label(i, lo, hi), param,
+                              min_value=-30, max_value=30, label_callback=_tier_label, picker_unit=speed_unit,
+                              description=_tier_description(lo, hi))
+      option.set_visible(lambda: self._offset_type_value() == OFFSET_PER_SPEED)
+      self._sl_tier_options.append(option)
+
+    self._sl_view = self._speed_limit_btn.link_sub_panel([self._sl_mode, self._sl_source, self._sl_offset_type,
+                                                          self._sl_offset_value, *self._sl_tier_options])
+
+  @staticmethod
+  def _offset_type_value() -> int:
+    return int(ui_state.params.get("SpeedLimitOffsetType", return_default=True) or 0)
 
   def show_event(self):
     super().show_event()
@@ -162,12 +235,14 @@ class CruiseLayoutMici(NavScroller):
     else:
       sl_source = SL_SOURCE_LABELS.get(ui_state.params.get("SpeedLimitPolicy", return_default=True), SL_SOURCE_LABELS[AUTO])
       sl_offset_val = ui_state.params.get("SpeedLimitValueOffset", return_default=True) or 0
-      unit = "%" if offset_type == 2 else (speed_unit() if offset_type == 1 else "")
+      unit = "%" if offset_type == OFFSET_PERCENT else (speed_unit() if offset_type == OFFSET_FIXED else "")
       icbm = icbm_moves_speed_limits(has_long, has_icbm, sl_mode_idx)
       badges = [(sl_mode, "on"), (tr("icbm"), "on" if icbm else "off")]
       if car_shows_limit(ui_state.CP, ui_state.CP_SP):
         badges.append((sl_source, "on"))
-      if unit:
+      if offset_type == OFFSET_PER_SPEED:
+        badges.append((tr("per speed"), "on"))
+      elif unit:
         sign = "+" if sl_offset_val > 0 else ""
         badges.append((f"{sign}{sl_offset_val}{unit}", "on"))
       self._speed_limit_btn.set_badges(badges)
@@ -206,4 +281,7 @@ class CruiseLayoutMici(NavScroller):
     sl_on = self._sl_mode.value != SL_MODE_LABELS[SL_MODE_OFF]
     self._sl_source.set_superseded(not sl_on)
     self._sl_offset_type.set_superseded(not sl_on)
-    self._sl_offset_value.set_enabled(sl_on and offset_type != 0)  # 0 = off/none
+    self._sl_offset_value.set_enabled(sl_on and offset_type in (OFFSET_FIXED, OFFSET_PERCENT))
+    for option in self._sl_tier_options:
+      option.set_enabled(sl_on and offset_type == OFFSET_PER_SPEED)
+
