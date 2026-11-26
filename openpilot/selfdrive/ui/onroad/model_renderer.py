@@ -50,6 +50,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
     self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
     self._path_offset_z = HEIGHT_INIT[0]
+    self._path_half_width = 0.9  # m
     self._counter = -1
     self._camera_offset = ui_state.params.get("CameraOffset", return_default=True)
     # Initialize ModelPoints objects

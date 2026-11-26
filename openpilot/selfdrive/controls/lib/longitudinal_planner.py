@@ -21,7 +21,11 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import Lon
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 J_CRUISE_BP = [0., 10.0, 25., 40.]
 A_CRUISE_MIN = -0.5
-AGGRESSIVE_ACCEL_BOOST = 0.1  # m/s^2
+ACCEL_BOOST = {  # m/s^2
+  log.LongitudinalPersonality.relaxed: 0.0,
+  log.LongitudinalPersonality.standard: 0.05,
+  log.LongitudinalPersonality.aggressive: 0.15,
+}
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 
@@ -112,10 +116,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     curve_offset = self.curve_speed.update(sm['modelV2'], sm['vehicleParameters'].roll)
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration + curve_offset
     # zoompilot: Set Speed Assist shapes the model's accel itself, so the boost only applies with it off
-    if personality == log.LongitudinalPersonality.aggressive and not self.e2e_set_speed.enabled:
+    if not self.e2e_set_speed.enabled:
       speed_scale = np.interp(v_ego, [5.0, 10.0], [0.0, 1.0])
       accel_scale = np.interp(output_a_target_e2e, [-1.0, -0.5], [0.0, 1.0])
-      output_a_target_e2e += AGGRESSIVE_ACCEL_BOOST * speed_scale * accel_scale
+      output_a_target_e2e += ACCEL_BOOST[personality.raw] * speed_scale * accel_scale
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
     output_a_target_e2e, output_should_stop_e2e = LongitudinalPlannerSP.update_e2e_target(self, sm, output_a_target_e2e,
                                                                                           output_should_stop_e2e, reset_state)
