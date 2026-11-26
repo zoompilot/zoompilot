@@ -1279,16 +1279,20 @@ class TestModelsPanelMici:
 class TestLongIndicatorWholePixels:
   def test_stack_sits_on_whole_pixels(self, params, monkeypatch):
     import raylib_nb as rl
-    from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
     from openpilot.selfdrive.ui.sunnypilot.mici.onroad import long_indicator as li
 
-    rects = []
-    monkeypatch.setattr(LongIndicator, "_render", lambda self, rect: rects.append(rect))
+    drawn = []
+    monkeypatch.setattr(li.rl, "draw_texture_ex", lambda tex, pos, *_: drawn.append(pos))
     sp = li.LongIndicatorSP()
-    for y in (0.0, 0.25, 10.5):
-      sp._render(rl.Rectangle(0, y, 72, 240))
-      top = rects[-1].y + li.STACK_TOP
-      assert top == int(top) and 0 <= top - (y + li.STACK_TOP) < 1
+    for rect_y in (0.0, 0.25, 10.5):
+      rect = rl.Rectangle(0, rect_y, 72, 240)
+      for txt, y in [*sp._icons, (sp._txt_speed_dial, 120)]:
+        sp._draw_centered(txt, rect, y, 1.0)
+        pos = drawn[-1]
+        assert pos.x == int(pos.x) and pos.y == int(pos.y)
+        # within half a pixel of where upstream centres it
+        assert abs(pos.x - (rect.x + (rect.width - txt.width) / 2)) <= 0.5
+        assert abs(pos.y - (rect.y + y - txt.height / 2)) <= 0.5
 
 
 class TestSpeedAssistGauge:
@@ -1371,7 +1375,7 @@ class TestModelPathMode:
       ui_state.sm.frame = frame
       drawn.clear()
       hud._draw_steering_wheel(rl.Rectangle(0, 0, 100, 240))
-    wheel = drawn[1]
+    wheel = drawn[0]  # then its highlight
     assert wheel.a == pytest.approx(255 * (DIMMED_ICON_ALPHA if dimmed else 1.0), abs=2)
 
   @pytest.mark.parametrize(("status", "drawn_as"), [("LAT_ONLY", "ENGAGED"), ("LONG_ONLY", "DISENGAGED")])
@@ -1382,7 +1386,7 @@ class TestModelPathMode:
     from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
 
     monkeypatch.setattr(ui_state, "status", UIStatus[status])
-    folded, raw = StatusFade(), StatusFade(fold=False)
+    folded, raw = StatusFade(0.1), StatusFade(0.1, fold=False)
     for frame in range(1, 200):
       ui_state.sm.frame = frame
       folded.weight(UIStatus.ENGAGED), raw.weight(UIStatus.ENGAGED)

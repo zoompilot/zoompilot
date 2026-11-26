@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import raylib_nb as rl
 
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.ui.mici.onroad import SIDE_PANEL_WIDTH, model_renderer
 from openpilot.selfdrive.ui.onroad.model_renderer import ModelPoints
 from openpilot.selfdrive.ui.sunnypilot.onroad.rainbow_path import RainbowPath
@@ -27,6 +28,7 @@ def draw(monkeypatch):
   renderer._path = ModelPoints(projected_points=PATH)
   renderer.rainbow_path = RainbowPath()
   renderer._longitudinal_control = False
+  renderer._available_filter = FirstOrderFilter(0.0, 0.1, 0.05)  # no black disengaged path under it
   calls = []
   monkeypatch.setattr(model_renderer, 'draw_polygon', lambda rect, points, color=None, gradient=None: calls.append((np.array(points), gradient)))
 
