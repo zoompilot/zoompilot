@@ -16,7 +16,6 @@ import numpy as np
 import raylib_nb as rl
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.ui.mici.onroad.status import status_fade
 from openpilot.selfdrive.ui.mici.onroad.torque_bar import TORQUE_ANGLE_SPAN, TorqueBar, arc_bar_pts
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.sunnypilot.onroad.blendful import BLENDFUL_COLOR, FULL_BAR, BlendfulRenderer
@@ -116,7 +115,7 @@ class TorqueBarZP(TorqueBar):
     if not self._active:
       return
     # TorqueBar's circle, so the gauge runs parallel to its track and grows from the same middle
-    fade = self._torque_line_alpha_filter.x * (1 - status_fade.weight(UIStatus.DISENGAGED, UIStatus.LONG_ONLY))
+    fade = self._torque_line_alpha_filter.x * (1 - self._status.weight(UIStatus.DISENGAGED, UIStatus.LONG_ONLY))
     half_span = fade * TORQUE_ANGLE_SPAN * min(1.0, rect.width / (TORQUE_VIEW_W * self._scale)) / 2
     radius = TORQUE_RADIUS * self._scale
     center = np.array([rect.x + rect.width / 2 + TORQUE_CENTER_SHIFT, rect.y + rect.height + radius - TORQUE_OFFSET * self._scale],

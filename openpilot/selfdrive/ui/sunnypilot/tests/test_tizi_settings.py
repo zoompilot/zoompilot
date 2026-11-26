@@ -157,15 +157,15 @@ def test_long_indicator_stacks_on_the_driver_monitor(params, monkeypatch, rhd, d
   monkeypatch.setattr(long_indicator.rl, "draw_texture_ex", lambda tex, pos, *_: drawn.append((tex, pos)))
   indicator = long_indicator.LongIndicatorTizi()
   rect = rl.Rectangle(0, 0, 2160, 1080)
-  last_bar = indicator._txt_distance[2][0]
-  indicator._draw_centered(last_bar, rect, 152, 1.0)
+  last_bar, last_bar_y = indicator._icons[3]
+  indicator._draw_centered(last_bar, rect, last_bar_y, 1.0)
   _, pos = drawn[-1]
 
   monitor = driver_monitor_rect(rect, rhd)
   assert (monitor.x < rect.width / 2) != rhd  # the driver's side
   assert pos.x + last_bar.width / 2 == pytest.approx(monitor.x + monitor.width / 2, abs=1)
   # mici's bar-to-wheel gap, doubled
-  assert monitor.y - (pos.y + last_bar.height) == pytest.approx(2 * 18.5, abs=1.5)
+  assert monitor.y - (pos.y + last_bar.height) == pytest.approx(2 * 16, abs=1.5)
 
 
 @pytest.mark.parametrize("rhd", [False, True])
@@ -177,7 +177,6 @@ def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monke
   from openpilot.selfdrive.ui.sunnypilot.onroad import confidence_ball
   from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
   from openpilot.selfdrive.ui.sunnypilot.onroad.long_indicator import STACK_GAP, long_indicator_top
-  from openpilot.selfdrive.ui.mici.onroad.status import status_fade
   from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
   from openpilot.system.ui.lib.application import gui_app
 
@@ -188,14 +187,14 @@ def test_confidence_ball_rides_above_the_stack_on_the_drivers_side(params, monke
   sm = SM(driverMonitoringState=SimpleNamespace(isRHD=rhd), modelV2=SimpleNamespace(meta=SimpleNamespace(disengagePredictions=predictions)))
   monkeypatch.setattr(ui_state, "sm", sm)
   monkeypatch.setattr(ui_state, "status", UIStatus.ENGAGED)
-  for _ in range(5 * gui_app.target_fps):  # status_fade settles on engaged
-    sm.frame += 1
-    status_fade.weight(UIStatus.ENGAGED)
   for name in ("draw_rectangle_rounded", "draw_rectangle_rounded_lines_ex"):
     monkeypatch.setattr(confidence_ball.rl, name, lambda *a: None)
   drawn = []
   monkeypatch.setattr(confidence_ball, "draw_ball", lambda cx, cy, *a: drawn.append((cx, cy)))
   ball = confidence_ball.ConfidenceBallTizi()
+  for _ in range(5 * gui_app.target_fps):  # its status fade settles on engaged
+    sm.frame += 1
+    ball._status.weight(UIStatus.ENGAGED)
   rect = rl.Rectangle(0, 0, 2160, 1080)
   monitor = driver_monitor_rect(rect, rhd)
   half = confidence_ball.RADIUS + confidence_ball.FRAME_PAD

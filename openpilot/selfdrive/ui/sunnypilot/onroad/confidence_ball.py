@@ -16,7 +16,6 @@ import numpy as np
 import raylib_nb as rl
 
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
-from openpilot.selfdrive.ui.mici.onroad.status import status_fade
 from openpilot.selfdrive.ui.onroad.hud_renderer import COLORS, UI_CONFIG
 from openpilot.selfdrive.ui.sunnypilot.onroad.augmented_road_view import BORDER_COLORS_SP
 from openpilot.selfdrive.ui.sunnypilot.onroad.driver_state import driver_monitor_rect
@@ -73,7 +72,7 @@ class ConfidenceBallTizi(ConfidenceBall):
     # as on mici, it sinks to the bottom of the track while disengaged, here fading as it goes. The color still
     # comes from the confidence
     confidence = self._confidence_filter.x
-    alpha = 1 - status_fade.weight(UIStatus.DISENGAGED)
+    alpha = 1 - self._status.weight(UIStatus.DISENGAGED)
     if alpha < 0.01:
       return
     cy = top + half + (1 - max(confidence * alpha, 0.0)) * (bottom - top - 2 * half)
