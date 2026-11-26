@@ -22,7 +22,7 @@ from openpilot.system.ui.widgets.network import NavButton
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 
 SPEED_LIMIT_MODE_BUTTONS = [tr("Off"), tr("Info"), tr("Warning"), tr("Assist")]
-SPEED_LIMIT_OFFSET_TYPE_BUTTONS = [tr("None"), tr("Fixed"), tr("%")]
+SPEED_LIMIT_OFFSET_TYPE_BUTTONS = [tr("None"), tr("Fixed"), tr("%"), tr("Per Speed")]
 
 SPEED_LIMIT_MODE_DESCRIPTIONS = [
   tr("Off: No speed limit features."),
@@ -38,7 +38,19 @@ SPEED_LIMIT_OFFSET_DESCRIPTIONS = [
   tr("None: No Offset"),
   tr("Fixed: Adds a fixed offset [Speed Limit + Offset]"),
   tr("Percent: Adds a percent offset [Speed Limit + (Offset % Speed Limit)]"),
+  tr("Per Speed: Each speed limit range has its own fixed offset [Speed Limit + Range Offset]"),
 ]
+
+# Upper bound of tiers 1-3 in the user's unit; tier 4 is everything above the last value.
+# Keep in sync with the tier lookup in speed_limit_resolver.py.
+TIER_LIMITS_METRIC = (50, 60, 80)    # km/h
+TIER_LIMITS_IMPERIAL = (30, 40, 50)  # mph
+TIER_PARAMS = (
+  "SpeedLimitOffsetTier1",
+  "SpeedLimitOffsetTier2",
+  "SpeedLimitOffsetTier3",
+  "SpeedLimitOffsetTier4",
+)
 
 
 class PanelType(IntEnum):
@@ -81,7 +93,7 @@ class SpeedLimitSettingsLayout(Widget):
       description="",
       buttons=SPEED_LIMIT_OFFSET_TYPE_BUTTONS,
       param="SpeedLimitOffsetType",
-      button_width=450,
+      button_width=380,  # four buttons now, same width as the mode selector
     )
 
     self._speed_limit_value_offset = option_item_sp(
@@ -93,13 +105,27 @@ class SpeedLimitSettingsLayout(Widget):
       label_callback=self._get_offset_label,
     )
 
+    # one offset control per speed limit range, shown only for the Per Speed type
+    self._tier_offsets = []
+    for idx, param in enumerate(TIER_PARAMS):
+      item = option_item_sp(
+        title=f"{tr('Offset')} - {tr('Range')} {idx + 1}",
+        param=param,
+        min_value=-30,
+        max_value=30,
+        description=lambda i=idx: self._get_tier_description(i),
+        label_callback=self._get_tier_label,
+      )
+      self._tier_offsets.append(item)
+
     items = [
       self._speed_limit_mode,
       LineSeparatorSP(40),
       self._source_button,
       LineSeparatorSP(40),
       self._speed_limit_offset_type,
-      self._speed_limit_value_offset
+      self._speed_limit_value_offset,
+      *self._tier_offsets,
     ]
     return items
 
@@ -128,6 +154,23 @@ class SpeedLimitSettingsLayout(Widget):
     elif offset_type == int(SpeedLimitOffsetType.fixed):
       return f"{value} {unit}"
     return str(value)
+
+  @staticmethod
+  def _get_tier_label(value):
+    unit = tr("km/h") if ui_state.is_metric else tr("mph")
+    return f"{value} {unit}"
+
+  @staticmethod
+  def _get_tier_description(idx: int):
+    """Describes which speed limits this tier covers, in the driver's own unit."""
+    unit = tr("km/h") if ui_state.is_metric else tr("mph")
+    limits = TIER_LIMITS_METRIC if ui_state.is_metric else TIER_LIMITS_IMPERIAL
+
+    if idx == 0:
+      return tr("Applies when the speed limit is up to {} {}.").format(limits[0], unit)
+    if idx < len(limits):
+      return tr("Applies when the speed limit is {} to {} {}.").format(limits[idx - 1] + 1, limits[idx], unit)
+    return tr("Applies when the speed limit is over {} {}.").format(limits[-1], unit)
 
   def _update_state(self):
     super()._update_state()
@@ -164,7 +207,12 @@ class SpeedLimitSettingsLayout(Widget):
       self._speed_limit_mode.action_item.set_enabled_buttons(None)
 
     offset_type = ui_state.params.get("SpeedLimitOffsetType", return_default=True)
-    self._speed_limit_value_offset.set_visible(offset_type != int(SpeedLimitOffsetType.off))
+    per_speed = offset_type == int(SpeedLimitOffsetType.per_speed)
+
+    # single offset control for fixed / percent, tier controls for per speed
+    self._speed_limit_value_offset.set_visible(offset_type != int(SpeedLimitOffsetType.off) and not per_speed)
+    for item in self._tier_offsets:
+      item.set_visible(per_speed)
 
   def _render(self, rect):
     if self._current_panel == PanelType.POLICY:
@@ -185,3 +233,4 @@ class SpeedLimitSettingsLayout(Widget):
   def hide_event(self):
     self._current_panel = PanelType.SETTINGS
     self._scroller.hide_event()
+
