@@ -141,20 +141,26 @@ alert in the no-entry shape (title, one line, refuse chime, 3 s) keyed on the pu
 
 | State | Title | Line |
 | --- | --- | --- |
-| starting, parked | Longitudinal Initializing | Remain parked |
-| starting, moving (moving takeover in flight) | Longitudinal Initializing | Wait for the radar takeover |
-| parkToTakeOver | Park to Engage Longitudinal | Alpha longitudinal takes over at the next stop |
-| stockCruiseOn | Turn Off Stock Cruise | Alpha longitudinal waits for it |
-| restoring | Longitudinal Handing Back | Stock cruise returns when it completes |
-| failed | Longitudinal Initializing Failed | Restart the car to retry |
+| starting, stopped | Longitudinal Enabling | Stay stopped |
+| starting, moving | Longitudinal Not Ready | Stop to enable |
+| parkToTakeOver | Longitudinal Not Ready | Stop to enable |
+| stockCruiseOn | Longitudinal Not Ready | Turn off cruise |
+| restoring | Longitudinal Disabling | Wait a few seconds |
+| failed | Longitudinal Failed | Restart the car |
 | ready, restored, notNeeded | none | the press engages, as on a stock car |
 
-Two lines need no press. Parked in `starting` (the takeover not yet landed) shows
-"Longitudinal Initializing / Remain parked" unprompted, re-raised every frame it holds and
+Two lines need no press. Stopped in `starting` (the takeover not yet landed) shows
+"Longitudinal Enabling / Stay stopped" unprompted, re-raised every frame it holds and
 cleared by motion or readiness: the one window where waiting changes the outcome (21b pulled
-away 5 s short of it). The edge into `ready` shows "Alpha Longitudinal Ready" for 2 s. Both are
+away 5 s short of it). The edge into `ready` shows "Longitudinal Ready / Car's radar disabled" for 2 s. Both are
 PERMANENT, no chime, lowest priority; neither exists under stock longitudinal (`notNeeded`),
-and nothing stands once the car is rolling: the press alert carries "park to engage".
+and nothing stands once the car is rolling: the press alert carries "stop to enable".
+
+Until `ready`, and again from `restoring`, the onroad UI is the lateral-only one: the speed dial
+in place of the car and distance bars, no lead chevron or acceleration colors, and the distance
+buttons change neither the personality nor Set Speed Assist (`UIStateZP.long_ready`,
+`SelfdrivedZP.long_ready`). A takeover brand shows the dial offroad too; every other car keeps
+its longitudinal UI through ignition.
 
 The event is PERMANENT-typed, not the `*AlertOnly` WARNING convention: WARNING shows only
 while cruise or MADS lateral is active, and this has to reach a driver whose lateral is off or
@@ -170,7 +176,7 @@ follow the MRCC main switch from the first frame (2026-09-11; see mazda-longitud
 is the main switch"), so MAIN gives MADS lateral while the radar is still stock, and the body
 keeps its arming across the takeover. A SET press before ownership engages stock MRCC in the
 body (the radar is still stock) and shows the alert; at the stop the takeover waits for that
-stock engagement to be cancelled ("Turn Off Stock Cruise").
+stock engagement to be cancelled ("Longitudinal Not Ready / Turn off cruise").
 
 The 2026-09-10 cut carried one line under the switch (`initializing`, `ready`, `failed`,
 `ui_state.alpha_long_status`, a mici subtitle and a tizi description). Removed the next day:
@@ -186,15 +192,15 @@ a line on a settings page says nothing at the moment of the press, and the alert
 | Force Offroad requested, disengaged, moving or stopped | exit button (the cancel) | hand-back (0.63 s on record at 117 km/h), then OffroadMode |
 | Force Offroad requested while engaged | upstream's "disengage" dialog | nothing starts; the server never starts a hand-back on an engaged car |
 | Exit into stock | nothing | old CarParams cleared first; stock CarParams and safety; cruise from CRZ_CTRL |
-| Exit into alpha, capable radar | nothing; SET before ready: "Longitudinal Initializing" | FSC settle, moving request, silence guard, fresh driver engagement |
-| Exit into alpha, other radars | SET press: "Park to Engage Longitudinal" | parked takeover at the next stop |
+| Exit into alpha, capable radar | nothing; SET before ready: "Longitudinal Enabling" | FSC settle, moving request, silence guard, fresh driver engagement |
+| Exit into alpha, other radars | SET press: "Longitudinal Not Ready / Stop to enable" | parked takeover at the next stop |
 | MAIN before the takeover | MADS lateral engages | main is not gated; SET engages stock MRCC in the body until the takeover |
-| Parked, takeover starting | "Longitudinal Initializing / Remain parked", unprompted | clears on motion or `ready` |
-| Takeover lands | "Alpha Longitudinal Ready", 2 s | once per edge into `ready` |
+| Stopped, takeover starting | "Longitudinal Enabling / Stay stopped", unprompted | clears on motion or `ready` |
+| Takeover lands | "Longitudinal Ready", 2 s | once per edge into `ready` |
 | Alpha to offroad to alpha, no edit | same as a fresh initialization | the old session's hand-back died with its process; reacquired |
-| Stock cruise engaged at exit | SET press: "Turn Off Stock Cruise" | gate holds; a queued request is undone |
+| Stock cruise engaged at exit | SET press: "Longitudinal Not Ready / Turn off cruise" | gate holds; a queued request is undone |
 | Owned, main off | the cluster's own MRCC indicator | no synthetic arming; the body arms on the driver's MAIN (20a/20c/20f) |
-| Hand-back fails | exit button withdraws; SET press: "Longitudinal Initializing Failed" | request held open, neutral traffic continues, late recovery completes |
+| Hand-back fails | exit button withdraws; SET press: "Longitudinal Failed" | request held open, neutral traffic continues, late recovery completes |
 | Request withdrawn | nothing | a fresh takeover under the normal gate |
 | Card absent / CAN lost | nothing | status unknown; no readiness |
 | Ignition off, power loss, thermal offroad | normal shutdown | not held; the radar recovers through S3 as before |
