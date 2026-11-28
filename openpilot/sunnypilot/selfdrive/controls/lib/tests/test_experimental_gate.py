@@ -10,6 +10,7 @@ The planner's e2e candidate runs whenever openpilot drives the gas and brakes (c
 import pytest
 
 from openpilot.cereal import custom, messaging
+from openpilot.selfdrive.modeld.constants import ModelConstants
 from opendbc.car import structs
 from opendbc.car.interfaces import ACCEL_MAX
 from openpilot.common.test import OpenpilotTestCase
@@ -60,6 +61,7 @@ def build_sm() -> MockSubMaster:
   model.modelV2.orientationRate.z = [0.01] * 33  # nonzero: a straight path divides by zero in SCC vision
   model.modelV2.velocity.x = [V_EGO] * 33
   model.modelV2.position.x = [float(i) for i in range(33)]
+  model.modelV2.position.t = list(ModelConstants.T_IDXS)  # upstream's AccelBoost reads the plan's pace
   model.modelV2.action.desiredAcceleration = E2E_ACCEL
   services['modelV2'] = model.modelV2.as_reader()
 

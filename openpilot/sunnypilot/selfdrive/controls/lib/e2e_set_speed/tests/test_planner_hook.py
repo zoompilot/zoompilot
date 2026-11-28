@@ -9,9 +9,9 @@ The planner hook: off is upstream behaviour, on raises the e2e candidate, and th
 import numpy as np
 import pytest
 
-from openpilot.cereal import log, messaging
+from openpilot.cereal import messaging
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
-from openpilot.selfdrive.controls.lib.longitudinal_planner import ACCEL_BOOST, LongitudinalPlanner, LongitudinalPlanSource
+from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, LongitudinalPlanSource
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.tests.test_experimental_gate import build_planner, build_sm
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel
@@ -50,8 +50,21 @@ def planner_sm():
   return sm
 
 
-def run_planner(enabled: bool, frames: int = 200) -> LongitudinalPlanner:
+class FixedBoost:
+  """upstream's boost as a constant on the model's accel"""
+  def __init__(self, boost: float):
+    self.boost = boost
+
+  def reset(self):
+    pass
+
+  def update(self, sm, output_a_target_e2e, curve_offset):
+    return output_a_target_e2e + self.boost
+
+
+def run_planner(enabled: bool, frames: int = 200, boost: float = 0.1) -> LongitudinalPlanner:
   planner = build_planner()
+  planner.accel_boost = FixedBoost(boost)
   no_lead_mpc(planner.mpc)
   planner.e2e_set_speed = E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled))
   sm = planner_sm()
@@ -63,8 +76,8 @@ def run_planner(enabled: bool, frames: int = 200) -> LongitudinalPlanner:
 def test_off_is_upstream():
   planner = run_planner(False)
   assert planner.mpc.source == LongitudinalPlanSource.e2e
-  # the fixture's personality is the default, Aggressive, so upstream's boost is on the model's accel
-  assert planner.output_a_target == pytest.approx(MODEL_ACCEL + ACCEL_BOOST[log.LongitudinalPersonality.aggressive])
+  # upstream's boost is on the model's accel
+  assert planner.output_a_target == pytest.approx(MODEL_ACCEL + 0.1)
   assert planner.e2e_set_speed.inhibit == Inhibit.disabled
 
 
@@ -101,28 +114,12 @@ def test_plan_reports_the_floor():
   assert (report.gain, report.fade) == (1., 1.)
 
 
-def run_aggressive(enabled: bool, boost: float, monkeypatch, frames: int = 200) -> LongitudinalPlanner:
-  from openpilot.cereal import log
-  from openpilot.selfdrive.controls.lib import longitudinal_planner
-  monkeypatch.setitem(longitudinal_planner.ACCEL_BOOST, log.LongitudinalPersonality.aggressive, boost)
-  planner = build_planner()
-  no_lead_mpc(planner.mpc)
-  planner.e2e_set_speed = E2ESetSpeedController(params=FakeParams(ExperimentalModeSetSpeed=enabled))
-  sm = planner_sm()
-  ss = sm['selfdriveState'].as_builder()
-  ss.personality = log.LongitudinalPersonality.aggressive
-  sm['selfdriveState'] = ss.as_reader()
-  for _ in range(frames):
-    planner.update(sm)
-  return planner
-
-
-def test_aggressive_boost_only_with_assist_off(monkeypatch):
-  # upstream's Aggressive boost: on the model's accel with Set Speed Assist off, none of it with it on
-  off = run_aggressive(False, 0.1, monkeypatch)
+def test_boost_only_with_assist_off():
+  # upstream's boost: on the model's accel with Set Speed Assist off, none of it with it on
+  off = run_planner(False, boost=0.1)
   assert off.output_a_target == pytest.approx(MODEL_ACCEL + 0.1)
-  on = run_aggressive(True, 0.1, monkeypatch)
-  unboosted = run_aggressive(True, 0., monkeypatch)
+  on = run_planner(True, boost=0.1)
+  unboosted = run_planner(True, boost=0.)
   assert on.e2e_set_speed.inhibit == Inhibit.none
   assert on.output_a_target == pytest.approx(unboosted.output_a_target)
   assert on.e2e_set_speed.lift == pytest.approx(unboosted.e2e_set_speed.lift)

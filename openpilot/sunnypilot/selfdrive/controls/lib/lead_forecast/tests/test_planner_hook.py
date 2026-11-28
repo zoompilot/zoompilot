@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from openpilot.cereal import messaging
+from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS
 from openpilot.selfdrive.controls.radard import RADAR_TO_CAMERA
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
@@ -35,6 +36,7 @@ def lead_sm():
   md.orientationRate.z = [0.01] * 33
   md.velocity.x = [V_EGO] * 33
   md.position.x = [float(i) for i in range(33)]
+  md.position.t = list(ModelConstants.T_IDXS)
   md.action.desiredAcceleration = 0.
   leads = md.init('leadsV3', 3)
   for lead in leads:
