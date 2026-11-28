@@ -45,7 +45,6 @@ dependencies = [
   "pyzmq",  # sunnypilot/system/statsd, sunnypilot/sunnylink/statsd
 
   # these should be removed
-  "pyzmq",  # sunnypilot statsd
   "setproctitle",
   "jeepney",
   "zstandard",  # this can go once we're on Python 3.14+
