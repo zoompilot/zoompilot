@@ -7,7 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 import numpy as np
 
 from opendbc.sunnypilot.car.lateral_tune import get_steer_rail_schedule
-from opendbc.sunnypilot.car.stock_ecu import OWNED
+from opendbc.sunnypilot.car.stock_ecu import OWNED, TAKEOVER_BRANDS
 from openpilot.sunnypilot import jetlink_adapter
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import needs_icbm
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
@@ -85,11 +85,13 @@ class UIStateZP:
 
   @property
   def stock_ecu_owned(self) -> bool:
-    """Onroad, no stock ECU openpilot longitudinal stands in for is still in charge (Mazda's radar
-    before the takeover, or handed back). Not before card's first report."""
-    if not self.started:
-      return True
-    return self.received_since_started('carStateSP') and str(self.sm['carStateSP'].zoompilot.stockEcu) in OWNED
+    """No stock ECU that openpilot longitudinal stands in for is still in charge (Mazda's radar
+    before the takeover, or handed back)."""
+    if self.started and self.received_since_started('carStateSP'):
+      return str(self.sm['carStateSP'].zoompilot.stockEcu) in OWNED
+    # offroad and until card's first report: a car that takes over every drive has not yet, and
+    # any other keeps its longitudinal UI through ignition as upstream does
+    return self.CP is None or self.CP.brand not in TAKEOVER_BRANDS
 
   @property
   def long_ready(self) -> bool:
@@ -106,8 +108,9 @@ class UIStateZP:
     self.speed_assist = on
 
   def toggle_speed_assist(self) -> None:
-    """The quick toggles: mici home's long press and the tizi onroad button."""
-    if self.long_ready:
+    """The quick toggles: mici home's long press and the tizi onroad button. Offroad it is a
+    setting like any other; onroad it waits for the takeover, as the distance button does."""
+    if self.has_longitudinal_control and (not self.started or self.stock_ecu_owned):
       self.set_speed_assist(not self.speed_assist)
 
   def set_alpha_longitudinal(self, on: bool) -> None:

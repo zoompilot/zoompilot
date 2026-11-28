@@ -11,11 +11,13 @@ See the LICENSE.md file in the root directory for more details.
 import pytest
 
 import openpilot.cereal.messaging as messaging
+from opendbc.car import structs
 from openpilot.selfdrive.ui.sunnypilot.onroad.model_renderer import ModelRendererSP
 from openpilot.selfdrive.ui.ui_state import ui_state
 
 
-def _set(monkeypatch, *, state="notNeeded", has_long=True, started=True, received=True):
+def _set(monkeypatch, *, state="notNeeded", has_long=True, started=True, received=True, brand="mazda"):
+  monkeypatch.setattr(ui_state, 'CP', structs.CarParams(brand=brand))
   cs_sp = messaging.new_message('carStateSP').carStateSP
   cs_sp.zoompilot.stockEcu = state
   monkeypatch.setattr(ui_state, 'has_longitudinal_control', has_long)
@@ -34,15 +36,18 @@ def test_long_ready_follows_the_stock_ecu(monkeypatch, state, ready):
   assert ui_state.long_ready == ready
 
 
-def test_not_before_cards_first_report(monkeypatch):
-  _set(monkeypatch, received=False)
+@pytest.mark.parametrize("started", [False, True])
+def test_a_takeover_car_is_lateral_only_offroad_and_until_cards_first_report(monkeypatch, started):
+  _set(monkeypatch, started=started, received=False)
   assert not ui_state.long_ready
 
 
-def test_offroad_follows_the_setting(monkeypatch):
-  _set(monkeypatch, state="starting", started=False, received=False)
+@pytest.mark.parametrize("started", [False, True])
+def test_other_cars_keep_longitudinal_through_ignition(monkeypatch, started):
+  # upstream's indicator holds from offroad into the drive; no dial in between
+  _set(monkeypatch, started=started, received=False, brand="toyota")
   assert ui_state.long_ready
-  _set(monkeypatch, started=False, has_long=False)
+  _set(monkeypatch, started=started, received=False, brand="toyota", has_long=False)
   assert not ui_state.long_ready
 
 
@@ -59,6 +64,19 @@ def test_quick_toggle_waits_for_the_takeover(monkeypatch):
   ui_state.toggle_speed_assist()
   assert switched == []
   _set(monkeypatch, state="ready")
+  ui_state.toggle_speed_assist()
+  assert switched == [True]
+
+
+def test_quick_toggle_is_a_setting_offroad(monkeypatch):
+  switched = []
+  monkeypatch.setattr(ui_state, 'set_speed_assist', switched.append)
+  monkeypatch.setattr(ui_state, 'speed_assist', False)
+  _set(monkeypatch, started=False, received=False)
+  assert not ui_state.long_ready  # the indicator is the dial
+  ui_state.toggle_speed_assist()
+  assert switched == [True]
+  _set(monkeypatch, started=False, received=False, has_long=False)
   ui_state.toggle_speed_assist()
   assert switched == [True]
 
