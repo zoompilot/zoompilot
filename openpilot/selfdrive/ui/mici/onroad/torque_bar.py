@@ -191,9 +191,10 @@ class TorqueBar(Widget):
     torque_line_height = np.interp(abs(self._torque_filter.x), [0.5, 1], [14 * self._scale, 56 * self._scale])
 
     # animate alpha and angle span
-    # sunnypilot: MADS longitudinal-only isn't steering, so the bar fades out as when disengaged
-    line_alpha = self._torque_line_alpha_filter.update(not self._hidden) * (1 - self._status.weight(UIStatus.DISENGAGED, UIStatus.LONG_ONLY))
-    engaged = self._status.weight(UIStatus.ENGAGED)
+    # sunnypilot: MADS lateral-only shows like engaged, longitudinal-only hides the bar like disengaged
+    line_alpha = self._torque_line_alpha_filter.update(not self._hidden) * \
+                 (1 - self._status.weight(UIStatus.DISENGAGED) - self._status.weight(UIStatus.LONG_ONLY))
+    engaged = self._status.weight(UIStatus.ENGAGED) + self._status.weight(UIStatus.LAT_ONLY)
 
     # dimmer while not engaged
     torque_line_bg_alpha = 0.15 + (np.interp(abs(self._torque_filter.x), [0.5, 1.0], [0.25, 0.5]) - 0.15) * engaged

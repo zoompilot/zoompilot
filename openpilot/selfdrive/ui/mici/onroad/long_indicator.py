@@ -15,7 +15,7 @@ class LongIndicator(Widget):
                    (self._texture('distance_2', 40, 9), 138), (self._texture('distance_3', 48, 10), 155)]
     self._lit_filters = [FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps) for _ in self._icons]
     self._alpha_filter = FirstOrderFilter(np.zeros(2), 0.05, 1 / gui_app.target_fps)
-    self._status = StatusFade(0.1, fold=False)  # sunnypilot: MADS lateral-only is its own status here
+    self._status = StatusFade(0.1)
     self._txt_speed_dial = self._texture('speed_dial', 56, 48)
     self._should_draw = self._has_lead = False
 
@@ -32,8 +32,8 @@ class LongIndicator(Widget):
   def _render(self, rect: rl.Rectangle) -> None:
     long = ui_state.has_longitudinal_control
     dial_alpha, icons_alpha = self._alpha_filter.update(np.array([not long, long]) * self._should_draw).tolist()
-    # sunnypilot: dimmed under MADS lateral-only too, which is not driving longitudinal
-    disengaged = self._status.weight(UIStatus.DISENGAGED, UIStatus.LAT_ONLY)
+    # sunnypilot: MADS lateral-only doesn't drive longitudinal, so the bars stay dimmed
+    disengaged = self._status.weight(UIStatus.DISENGAGED) + self._status.weight(UIStatus.LAT_ONLY)
     dial_rect = rl.Rectangle(rect.x - 2, rect.y, rect.width, rect.height)
     self._draw_centered(self._txt_speed_dial, dial_rect, 120, (0.9 - (0.9 - DIMMED_ICON_ALPHA) * disengaged) * dial_alpha)
 

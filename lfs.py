@@ -24,7 +24,7 @@ import urllib.request
 
 POINTER_VERSION = "https://git-lfs.github.com/spec/v1"
 POINTER_RE = re.compile(rb"\Aversion " + POINTER_VERSION.encode() + rb"\noid sha256:([0-9a-f]{64})\nsize ([0-9]+)\n\Z")
-BUCKET = os.environ.get("OPENPILOT_LFS_BUCKET", "commaai/openpilot-lfs")
+BUCKET = os.environ.get("OPENPILOT_LFS_BUCKET", "sunnypilot/sunnypilot-lfs")
 ZERO = "0" * 40
 RANGES = 8
 RANGE_MIN = 16 << 20

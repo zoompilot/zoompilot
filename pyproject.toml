@@ -41,6 +41,9 @@ dependencies = [
   # joystickd
   "inputs",
 
+  # sunnypilot
+  "pyzmq",  # sunnypilot/system/statsd, sunnypilot/sunnylink/statsd
+
   # these should be removed
   "pyzmq",  # sunnypilot statsd
   "setproctitle",

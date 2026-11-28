@@ -163,7 +163,7 @@ class HudRenderer(Widget):
     rl.draw_texture_ex(icon, pos, 0.0, 1.0, rl.Color(255, 255, 255, int(255 * opacity * alpha)))
 
   def _draw_steering_wheel(self, rect: rl.Rectangle) -> None:
-    engaged = self._status.weight(UIStatus.ENGAGED)
+    engaged = self._status.weight(UIStatus.ENGAGED) + self._status.weight(UIStatus.LAT_ONLY)
     critical = self._wheel_critical_filter.update(self._show_wheel_critical) * engaged
     status_color = self._status.color({UIStatus.ENGAGED: WHEEL_GREEN, UIStatus.OVERRIDE: WHEEL_WHITE, UIStatus.DISENGAGED: WHEEL_WHITE})
     wheel_color = lerp_color(status_color, WHEEL_ORANGE, critical)
@@ -176,7 +176,7 @@ class HudRenderer(Widget):
     rotation = -ui_state.sm['carState'].steeringAngleDeg * self._wheel_angle_filter.update(ui_state.started and ui_state.received_since_started('carState'))
 
     # zoompilot: MADS longitudinal-only isn't steering, so it dims like disengaged
-    alpha = 255 * (1 - (1 - DIMMED_ICON_ALPHA) * self._status.weight(UIStatus.DISENGAGED, UIStatus.LONG_ONLY))
+    alpha = 255 * (1 - (1 - DIMMED_ICON_ALPHA) * (self._status.weight(UIStatus.DISENGAGED) + self._status.weight(UIStatus.LONG_ONLY)))
     rl.draw_texture_pro(wheel_txt, rl.Rectangle(0, 0, wheel_txt.width, wheel_txt.height),
                         rl.Rectangle(pos_x, pos_y, wheel_txt.width, wheel_txt.height),
                         rl.Vector2(wheel_txt.width / 2, wheel_txt.height / 2), rotation, rl.Color(wheel_color.r, wheel_color.g, wheel_color.b, int(alpha)))

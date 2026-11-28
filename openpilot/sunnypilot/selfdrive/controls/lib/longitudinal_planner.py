@@ -16,8 +16,11 @@ from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
+from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
+from openpilot.selfdrive.controls.lib.curve_speed import CurveSpeed
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.sunnypilot.selfdrive.controls.lib.accel_boost import AccelBoostSP
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.approach import approach_accel
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
@@ -35,6 +38,14 @@ from openpilot.sunnypilot.models.helpers import get_active_bundle
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 SCC_SOURCES = (LongitudinalPlanSource.sccVision, LongitudinalPlanSource.sccMap)
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
+
+
+class NoCurveSpeed:
+  def reset(self):
+    pass
+
+  def update(self, model, roll) -> float:
+    return 0.0
 
 
 class LongitudinalPlannerSP:
@@ -63,6 +74,8 @@ class LongitudinalPlannerSP:
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()
+    self.accel_boost_sp = AccelBoostSP()
+    self.openpilot_longitudinal = CP.openpilotLongitudinalControl
 
     self.output_v_target = 0.
     self.output_a_target = 0.
@@ -173,7 +186,18 @@ class LongitudinalPlannerSP:
       return ACCEL_MAX, False
     return a_e2e, should_stop_model
 
+  def _update_curve_speed(self) -> None:
+    # with Smart Cruise Control vision on, curve slowdown is its job, not upstream's e2e curve offset
+    scc_curves = self.scc.vision.enabled and self.openpilot_longitudinal
+    if scc_curves != isinstance(self.curve_speed, NoCurveSpeed):
+      self.curve_speed = NoCurveSpeed() if scc_curves else CurveSpeed(self.dt)
+
   def update(self, sm: messaging.SubMaster) -> None:
+    # the host applies the boost only with Set Speed Assist off
+    if self.accel_boost_sp.update_params():
+      self.accel_boost = self.accel_boost_sp if self.accel_boost_sp.enabled and self.openpilot_longitudinal else AccelBoost()
+    self._update_curve_speed()
+
     self.events_sp.clear()
     self.lead_forecast.update(sm)
 

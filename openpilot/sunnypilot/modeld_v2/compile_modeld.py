@@ -8,8 +8,6 @@ See the LICENSE.md file in the root directory for more details.
 
 import argparse
 import codecs
-import ctypes
-import fcntl
 import gc
 import math
 import multiprocessing as mp
@@ -373,7 +371,9 @@ def _compile_warp_resolution_worker(cam_w, cam_h, model_w, model_h, benchmark_ru
 
 
 def chestnut_link_up() -> bool:
-  # asm enumerates on USB-C alone, gpu is only usable once pcie link is up
+  # asm enumerates on USB-C alone, gpu is only usable once pcie link is up (upstream dropped flash.link_up in #39195)
+  import ctypes
+  import fcntl
   from openpilot.system.hardware.chestnut.flash import USBDEVFS_CONTROL, Ctrl, find_chestnut, open_device
   try:
     path, _, _ = find_chestnut()
@@ -394,7 +394,7 @@ def chestnut_link_up() -> bool:
 
 
 if __name__ == "__main__":
-  if 'USB' in os.getenv('DEV', '') or os.getenv('CHESTNUT'):
+  if ('USB' in os.getenv('DEV', '') or os.getenv('CHESTNUT')) and not os.getenv('DEV', '').startswith('MOCK'):
     for _ in range(10):
       if chestnut_link_up():
         break

@@ -36,7 +36,7 @@ class ConfidenceBall(Widget, ConfidenceBallSP):
     ConfidenceBallSP.__init__(self)
     self._confidence_filter = FirstOrderFilter(0.0, 0.5, 1 / gui_app.target_fps)
     self._alpha_filter = FirstOrderFilter(1.0, 0.05, 1 / gui_app.target_fps)
-    self._status = StatusFade(0.1, fold=False)  # sunnypilot: the ball's own lateral-only and longitudinal-only colors
+    self._status = StatusFade(0.1)
     self._hidden = False
 
   def set_hidden(self, hidden: bool):
@@ -72,9 +72,8 @@ class ConfidenceBall(Widget, ConfidenceBallSP):
       engaged = (rl.Color(255, 0, 21, 255), rl.Color(255, 0, 89, 255))
     override = (rl.Color(255, 255, 255, 255), rl.Color(82, 82, 82, 255))
     disengaged = (rl.Color(102, 102, 102, 255), rl.Color(26, 26, 26, 255))
-    lat_only, long_only = self.get_lat_long_dot_colors()
     top_dot_color, bottom_dot_color = (self._status.color({UIStatus.ENGAGED: e, UIStatus.OVERRIDE: o, UIStatus.DISENGAGED: d,
-                                                          UIStatus.LAT_ONLY: lat_only, UIStatus.LONG_ONLY: long_only})
+                                                           **self.MADS_DOT_COLORS})
                                        for e, o, d in zip(engaged, override, disengaged, strict=True))
 
     draw_circle_gradient(dot_x, dot_height, status_dot_radius,

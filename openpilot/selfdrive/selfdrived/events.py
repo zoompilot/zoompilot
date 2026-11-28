@@ -12,8 +12,8 @@ from openpilot.selfdrive.locationd.calibrationd import MIN_SPEED_FILTER
 from openpilot.common.hardware import HARDWARE
 
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
-  NoEntryAlert, SoftDisableAlert, UserSoftDisableAlert, ImmediateDisableAlert, UserImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, \
-  StartupAlert, AlertCallbackType, wrong_car_mode_alert
+  NoEntryAlert, SoftDisableAlert, UserSoftDisableAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, \
+  StartupAlert, AlertCallbackType, wrong_car_mode_alert, UserImmediateDisableAlert
 
 
 AlertSize = log.SelfdriveState.AlertSize
@@ -40,7 +40,6 @@ class Events(EventsBase):
 
   def get_event_msg_type(self):
     return log.OnroadEvent
-
 
 
 # ********** helper functions **********

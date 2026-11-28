@@ -10,6 +10,8 @@ from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 
 
 class ConfidenceBallSP:
+  MADS_DOT_COLORS = {s: BORDER_COLORS[s] for s in (UIStatus.LAT_ONLY, UIStatus.LONG_ONLY)}
+
   @staticmethod
   def get_animate_status_probs():
     if ui_state.status == UIStatus.LAT_ONLY:
@@ -18,7 +20,3 @@ class ConfidenceBallSP:
     # UIStatus.LONG_ONLY
     return ui_state.sm['modelV2'].meta.disengagePredictions.brakeDisengageProbs
 
-  @staticmethod
-  def get_lat_long_dot_colors():
-    """The MADS lateral-only and longitudinal-only dot colors, for the status fade."""
-    return BORDER_COLORS[UIStatus.LAT_ONLY], BORDER_COLORS[UIStatus.LONG_ONLY]

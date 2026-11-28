@@ -239,7 +239,8 @@ class TreeOptionDialog(MultiOptionDialog):
     cy = input_rect.y + input_rect.height / 2 - 5
     radius = min(input_rect.height * 0.28, 26)
 
-    rl.draw_ring(rl.Vector2(cx, cy), radius - 4, radius, 0, 360, 36, icon_color)
+    circle_thickness = 4
+    rl.draw_ring(rl.Vector2(cx, cy), radius - circle_thickness, radius, 0, 360, 36, icon_color)
 
     handle_thickness = 5
     inner_x = cx + radius * 0.65

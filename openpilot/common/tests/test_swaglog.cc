@@ -12,6 +12,8 @@
 #include "common/tests/native_test.h"
 #include "json11/json11.hpp"
 
+#include "sunnypilot/common/version.h"
+
 void test_swaglog() {
   setenv("MANAGER_DAEMON", "swaglog_test", 1);
   setenv("DONGLE_ID", "test_dongle_id", 1);
@@ -43,6 +45,7 @@ void test_swaglog() {
   CHECK(message["ctx"]["daemon"].string_value() == "swaglog_test");
   CHECK(message["ctx"]["dongle_id"].string_value() == "test_dongle_id");
   CHECK(message["ctx"]["dirty"].bool_value() == false);
+  CHECK(message["ctx"]["version"].string_value() == SUNNYPILOT_VERSION);
 
   CHECK(close(sock) == 0);
   CHECK(unlink(path.c_str()) == 0);

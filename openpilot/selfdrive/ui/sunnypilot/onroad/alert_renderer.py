@@ -5,8 +5,8 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import raylib_nb as rl
-from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer, AlertSize, ALERT_FONT_MEDIUM, ALERT_FONT_BIG, \
-  ALERT_FONT_SMALL, ALERT_MARGIN, ALERT_HEIGHTS, ALERT_PADDING, Alert, get_alert
+from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer, get_alert, AlertSize, ALERT_FONT_MEDIUM, ALERT_FONT_BIG, \
+  ALERT_FONT_SMALL, ALERT_MARGIN, ALERT_HEIGHTS, ALERT_PADDING, Alert
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.wrap_text import wrap_text

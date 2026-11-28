@@ -38,6 +38,12 @@ from openpilot.sunnypilot.sunnylink.capabilities import generate_capabilities, C
 from openpilot.sunnypilot.sunnylink.tools.generate_settings_schema import generate_schema
 
 SUNNYLINK_ATHENA_HOST = os.getenv('SUNNYLINK_ATHENA_HOST', 'wss://athena.sunnylink.ai')
+
+# upstream's rpc dispatcher rejects any param without a validator (#39190)
+PARAM_KEY = regex(r'[A-Za-z0-9_]+')
+BASE64 = regex(r'[A-Za-z0-9+/]*={0,2}')
+# startLocalProxy sends the sunnylink token to this uri: only sunnypilot/sunnylink hosts (ssh.sunnypilot.ai)
+SUNNYLINK_PROXY_URI = regex(r'wss://([a-z0-9-]+\.)*(sunnypilot|sunnylink)\.ai(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?')
 HANDLER_THREADS = int(os.getenv('HANDLER_THREADS', "4"))
 LOCAL_PORT_WHITELIST = {8022}
 PARAM_KEY = regex(r'\w+')

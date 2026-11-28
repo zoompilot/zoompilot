@@ -300,7 +300,9 @@ def main(demo=False):
   while use_extra_client and not vipc_client_extra.connect(False):
     time.sleep(0.1)
 
-  cloudlog.warning(f"connected main cam with buffer size: {vipc_client_main.buffer_len} ({vipc_client_main.width} x {vipc_client_main.height})")
+  cam_w, cam_h = vipc_client_main.width, vipc_client_main.height
+  assert cam_w is not None and cam_h is not None
+  cloudlog.warning(f"connected main cam with buffer size: {vipc_client_main.buffer_len} ({cam_w} x {cam_h})")
   if use_extra_client:
     cloudlog.warning(f"connected extra cam with buffer size: {vipc_client_extra.buffer_len} ({vipc_client_extra.width} x {vipc_client_extra.height})")
 

@@ -3,11 +3,11 @@ import numpy as np
 
 import openpilot.cereal.messaging as messaging
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
-from openpilot.cereal import log
 from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
 from openpilot.selfdrive.controls.lib.curve_speed import CurveSpeed
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
@@ -21,11 +21,6 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import Lon
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 J_CRUISE_BP = [0., 10.0, 25., 40.]
 A_CRUISE_MIN = -0.5
-ACCEL_BOOST = {  # m/s^2
-  log.LongitudinalPersonality.relaxed: 0.0,
-  log.LongitudinalPersonality.standard: 0.05,
-  log.LongitudinalPersonality.aggressive: 0.15,
-}
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 
@@ -45,6 +40,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     LongitudinalPlannerSP.__init__(self, self.CP, CP_SP, self.mpc)
     self.fcw = False
     self.dt = dt
+    self.accel_boost = AccelBoost()
     self.curve_speed = CurveSpeed(dt)
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
@@ -78,6 +74,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       self.v_desired_filter.x = v_ego
       self.output_a_target = np.clip(sm['carState'].aEgo, ACCEL_MIN, ACCEL_MAX)
       self.a_cruise = self.output_a_target
+      self.accel_boost.reset()
       self.curve_speed.reset()
 
     # Prevent divergence, smooth in current v_ego
@@ -115,11 +112,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_should_stop_mpc = should_stop(v_ego, output_a_target_mpc)
     curve_offset = self.curve_speed.update(sm['modelV2'], sm['vehicleParameters'].roll)
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration + curve_offset
-    # zoompilot: Set Speed Assist shapes the model's accel itself, so the boost only applies with it off
+    # zoompilot: Set Speed Assist shapes the model's accel itself, so the boost only applies with it off.
+    # The boost runs every frame so its filters stay current when the driver turns Set Speed Assist off.
+    output_a_target_e2e_boosted = self.accel_boost.update(sm, output_a_target_e2e, curve_offset)
     if not self.e2e_set_speed.enabled:
-      speed_scale = np.interp(v_ego, [5.0, 10.0], [0.0, 1.0])
-      accel_scale = np.interp(output_a_target_e2e, [-1.0, -0.5], [0.0, 1.0])
-      output_a_target_e2e += ACCEL_BOOST[personality.raw] * speed_scale * accel_scale
+      output_a_target_e2e = output_a_target_e2e_boosted
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
     output_a_target_e2e, output_should_stop_e2e = LongitudinalPlannerSP.update_e2e_target(self, sm, output_a_target_e2e,
                                                                                           output_should_stop_e2e, reset_state)

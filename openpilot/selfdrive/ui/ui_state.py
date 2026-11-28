@@ -407,7 +407,7 @@ class Device(DeviceSP):
       gui_app.set_dim(dim)
     else:
       gui_app.set_dim(1 - brightness / BACKLIGHT_MIN)
-      brightness = round(max(brightness, BACKLIGHT_MIN))
+      brightness = round(max(brightness, BACKLIGHT_MIN)) if brightness > 0 else 0
     if not self._awake:
       brightness = 0
 

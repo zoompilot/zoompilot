@@ -226,10 +226,13 @@ def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
       thread.join()
 
 
-def jsonrpc_handler(end_event: threading.Event, localProxyHandler=None, remote_ws_uri=None) -> None:
-  dispatcher.add_method(localProxyHandler or partial(startLocalProxy, end_event), name="startLocalProxy",
-                        remote_ws_uri=remote_ws_uri or regex(r'wss://ssh\.comma\.ai(:(443|8443))?/[0-9a-f]{16}'),
-                        local_port=one_of(8022, *LOCAL_PORT_WHITELIST))
+COMMA_PROXY_URI = regex(r'wss://ssh\.comma\.ai(:(443|8443))?/[0-9a-f]{16}')
+
+
+def jsonrpc_handler(end_event: threading.Event, localProxyHandler = None, proxy_uri_validator = COMMA_PROXY_URI) -> None:
+  handler = localProxyHandler or partial(startLocalProxy, end_event)
+  dispatcher.add_method(handler, name="startLocalProxy",
+                        remote_ws_uri=proxy_uri_validator, local_port=one_of(8022, *LOCAL_PORT_WHITELIST))
   while not end_event.is_set():
     try:
       data = recv_queue.get(timeout=1)
@@ -756,9 +759,6 @@ def start_local_proxy_shim(global_end_event: threading.Event, local_port: int, w
     # migration, can be removed once 0.9.8 is out for a while
     if local_port == 8022:
       local_port = 22
-
-    if local_port not in LOCAL_PORT_WHITELIST:
-      raise Exception("Requested local port not whitelisted")
 
     # Set TOS to keep connection responsive while under load.
     ws.sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, SSH_TOS)

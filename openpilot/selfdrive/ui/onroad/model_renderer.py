@@ -50,9 +50,10 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
     self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
     self._path_offset_z = HEIGHT_INIT[0]
-    self._path_half_width = 0.9  # m
     self._counter = -1
     self._camera_offset = ui_state.params.get("CameraOffset", return_default=True)
+    self._path_half_width = 0.9  # m
+
     # Initialize ModelPoints objects
     self._path = ModelPoints()
     self._lane_lines = [ModelPoints() for _ in range(4)]
@@ -102,6 +103,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     if self._counter % 60 == 0:
       self._camera_offset = ui_state.params.get("CameraOffset", return_default=True)
     self._counter += 1
+    self._path_half_width = self._get_path_half_width()
 
     if sm.updated['carParams']:
       self._longitudinal_control = sm['carParams'].openpilotLongitudinalControl
@@ -188,7 +190,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
 
     max_idx = self._get_path_length_idx(path_x_array, max_distance)
     self._path.projected_points = self._map_line_to_polygon(
-      self._path.raw_points, self._get_path_half_width(), self._path_offset_z, max_idx, max_distance, allow_invert=False
+      self._path.raw_points, self._path_half_width, self._path_offset_z, max_idx, max_distance, allow_invert=False
     )
 
     self._update_path_gradient()

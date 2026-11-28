@@ -11,7 +11,7 @@ from openpilot.cereal.services import SERVICE_LIST
 from openpilot.tools.lib.log_time_series import msgs_to_time_series
 from openpilot.system.camerad.snapshot import get_snapshots
 from panda import Panda
-from openpilot.selfdrive.pandad.pandad import flash_panda
+from openpilot.selfdrive.pandad.pandad import check_panda_support, flash_panda
 from openpilot.selfdrive.test.helpers import collect_logs, log_collector, processes_context
 
 TEST_TIMESPAN = 10
@@ -82,9 +82,9 @@ class TestCamerad(OpenpilotTestCase):
   def setUpClass(cls):
     super().setUpClass()
     # Panda generates camera FSIN, including the cabin camera's 25ms stagger.
-    # sunnypilot's flash_panda only flashes out of date firmware, and raises if the panda doesn't come up
-    for serial in Panda.list():
-      flash_panda(serial)
+    panda_serials = check_panda_support(Panda.list())
+    assert len(panda_serials) == 1, "panda not ready for camera synchronization"
+    flash_panda(panda_serials[0])  # flashes only when out of date, asserts it boots
     cls.logs, cls.images = _camera_session()
 
   @parameterized.expand(CAMERAS, names=("cam",))
