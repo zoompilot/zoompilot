@@ -46,9 +46,6 @@ BASE64 = regex(r'[A-Za-z0-9+/]*={0,2}')
 SUNNYLINK_PROXY_URI = regex(r'wss://([a-z0-9-]+\.)*(sunnypilot|sunnylink)\.ai(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?')
 HANDLER_THREADS = int(os.getenv('HANDLER_THREADS', "4"))
 LOCAL_PORT_WHITELIST = {8022}
-PARAM_KEY = regex(r'\w+')
-BASE64 = regex(r'[A-Za-z0-9+/]*={0,2}')
-SUNNYLINK_PROXY_URI = regex(r'wss://([\w-]+\.)*sunnylink\.ai(:\d+)?(/[\w./?=&%-]*)?')
 SUNNYLINK_LOG_ATTR_NAME = "user.sunny.upload"
 SUNNYLINK_RECONNECT_TIMEOUT_S = 70  # FYI changing this will also would require a change on sidebar.cc
 DISALLOW_LOG_UPLOAD = threading.Event()
