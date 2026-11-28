@@ -237,6 +237,7 @@ def hardware_thread(end_event, hw_queue) -> None:
   in_car = False
   engaged_prev = False
   pwrsave = False
+  runner_voltage_prev: bool | None = None
   offroad_cycle_count = 0
 
   params = Params()
@@ -438,6 +439,13 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     # Offroad power monitoring
     voltage = None if peripheralState.pandaType == log.PandaState.PandaType.unknown else peripheralState.voltage
+
+    # zoompilot: the GitHub runner takes jobs only on desk power. 9V is the buffer between desk use, which
+    # rarely exceeds 5V, and car use. Written on change only, so the 2 Hz loop holds no params lock
+    runner_voltage = bool(voltage is not None and voltage > 9000)
+    if runner_voltage != runner_voltage_prev:
+      params.put_bool("GithubRunnerSufficientVoltage", runner_voltage)
+      runner_voltage_prev = runner_voltage
 
     power_monitor.calculate(voltage, onroad_conditions["ignition"])
     msg.deviceState.offroadPowerUsageUwh = power_monitor.get_power_used()
