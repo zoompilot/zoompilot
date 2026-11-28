@@ -19,7 +19,7 @@ from openpilot.selfdrive.ui.sunnypilot.model_info import (active_source, big_mod
                                                            refresh_in_progress, refresh_model_list)
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models_zp import ModelOptions
 from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP
-from openpilot.sunnypilot.jetlink_adapter import KEYS, MODES
+from openpilot.sunnypilot.jetlink_adapter import KEYS, PANEL_MODES
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import Widget
@@ -114,8 +114,8 @@ class ModelsLayoutMici(NavScroller):
     self.cancel_download_btn.set_click_callback(lambda: ui_state.params.remove("ModelManager_DownloadRef"))
 
     # the pills follow the param; locked onroad like the model buttons beside it: jetlink switches the link only parked
-    self.link_toggle = BigMultiParamToggleSP(tr("jetlink"), KEYS.link, [tr(LINK_MODE_LABELS[m]) for m in MODES],
-                                             values=list(range(len(MODES))), off_index=0,
+    self.link_toggle = BigMultiParamToggleSP(tr("jetlink"), KEYS.link, [tr(LINK_MODE_LABELS[m]) for m in PANEL_MODES],
+                                             values=list(range(len(PANEL_MODES))), off_index=0,
                                              description=tr("Runs big models on a computer or phone plugged into the comma.\n" +
                                                             "USB for a Mac, Jetson, Linux PC or Android. iOS for an iPhone or iPad.\n" +
                                                             "Turns off ADB. The small model drives until the big model is ready."))

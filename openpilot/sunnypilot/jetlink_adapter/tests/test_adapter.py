@@ -18,7 +18,7 @@ from unittest import mock
 
 import jetlink.openpilot as jl
 from jetlink.openpilot import hooks
-from jetlink.openpilot.interface import OwnerConfig, load_adapter
+from jetlink.openpilot.interface import PORT_MODES, OwnerConfig, load_adapter
 from jetlink.openpilot.settings import FileParams, Settings
 from jetlink.openpilot.testing import check_adapter, check_fallback
 
@@ -84,6 +84,15 @@ class TestParams(OpenpilotTestCase):
           self.assertEqual(jetlink_adapter._params_dir(), Path(Params().get_param_path()))
           self.assertEqual(jetlink_adapter._params_dir(), Path(root) / prefix)
           self.assertEqual(Adapter().params_dir(), Path(root) / prefix)
+
+  def test_only_usb_and_ios_hold_the_port(self):
+    params = Params()
+    for i, mode in enumerate(jetlink_adapter.MODES):
+      params.put(KEYS.link, i, block=True)
+      self.assertEqual(jetlink_adapter.link_on(), mode != 'off', mode)
+      self.assertEqual(jetlink_adapter.link_holds_port(), mode in PORT_MODES, mode)
+    self.assertEqual(jetlink_adapter.PORT_MODES, PORT_MODES)
+    self.assertEqual(jetlink_adapter.PANEL_MODES, ('off', 'usb', 'ios'))
 
   def test_the_owner_reads_what_params_wrote(self):
     # jetlink reads the two hot settings as files, by params.cc's format
@@ -166,7 +175,7 @@ class TestModeld(OpenpilotTestCase):
     from openpilot.common.hardware import usb
     for cable, link, counted in ((False, False, False), (True, False, True), (True, True, False)):
       with mock.patch.object(usb, 'cable_connected', return_value=cable), \
-           mock.patch.object(jetlink_adapter, 'link_on', return_value=link):
+           mock.patch.object(jetlink_adapter, 'link_holds_port', return_value=link):
         self.assertEqual(jetlink_adapter.chestnut_cable(), counted)
 
   def test_every_modeld_asks_the_adapter_about_the_cable(self):

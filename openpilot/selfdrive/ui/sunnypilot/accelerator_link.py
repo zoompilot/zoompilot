@@ -47,6 +47,9 @@ def link_status() -> str:
   than claiming an empty port.
   """
   jetlink = ui_state.jetlink
+  if link_mode() == "wifi":
+    # set over SSH, with no button of its own: the one place the panels say it
+    return tr("Jetlink over {}, set over SSH.").format(jetlink.transport if jetlink is not None else "Wi-Fi")
   port = jetlink.port_state if jetlink is not None else None
   if port == "connected":
     return f"{tr('Jetlink connected:')} {jetlink.transport}."

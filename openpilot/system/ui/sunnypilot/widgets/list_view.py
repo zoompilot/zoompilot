@@ -140,6 +140,10 @@ class MultipleButtonActionSP(MultipleButtonAction):
   def set_enabled_buttons(self, indices: set[int] | None):
     self.enabled_buttons = indices
 
+  def set_selected_button(self, index: int):
+    # any stored value, unlike the base: one with no button (Jetlink's Wi-Fi, set over SSH) highlights none
+    self.selected_button = index
+
   def _update_state(self):
     # follow the param when something else writes it, or a tap would write the old choice back
     if self.param_key:
@@ -163,14 +167,15 @@ class MultipleButtonActionSP(MultipleButtonAction):
     border_color = style.MBC_BG_CHECKED_ENABLED if self.enabled else style.MBC_DISABLED
     rl.draw_rectangle_rounded_lines_ex(track_rect, 0.2, 20, 2, border_color)
 
-    # highlight with animation
-    target_x = rect.x + self.selected_button * self.button_width
-    if not self._anim_x:
-      self._anim_x = target_x
-    self._anim_x += (target_x - self._anim_x) * 0.2
+    # highlight with animation, for a value that has a button
+    if 0 <= self.selected_button < len(self.buttons):
+      target_x = rect.x + self.selected_button * self.button_width
+      if not self._anim_x:
+        self._anim_x = target_x
+      self._anim_x += (target_x - self._anim_x) * 0.2
 
-    highlight_rect = rl.Rectangle(self._anim_x, button_y, self.button_width, style.BUTTON_HEIGHT)
-    rl.draw_rectangle_rounded(highlight_rect, 0.2, 20, highlight_color)
+      highlight_rect = rl.Rectangle(self._anim_x, button_y, self.button_width, style.BUTTON_HEIGHT)
+      rl.draw_rectangle_rounded(highlight_rect, 0.2, 20, highlight_color)
 
     # text
     for i, _text in enumerate(self.buttons):

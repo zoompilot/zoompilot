@@ -38,8 +38,12 @@ API = 4
 OWNER = 'jetlinkd'
 
 # the Jetlink setting, stored as an index: jetlink.openpilot.MODES,
-# written out so the panels build the setting without a jetlink checkout
-MODES = ('off', 'usb', 'ios')
+# written out so the panels build the setting without a jetlink checkout.
+# wifi (3) is set over SSH only, for testing, so the panels offer the rest
+MODES = ('off', 'usb', 'ios', 'wifi')
+PANEL_MODES = MODES[:3]
+# the modes that hold the comma's USB port, as jetlink.openpilot.interface.PORT_MODES
+PORT_MODES = ('usb', 'ios')
 
 # the params jetlink reads and writes, all declared in params_keys.h. big_model
 # and catalog are the model manager's big-model slot and catalog
@@ -69,24 +73,36 @@ def _params_dir() -> Path:
   return Path(root) / os.environ.get('OPENPILOT_PREFIX', 'd')
 
 
-def link_on() -> bool:
-  """Is the Jetlink setting on? As jetlink reads it, a file, so that a jetlink
-  this build cannot use tells only someone who turned the link on."""
+def _link_mode() -> str:
+  """The Jetlink setting, one of MODES, as jetlink reads it: a file, so it
+  works with no jetlink at all. Unset or unreadable is 'off'."""
   try:
-    return 0 < int((_params_dir() / KEYS.link).read_bytes()) < len(MODES)
+    index = int((_params_dir() / KEYS.link).read_bytes())
   except (OSError, ValueError):
-    return False
+    return 'off'
+  return MODES[index] if 0 <= index < len(MODES) else 'off'
+
+
+def link_on() -> bool:
+  """Is the Jetlink setting on? So that a jetlink this build cannot use tells
+  only someone who turned the link on."""
+  return _link_mode() != 'off'
+
+
+def link_holds_port() -> bool:
+  """Does the Jetlink setting hold the comma's USB port? Over Wi-Fi it does not."""
+  return _link_mode() in PORT_MODES
 
 
 def chestnut_cable(connected: bool | None = None) -> bool:
   """A cable on the port, for modeld's and the UI's chestnut guess: `connected`,
   or the port read now. A Jetson or an iPhone on the port is a cable too, so it
-  counts only while Jetlink is off (jetlink docs/porting.md), and a USB host (a PC, the
-  UP in CI) never is."""
+  counts only while Jetlink holds no port (off or Wi-Fi; jetlink docs/porting.md), and a
+  USB host (a PC, the UP in CI) never is."""
   from openpilot.common.hardware.usb import cable_connected, usb_host_connected
   if connected is None:
     connected = cable_connected()
-  return connected and not link_on() and not usb_host_connected()
+  return connected and not link_holds_port() and not usb_host_connected()
 
 
 @functools.cache

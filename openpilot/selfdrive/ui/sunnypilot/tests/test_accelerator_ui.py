@@ -165,7 +165,7 @@ class TestUIStateJetlinkView(UITest):
     try:
       for usb, link, expected in ((True, False, True), (True, True, False), (False, False, False)):
         ui_state.usb_connected = usb
-        with mock.patch("openpilot.sunnypilot.jetlink_adapter.link_on", return_value=link):
+        with mock.patch("openpilot.sunnypilot.jetlink_adapter.link_holds_port", return_value=link):
           assert ui_state.cable_may_be_chestnut() == expected
     finally:
       ui_state.usb_connected = saved
@@ -385,6 +385,23 @@ class TestTiciModelsPanel(UITest):
         layout._refresh_accelerator_items()
         assert action.selected_button == index
         assert link_mode() == mode
+
+  def test_wifi_set_over_ssh_has_no_button_and_says_so(self):
+    from openpilot.selfdrive.ui.sunnypilot.accelerator_link import link_mode, link_status
+    with jetlink(present=False, transport='Wi-Fi (172.20.10.1:5599)'), \
+         mock.patch.object(ui_state_module().ui_state, "is_offroad", return_value=True):
+      layout = self._layout()
+      action = layout.accelerator_link_item.action_item
+      self.params.put("JetlinkLink", 3, block=True)
+      layout._refresh_accelerator_items()
+      assert link_mode() == "wifi"
+      assert len(action.buttons) == 3
+      assert not 0 <= action.selected_button < len(action.buttons)
+      assert link_status() == "Jetlink over Wi-Fi (172.20.10.1:5599), set over SSH."
+      assert layout.accelerator_link_item.description.endswith("set over SSH.")
+      action._update_state()   # following the param each frame keeps none highlighted
+      assert not 0 <= action.selected_button < len(action.buttons)
+    self.params.remove("JetlinkLink")
 
   def test_the_modes_are_inert_onroad(self):
     self.params.remove("JetlinkLink")
