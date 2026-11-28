@@ -30,7 +30,7 @@ class LongIndicator(Widget):
     self._has_lead = has_lead
 
   def _render(self, rect: rl.Rectangle) -> None:
-    long = ui_state.has_longitudinal_control
+    long = ui_state.long_ready  # sunnypilot: not before a stock ECU takeover
     dial_alpha, icons_alpha = self._alpha_filter.update(np.array([not long, long]) * self._should_draw).tolist()
     # sunnypilot: MADS lateral-only doesn't drive longitudinal, so the bars stay dimmed
     disengaged = self._status.weight(UIStatus.DISENGAGED) + self._status.weight(UIStatus.LAT_ONLY)

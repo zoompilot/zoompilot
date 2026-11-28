@@ -20,6 +20,16 @@ class ModelRendererSP:
     self.blendful = BlendfulRendererZP()
     self._width_filter = FirstOrderFilter(0.9, 0.1, 1 / gui_app.target_fps)
 
+  # Upstream assigns carParams' openpilotLongitudinalControl. Read back, it also waits for a stock
+  # ECU takeover (Mazda's radar): no lead chevron or acceleration colors on a car still on stock.
+  @property
+  def _longitudinal_control(self) -> bool:
+    return self._cp_longitudinal_control and ui_state.stock_ecu_owned
+
+  @_longitudinal_control.setter
+  def _longitudinal_control(self, value: bool) -> None:
+    self._cp_longitudinal_control = value
+
   @property
   def _lateral_active(self) -> bool:
     return UIStateSP.lateral_active(ui_state)

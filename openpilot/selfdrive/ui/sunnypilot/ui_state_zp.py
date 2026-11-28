@@ -7,6 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 import numpy as np
 
 from opendbc.sunnypilot.car.lateral_tune import get_steer_rail_schedule
+from opendbc.sunnypilot.car.stock_ecu import OWNED
 from openpilot.sunnypilot import jetlink_adapter
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.demand import needs_icbm
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.icbm_latch import icbm_active
@@ -83,6 +84,19 @@ class UIStateZP:
     return self.has_longitudinal_control and self.cruise_engaged
 
   @property
+  def stock_ecu_owned(self) -> bool:
+    """Onroad, no stock ECU openpilot longitudinal stands in for is still in charge (Mazda's radar
+    before the takeover, or handed back). Not before card's first report."""
+    if not self.started:
+      return True
+    return self.received_since_started('carStateSP') and str(self.sm['carStateSP'].zoompilot.stockEcu) in OWNED
+
+  @property
+  def long_ready(self) -> bool:
+    """openpilot longitudinal has the car. Until it does the onroad UI is the lateral-only one."""
+    return self.has_longitudinal_control and self.stock_ecu_owned
+
+  @property
   def speed_assist_active(self) -> bool:
     return self.has_longitudinal_control and self.speed_assist
 
@@ -93,7 +107,7 @@ class UIStateZP:
 
   def toggle_speed_assist(self) -> None:
     """The quick toggles: mici home's long press and the tizi onroad button."""
-    if self.has_longitudinal_control:
+    if self.long_ready:
       self.set_speed_assist(not self.speed_assist)
 
   def set_alpha_longitudinal(self, on: bool) -> None:

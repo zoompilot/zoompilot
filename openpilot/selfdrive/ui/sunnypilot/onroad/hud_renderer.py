@@ -142,7 +142,7 @@ class HudRendererSP(HudRenderer):
   def _render(self, rect: rl.Rectangle) -> None:
     super()._render(rect)
 
-    if ui_state.has_longitudinal_control:
+    if ui_state.long_ready:
       button_x = rect.x + rect.width - UI_BORDER_SIZE - EXP_BUTTON_SIZE
       button_y = rect.y + UI_BORDER_SIZE
       self._speed_assist_button.render(rl.Rectangle(button_x, button_y, EXP_BUTTON_SIZE, EXP_BUTTON_SIZE))

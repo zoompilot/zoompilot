@@ -23,9 +23,10 @@ AudibleAlert = structs.CarControl.HUDControl.AudibleAlert
 AlertSize = log.SelfdriveState.AlertSize
 
 
-def cs_sp(farther: bool = False):
+def cs_sp(farther: bool = False, stock_ecu: str = "notNeeded"):
   msg = messaging.new_message('carStateSP').carStateSP
   msg.zoompilot.distanceFarther = farther
+  msg.zoompilot.stockEcu = stock_ecu
   return msg
 
 
@@ -48,7 +49,8 @@ class Selfdrived:
   """The helper as selfdrived drives it: the update, then upstream's personality step on a
   gapAdjustCruise release, behind the helper's guard."""
 
-  def __init__(self, op_long: bool = True, speed_assist: bool = True):
+  def __init__(self, op_long: bool = True, speed_assist: bool = True, stock_ecu: str = "notNeeded"):
+    self.stock_ecu = stock_ecu
     self.params = FakeParams(ExperimentalModeSetSpeed=speed_assist)
     self.zp = SelfdrivedZP(structs.CarParams(openpilotLongitudinalControl=op_long), self.params)
     self.personality = 1
@@ -59,7 +61,7 @@ class Selfdrived:
     CS = CS or car_state()
     self.events.clear()
     self.events_sp.clear()
-    self.personality = self.zp.update(CS, cs_sp(farther), self.events, self.events_sp, self.icbm, self.personality)
+    self.personality = self.zp.update(CS, cs_sp(farther, self.stock_ecu), self.events, self.events_sp, self.icbm, self.personality)
     if self.zp.CP.openpilotLongitudinalControl:
       if any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents) and self.zp.gap_release_steps:
         self.personality = (self.personality - 1) % 3
@@ -178,6 +180,41 @@ class TestDistanceFarther:
     for farther in (True, False, True):
       sd.step(farther=farther)
     assert sd.icbm.activations == [True, False, True]
+
+
+NOT_OWNED = ["starting", "parkToTakeOver", "stockCruiseOn", "restoring", "restored", "failed"]
+
+
+class TestStockEcuNotOwned:
+  """Before the takeover (and after a hand-back) the car is lateral-only to the driver: the
+  distance buttons change nothing and nothing is announced."""
+
+  @pytest.mark.parametrize("state", NOT_OWNED)
+  def test_buttons_change_nothing(self, state):
+    sd = Selfdrived(stock_ecu=state)
+    sd.hold_gap(1)
+    assert sd.personality == 1 and not sd.events.has(EventName.personalityChanged)
+    sd.step(farther=True)
+    sd.step()
+    assert sd.personality == 1 and not sd.events.has(EventName.personalityChanged)
+    sd.hold_gap(DISTANCE_LONG_PRESS)
+    assert sd.params.get_bool("ExperimentalModeSetSpeed") and not sd.events_sp.zp.has(EventNameZP.speedAssistSwitched)
+    assert sd.params.get("LongitudinalPersonality") is None
+
+  @pytest.mark.parametrize("state", NOT_OWNED)
+  def test_a_switch_from_the_ui_is_not_announced(self, state):
+    sd = Selfdrived(stock_ecu=state)
+    sd.params.put_bool("ExperimentalModeSetSpeed", False)
+    for _ in range(PARAMS_READ_FRAMES):
+      sd.step()
+      assert not sd.events_sp.zp.has(EventNameZP.speedAssistSwitched)
+
+  def test_buttons_work_from_ready(self):
+    sd = Selfdrived(stock_ecu="starting")
+    sd.hold_gap(1)
+    sd.stock_ecu = "ready"
+    sd.hold_gap(1)
+    assert sd.personality == 0 and sd.events.has(EventName.personalityChanged)
 
 
 class TestRoadEdgeAlert:

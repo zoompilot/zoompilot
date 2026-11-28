@@ -6,6 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.cereal import custom, log
 from opendbc.car import structs
+from opendbc.sunnypilot.car.stock_ecu import OWNED
 from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import update_manual_button_timers
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeMode, read_road_edge_mode
@@ -42,6 +43,9 @@ class SelfdrivedZP:
     # upstream steps the personality down on a gapAdjustCruise release unless it ended a long press
     self.gap_release_steps = True
     self.distance_farther_prev = False
+    # openpilot longitudinal with nothing stock in its way (Mazda's radar before the takeover):
+    # until then the buttons change nothing and nothing is announced
+    self.long_ready = False
 
   def _read_road_edge_silent(self) -> None:
     SelfdrivedZP.road_edge_silent = read_road_edge_mode(self.params) == RoadEdgeMode.SILENT
@@ -49,12 +53,13 @@ class SelfdrivedZP:
   def update(self, CS, CS_SP, events, events_sp, icbm, personality: int) -> int:
     """Run just before selfdrived's own personality step; returns the personality."""
     self.frame += 1
+    self.long_ready = self.CP.openpilotLongitudinalControl and str(CS_SP.zoompilot.stockEcu) in OWNED
     if self.frame % PARAMS_READ_FRAMES == 0:
       self._read_speed_assist(events_sp)
       self._read_road_edge_silent()
 
-    self.gap_release_steps = True
-    if self.CP.openpilotLongitudinalControl:
+    self.gap_release_steps = self.long_ready
+    if self.long_ready:
       gap_released = any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents)
       if CS.cruiseState.available:
         update_manual_button_timers(CS, self.gap_timers)
@@ -87,7 +92,7 @@ class SelfdrivedZP:
 
   def _switched(self, speed_assist: bool, events_sp) -> None:
     self.speed_assist = speed_assist
-    if self.CP.openpilotLongitudinalControl:
+    if self.long_ready:
       SelfdrivedZP.switched_to = speed_assist
       events_sp.zp.add(EventNameZP.speedAssistSwitched)
 
