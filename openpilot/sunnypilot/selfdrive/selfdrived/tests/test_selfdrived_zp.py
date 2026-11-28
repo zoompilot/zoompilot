@@ -182,7 +182,8 @@ class TestDistanceFarther:
     assert sd.icbm.activations == [True, False, True]
 
 
-NOT_OWNED = ["starting", "parkToTakeOver", "stockCruiseOn", "restoring", "restored", "failed"]
+# before the takeover, and after the hand-back (which engages normally but is not ours)
+NOT_OWNED = ["starting", "restored"]
 
 
 class TestStockEcuNotOwned:

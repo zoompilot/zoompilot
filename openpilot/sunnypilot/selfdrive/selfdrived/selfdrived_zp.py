@@ -40,12 +40,13 @@ class SelfdrivedZP:
     self._read_road_edge_silent()
     self.gap_timers = {ButtonType.gapAdjustCruise: 0}
     self.speed_assist_switched = False
-    # upstream steps the personality down on a gapAdjustCruise release unless it ended a long press
-    self.gap_release_steps = True
-    self.distance_farther_prev = False
     # openpilot longitudinal with nothing stock in its way (Mazda's radar before the takeover):
     # until then the buttons change nothing and nothing is announced
     self.long_ready = False
+    # upstream steps the personality down on a gapAdjustCruise release, unless it ended a long
+    # press or longitudinal is not ready
+    self.gap_release_steps = False
+    self.distance_farther_prev = False
 
   def _read_road_edge_silent(self) -> None:
     SelfdrivedZP.road_edge_silent = read_road_edge_mode(self.params) == RoadEdgeMode.SILENT
