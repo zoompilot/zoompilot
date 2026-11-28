@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from openpilot.cereal import messaging
+from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, LongitudinalPlanSource
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
@@ -50,9 +51,10 @@ def planner_sm():
   return sm
 
 
-class FixedBoost:
+class FixedBoost(AccelBoost):
   """upstream's boost as a constant on the model's accel"""
   def __init__(self, boost: float):
+    super().__init__()
     self.boost = boost
 
   def reset(self):

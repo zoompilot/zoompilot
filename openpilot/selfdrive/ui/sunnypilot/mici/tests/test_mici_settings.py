@@ -1386,15 +1386,16 @@ class TestModelPathMode:
     from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
 
     monkeypatch.setattr(ui_state, "status", UIStatus[status])
-    folded, raw = StatusFade(0.1), StatusFade(0.1, fold=False)
+    fade = StatusFade(0.1)
     for frame in range(1, 200):
       ui_state.sm.frame = frame
-      folded.weight(UIStatus.ENGAGED), raw.weight(UIStatus.ENGAGED)
+      fade.weight(UIStatus.ENGAGED)
+    # a caller that names no MADS color: lateral-only takes the engaged one, longitudinal-only the disengaged one
     colors = {UIStatus.ENGAGED: rl.Color(0, 255, 64, 255), UIStatus.OVERRIDE: rl.Color(255, 255, 255, 255),
               UIStatus.DISENGAGED: rl.Color(200, 200, 200, 255)}
-    drawn = folded.color(colors)
+    drawn = fade.color(colors)
     assert (drawn.r, drawn.g, drawn.b) == pytest.approx(tuple(getattr(colors[UIStatus[drawn_as]], c) for c in "rgb"), abs=2)
-    assert raw.weight(UIStatus[status]) == pytest.approx(1.0, abs=0.01)
+    assert fade.weight(UIStatus[status]) == pytest.approx(1.0, abs=0.01)
 
 
 class TestCurveSpeed:
