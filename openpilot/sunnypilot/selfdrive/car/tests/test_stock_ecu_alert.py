@@ -99,12 +99,12 @@ class TestStockEcuNotReady:
     assert alert.duration == int(3. / DT_CTRL)  # frames
 
   @pytest.mark.parametrize("state, standstill, expected", [
-    ("starting", True, {"Longitudinal Initializing", "Remain stopped"}),
-    ("starting", False, {"Stop to Engage Longitudinal", "Longitudinal enables at next stop"}),  # the takeover needs a stop
-    ("parkToTakeOver", False, {"Stop to Engage Longitudinal", "Longitudinal enables at next stop"}),
-    ("stockCruiseOn", False, {"Turn Off Stock Cruise", "Longitudinal waits for it"}),
-    ("restoring", False, {"Restarting Stock Cruise", "Resumes in a few seconds"}),
-    ("failed", True, {"Longitudinal Failed", "Restart the car and retry"}),
+    ("starting", True, {"Longitudinal Enabling", "Stay stopped"}),
+    ("starting", False, {"Longitudinal Not Ready", "Stop to enable"}),  # the takeover needs a stop
+    ("parkToTakeOver", False, {"Longitudinal Not Ready", "Stop to enable"}),
+    ("stockCruiseOn", False, {"Longitudinal Not Ready", "Turn off cruise"}),
+    ("restoring", False, {"Longitudinal Disabling", "Wait a few seconds"}),
+    ("failed", True, {"Longitudinal Failed", "Restart the car"}),
   ])
   def test_text_names_what_the_driver_has_to_do(self, state, standstill, expected):
     assert _alert(state, standstill)[1] == expected
@@ -148,8 +148,8 @@ class TestStockEcuUnprompted:
     ready = EVENTS_ZP[EventNameZP.stockEcuReady][ET.PERMANENT]
     for alert in (initializing, ready):
       assert alert.audible_alert == AudibleAlert.none
-    assert {initializing.alert_text_1, initializing.alert_text_2} == {"Longitudinal Initializing", "Remain stopped"}
-    assert {ready.alert_text_1, ready.alert_text_2} == {"Longitudinal Ready", "Stock AEB now off"}
+    assert {initializing.alert_text_1, initializing.alert_text_2} == {"Longitudinal Enabling", "Stay stopped"}
+    assert {ready.alert_text_1, ready.alert_text_2} == {"Longitudinal Ready", "Car's radar disabled"}
     assert ready.duration == int(2. / DT_CTRL)
 
   def test_both_show_with_nothing_engaged(self):

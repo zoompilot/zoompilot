@@ -40,11 +40,11 @@ EVENT_NAME_ZP = {v: k for k, v in EventNameZP.schema.enumerants.items()}
 # upstream's no-entry alerts ("Gear not D"). Main off has no entry: the cluster's MRCC
 # indicator is the car's own.
 STOCK_ECU_ALERT_TEXT = {
-  StockEcuState.STARTING: ("Longitudinal Initializing", "Remain stopped"),
-  StockEcuState.PARK_TO_TAKE_OVER: ("Stop to Engage Longitudinal", "Longitudinal enables at next stop"),
-  StockEcuState.STOCK_CRUISE_ON: ("Turn Off Stock Cruise", "Longitudinal waits for it"),
-  StockEcuState.RESTORING: ("Restarting Stock Cruise", "Resumes in a few seconds"),
-  StockEcuState.FAILED: ("Longitudinal Failed", "Restart the car and retry"),
+  StockEcuState.STARTING: ("Longitudinal Enabling", "Stay stopped"),
+  StockEcuState.PARK_TO_TAKE_OVER: ("Longitudinal Not Ready", "Stop to enable"),
+  StockEcuState.STOCK_CRUISE_ON: ("Longitudinal Not Ready", "Turn off cruise"),
+  StockEcuState.RESTORING: ("Longitudinal Disabling", "Wait a few seconds"),
+  StockEcuState.FAILED: ("Longitudinal Failed", "Restart the car"),
 }
 
 
@@ -229,7 +229,7 @@ EVENTS_ZP: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   # the takeover landed: the car's own emergency braking went with the radar
   EventNameZP.stockEcuReady: {
-    ET.PERMANENT: NormalPermanentAlert("Longitudinal Ready", "Stock AEB now off", duration=2.),
+    ET.PERMANENT: NormalPermanentAlert("Longitudinal Ready", "Car's radar disabled", duration=2.),
   },
 
   # The last session's hand-back failed and its stop went ahead anyway: the radar is left to
